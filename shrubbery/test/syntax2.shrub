@@ -1,0 +1,166 @@
+#lang rhombus/static
+
+import:
+  draw
+  gui
+
+// ----------------------------------------
+
+fun draw_face(dc draw.DC, config Map):
+  let draw.Size(w, h) = dc.size
+  let s = math.max(10, math.min(w, h) - 20)
+
+  let scale = config["scale"] / 50
+  let w = w / scale
+  let h = h / scale
+
+  let x = (w-s)/2
+  let y = (h-s)/2
+  let π = math.pi
+
+  dc.save_and_restore:
+
+    dc.scale(scale)
+
+    let background:
+      match config["mood"]
+      | "Happy":
+          let center = [w/2, h/2]
+          draw.RadialGradient([center, s/2],
+                              [center, math.max(w, h)],
+                              [[0, draw.Color("white")],
+                               [1, draw.Color("yellow")]])
+      | "Sad":
+          draw.LinearGradient([0, 0],
+                              [0, h],
+                              [[0.5, draw.Color("white")],
+                               [1, draw.Color("darkblue")]])
+
+    // draw a gradient background
+    dc.pen := draw.Pen.none
+    dc.brush := draw.Brush(~gradient: background)
+    dc.rectangle([0, 0, w, h])
+
+    // draw keyed text
+    dc.font := dc.font with (size = dc.font.size * 2)
+    dc.text(config["keyed"])
+
+    // draw ghost dots (showing recent mouse movements)
+    let dot_size = [4, 4]
+    for values(brush :~ draw.Brush:
+                 draw.Brush(~color: draw.Color(0, 0, 0, 0.25))):
+      each [x, y] in (config["ghosts"] :: List).reverse()
+      dc.brush := brush
+      let x = x/scale
+      let y = y/scale
+      dc.ellipse([[x-2, y-2], dot_size])
+      brush with (color = brush.color with (alpha = brush.color.alpha * 0.7))
+
+    // face shape
+    dc.brush := draw.Brush(~color: "orange")
+    let face_rect = [x, y, s, s]
+    match config["shape"]
+    | "Circle": dc.ellipse(face_rect)
+    | "Square": dc.rectangle(face_rect)
+    | "Rounded": dc.rounded_rectangle(face_rect)
+
+    // mouth
+    dc.pen := draw.Pen(~color: "Black")
+    dc.brush := draw.Brush.none
+    match config["mood"]
+    | "Happy":
+        dc.arc([x + 0.2*s, y + 0.2*s, 0.6*s, 0.6*s], π * -3/4, π * -1/4)
+    | "Sad":
+        dc.arc([x + 0.2*s, y + 0.7*s, 0.6*s, 0.6*s], π * 1/4, π * 3/4)
+
+    // eyes
+    when config["eyes"]
+    | dc.pen := draw.Pen.none
+      dc.brush := draw.Brush(~color: "black")
+      let eye_size = [0.1*s, 0.1*s]
+      dc.ellipse([[x+0.3*s, y+0.3*s], eye_size])
+      dc.ellipse([[x+0.6*s, y+0.3*s], eye_size])
+
+    // moustache
+    when config["moustache"]
+    | let p = draw.Path()
+      p.move_to([0, 0])
+      p.curve_to([20, -10], [80, -10], [100, 0])
+      p.curve_to([120, 10], [180, 0],  [200, -20])
+      p.curve_to([180, 20], [120, 40], [90, 30])
+      p.curve_to([60, 20],  [20, 20],  [0, 0])
+      p.close()
+      p.scale(s/500, s/500)
+      dc.pen := draw.Pen.none
+      dc.brush := draw.Brush(~color: "brown")
+      dc.path(p, ~dx: x+0.5*s, ~dy: y+0.6*s)
+      p.scale(-1, 1)
+      dc.path(p, ~dx: x+0.5*s, ~dy: y+0.6*s)
+
+// ----------------------------------------
+
+def tabs:
+  let at_tab = gui.Obs("Happy")
+  let shape = gui.Choice(gui.Obs(["Circle", "Square", "Rounded"]),
+                         ~selection: "Circle")
+  let eyes = gui.Checkbox("Eyes", ~is_checked: #true)
+  let stache = gui.Checkbox("Moustache", ~is_checked: #false)
+  let scale = gui.Slider(~value: 50,
+                         ~min_value: 1,
+                         ~max_value: 100,
+                         // Could write `gui.Slider.Style.plain`,
+                         // etc., but we write symbols for convenience:
+                         ~styles: [#'plain, #'horizontal])
+  let spacer = gui.Spacer()
+
+  let ghosts = gui.Obs([])
+  fun ghost_mouse(ev :: gui.MouseEvent, area):
+    ghosts.update(fun (l :: List):
+                    let keep :~ List:
+                      if l.length() < 10 | l | l.rest
+                    keep ++ [[ev.x, ev.y]])
+
+  let keyed = gui.Obs("")
+  fun accum_key(ev :: gui.KeyEvent, area):
+    keyed.update(fun (s :: String):
+                   match ev.code
+                   | Char"\b" || Char"\x7F" /* ASCII delete */:
+                       if s.length() == 0 | s | s.substring(0, s.length() - 1)
+                   | c :: Char: s ++ to_string(c)
+                   | ~else: s)
+
+  let canvas = gui.VPanel({ "mood": at_tab,
+                            "shape": shape.at_selection,
+                            "eyes": eyes.at_is_checked,
+                            "moustache": stache.at_is_checked,
+                            "scale": scale.at_value,
+                            "ghosts": ghosts,
+                            "keyed": keyed }
+                            |> gui.Obs.combine(_)
+                            |> gui.Canvas(_,
+                                          draw_face,
+                                          ~mouse: ghost_mouse,
+                                          ~key: accum_key),
+                          gui.HPanel(shape, eyes, stache,
+                                     spacer,
+                                     gui.Label("-"), scale, gui.Label("+"),
+                                     ~stretch: [#true, #false]))
+
+  let happy_button = gui.Button("Be Happy",
+                                ~action: fun ():
+                                           at_tab.update(fun (v): "Happy"),
+                                ~stretch: [#false, #false])
+
+  gui.TabsPanel(["Happy", "Sad"],
+                ~selection: at_tab,
+                at_tab.map((match _
+                            | "Happy": canvas
+                            | "Sad": gui.HPanel(canvas, happy_button)
+                            )))
+
+// ----------------------------------------
+
+tabs
+  |> gui.Window(_,
+                ~size: [800, 600])
+  |> gui.render(_)

@@ -1,0 +1,64 @@
+let std: import("std")
+let another: import("another")
+let struct {first, second, third}: import("another")
+let struct {first, second, third}: import("another")
+
+record Testing:
+  first int
+  second int
+
+record Testing: {
+  first int
+  second int
+}
+
+def another: {
+  let first: 1324;
+  let second int: 1234234;
+  let third int: 1231234;
+}
+
+def testing:
+  first
+  second
+  third
+  fourth
+  fifth
+  sixth
+
+def fib pos_int
+| fib(0): 1
+| fib(1): 1
+| fib(n nat, n bool): fib(n - 1) + fib(n -2 )
+
+def c: Cell(~row=1, ~column=2)
+
+def c =
+  first;
+  second;
+  third
+  
+def another =
+  first;
+  second;
+  third
+
+let testing:
+  first
+  second
+  third
+  fourth
+
+let testing: {
+    first;
+    second;
+    third;
+    another;
+    broh;
+}
+
+let second: {
+    first;
+    second;
+    third;
+}

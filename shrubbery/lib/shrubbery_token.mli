@@ -1,0 +1,44 @@
+open Prelude
+module Line_col := Shrubbery_line_col
+
+type t =
+  | LParen
+  | RParen
+  | LBrace
+  | RBrace
+  | LBrack
+  | RBrack
+  | Comma
+  | Colon
+  | Semi
+  | VSemi
+  | VLBrace
+  | VRBrace
+  | Equal
+  | Pipe
+  | Dot
+  | String of string
+  | Number of string
+  | Operator of string
+  | Comment of string
+  | Whitespace of int
+  | Newline
+  | Ident of string
+  | Keyword of string
+  | Error of string
+[@@deriving sexp, equal, compare]
+
+val to_string : t -> string
+val length : t -> int
+val is_trivia : t -> bool
+
+type ti =
+  { token : t
+  ; index : int
+  }
+[@@deriving sexp, equal, compare]
+
+val to_indexed : t list -> ti list
+val advance_line_col : t -> Line_col.t -> Line_col.t
+val calculate_offsets : t array -> int array
+val calculate_line_col : t array -> Line_col.t array

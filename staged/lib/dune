@@ -1,0 +1,3 @@
+(library
+ (name staged)
+ (libraries shrubbery))

@@ -1,0 +1,9 @@
+(library
+ (name shrubbery)
+ (public_name shrubbery)
+ (inline_tests)
+ (preprocess
+  (pps ppx_inline_test ppx_jane))
+ (flags
+  (:standard -warn-error -A))
+ (libraries core))
