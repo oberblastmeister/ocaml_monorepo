@@ -57,8 +57,8 @@ let rec infer env (expr : Syntax.expr) =
     Expr_app { fn; args; ann = Some ty }
   | Expr_int i -> Expr_int i
   | Expr_bin { lhs; op; rhs } ->
-    let lhs = infer env lhs in
-    let rhs = infer env rhs in
+    let lhs = check env lhs Ty_int in
+    let rhs = check env rhs Ty_int in
     Expr_bin { lhs; op; rhs }
   | Expr_let { var; expr; body; ann = _ } ->
     let expr = infer env expr in
@@ -95,5 +95,20 @@ and check_ty_eq env (ty : Syntax.ty) (ty' : Syntax.ty) =
           "unequal stages" (t1.stage : Syntax.Stage.t) (t2.stage : Syntax.Stage.t)];
     check_ty_eq env t1.ret t2.ret
   | Ty_int, Ty_int -> ()
-  | _ -> raise (Error [%message "types are not equal" (ty : Syntax.ty) (ty' : Syntax.ty)])
+  | _ -> throw_s [%message "types are not equal" (ty : Syntax.ty) (ty' : Syntax.ty)]
+;;
+
+let infer' expr =
+  let env = { context = String.Map.empty } in
+  let expr = infer env expr in
+  let ty = Syntax.get_ty_exn expr in
+  if not (Stage.equal (Syntax.get_ty_stage ty) Stage.Runtime)
+  then throw_s [%message "Root expression should be at stage runtime"];
+  expr
+;;
+
+let infer expr =
+  match infer' expr with
+  | exception Error s -> Result.Error (Error.t_of_sexp s)
+  | res -> Result.Ok res
 ;;

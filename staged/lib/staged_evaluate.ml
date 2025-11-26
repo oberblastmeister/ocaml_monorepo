@@ -80,7 +80,7 @@ let rec evaluate env (expr : Syntax.expr) : let_binding list * value =
       let binds'', env' =
         List.fold_left
           (List.zip_exn arg_values fn_value.fn.params)
-          ~init:([], env)
+          ~init:([], fn_value.env)
           ~f:(fun (binds, env) (arg_value, param) ->
             match Syntax.ty_stage param.ty with
             | Runtime ->
@@ -104,8 +104,8 @@ let rec evaluate env (expr : Syntax.expr) : let_binding list * value =
     let expr_ty = Syntax.get_ty_exn expr in
     begin match Syntax.ty_stage expr_ty with
     | Runtime ->
-      let env = add_var env var (Code (Expr_var { var; ann = Some expr_ty })) in
-      let binds', body_value = evaluate env body in
+      let env' = add_var env var (Code (Expr_var { var; ann = Some expr_ty })) in
+      let binds', body_value = evaluate env' body in
       let binds'' = binds @ [ { var; expr = value_code_exn expr_value } ] @ binds' in
       binds'', body_value
     | Comptime ->
@@ -134,4 +134,9 @@ and evaluate_many env exprs =
       binds @ binds', v :: vs
   in
   go exprs
+;;
+
+let evaluate expr =
+  let bindings, value = evaluate { context = String.Map.empty } expr in
+  add_bindings bindings (value_code_exn value)
 ;;

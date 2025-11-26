@@ -63,6 +63,7 @@ and ty_fun =
 and kind = Kind_type of Stage.t [@@deriving sexp_of]
 and ann = ty option
 
+(* equivalent to getting the stage of the kind of the type *)
 let ty_stage ty =
   match ty with
   | Ty_fun t -> t.stage
