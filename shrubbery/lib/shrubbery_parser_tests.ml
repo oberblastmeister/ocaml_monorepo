@@ -7,16 +7,12 @@ open struct
   module Token_tree = Shrubbery_token_tree
   module Delimit = Shrubbery_delimit
   module Layout = Shrubbery_layout
-  module Shrub = Shrubbery_shrub
+  module Syntax = Shrubbery_syntax
 end
 
 let check ?(remove_trivia = true) s =
-  let tokens = Lexer.lex s |> Array.of_list in
-  let tts, errors = Delimit.delimit tokens in
-  let tts = Layout.insert_virtual_tokens tokens (Token_tree.root_to_indexed tts) in
-  let tts = if remove_trivia then Token_tree.remove_trivia_root tts else tts in
-  let block = Parser.parse tts in
-  print_s [%sexp (block : Shrub.block)];
+  let block, errors = Parser.parse ~remove_trivia s in
+  print_s [%sexp (block : Syntax.block)];
   if not (List.is_empty errors) then print_s [%sexp (errors : Delimit.Error.t list)];
   ()
 ;;
@@ -360,7 +356,7 @@ def another:
            ((Token (Ident def)) (Token (Ident fib)) (Token (Ident pos_int))))
           (block ())
           (alts
-           (((pipe Pipe)
+           (((token Pipe)
              (block
               ((lbrace VLBrace)
                (groups
@@ -385,7 +381,7 @@ def another:
                     (alts ())))
                   (sep ()))))
                (rbrace VRBrace))))
-            ((pipe Pipe)
+            ((token Pipe)
              (block
               ((lbrace VLBrace)
                (groups
@@ -410,7 +406,7 @@ def another:
                     (alts ())))
                   (sep ()))))
                (rbrace VRBrace))))
-            ((pipe Pipe)
+            ((token Pipe)
              (block
               ((lbrace VLBrace)
                (groups
@@ -588,7 +584,7 @@ record Pair(a, b):
            (((token Colon)
              (block ((lbrace VLBrace) (groups ()) (rbrace VRBrace))))))
           (alts
-           (((pipe Pipe)
+           (((token Pipe)
              (block
               ((lbrace VLBrace)
                (groups
@@ -604,7 +600,7 @@ record Pair(a, b):
                     (block ()) (alts ())))
                   (sep ()))))
                (rbrace VRBrace))))
-            ((pipe Pipe)
+            ((token Pipe)
              (block
               ((lbrace VLBrace)
                (groups
@@ -626,7 +622,7 @@ record Pair(a, b):
              (rdelim RParen))))
           (block ())
           (alts
-           (((pipe Pipe)
+           (((token Pipe)
              (block
               ((lbrace VLBrace)
                (groups
@@ -642,7 +638,7 @@ record Pair(a, b):
                     (block ()) (alts ())))
                   (sep ()))))
                (rbrace VRBrace))))
-            ((pipe Pipe)
+            ((token Pipe)
              (block
               ((lbrace VLBrace)
                (groups
@@ -728,7 +724,7 @@ def nested_match(x, y):
                      (((token Colon)
                        (block ((lbrace VLBrace) (groups ()) (rbrace VRBrace))))))
                     (alts
-                     (((pipe Pipe)
+                     (((token Pipe)
                        (block
                         ((lbrace VLBrace)
                          (groups
@@ -755,7 +751,7 @@ def nested_match(x, y):
                                  (block
                                   ((lbrace VLBrace) (groups ()) (rbrace VRBrace))))))
                               (alts
-                               (((pipe Pipe)
+                               (((token Pipe)
                                  (block
                                   ((lbrace VLBrace)
                                    (groups
@@ -796,7 +792,7 @@ def nested_match(x, y):
                                         (alts ())))
                                       (sep ()))))
                                    (rbrace VRBrace))))
-                                ((pipe Pipe)
+                                ((token Pipe)
                                  (block
                                   ((lbrace VLBrace)
                                    (groups
@@ -820,7 +816,7 @@ def nested_match(x, y):
                                    (rbrace VRBrace))))))))
                             (sep ()))))
                          (rbrace VRBrace))))
-                      ((pipe Pipe)
+                      ((token Pipe)
                        (block
                         ((lbrace VLBrace)
                          (groups

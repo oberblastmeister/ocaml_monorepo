@@ -7,7 +7,7 @@ open struct
   module Token_tree = Shrubbery_token_tree
   module Delimit = Shrubbery_delimit
   module Layout = Shrubbery_layout
-  module Shrub = Shrubbery_shrub
+  module Syntax = Shrubbery_syntax
 end
 
 let check ?(remove_trivia = true) s =

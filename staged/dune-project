@@ -22,7 +22,10 @@
  (depends
   (ocaml
    (= 5.4.0))
-  shrubbery)
+  shrubbery
+  (core
+   (= v0.17.1))
+ )
  (tags
   ("add topics" "to describe" your project)))
 

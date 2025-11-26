@@ -1,0 +1,91 @@
+open Prelude
+
+type bin_op =
+  | Add
+  | Sub
+[@@deriving sexp_of]
+
+module Stage = struct
+  type t =
+    | Runtime
+    | Comptime
+  [@@deriving sexp_of, equal, compare]
+end
+
+let%test_unit "stage" = [%test_eq: int] (Stage.compare Runtime Comptime) (-1)
+
+type expr =
+  | Expr_fun of expr_fun
+  | Expr_app of
+      { fn : expr
+      ; args : expr list
+      ; ann : ann
+      }
+  | Expr_int of int
+  | Expr_bin of
+      { lhs : expr
+      ; op : bin_op
+      ; rhs : expr
+      }
+  | Expr_let of
+      { var : string
+      ; expr : expr
+      ; body : expr
+      ; ann : ann
+      }
+  | Expr_var of
+      { var : string
+      ; ann : ann
+      }
+
+and expr_fun =
+  { params : param list
+  ; stage : Stage.t
+  ; body : expr
+  ; ann : ann
+  }
+
+and param =
+  { var : string
+  ; ty : ty
+  }
+
+and ty =
+  | Ty_fun of ty_fun
+  | Ty_int
+
+and ty_fun =
+  { params : ty list
+  ; stage : Stage.t
+  ; ret : ty
+  }
+
+and kind = Kind_type of Stage.t [@@deriving sexp_of]
+and ann = ty option
+
+let ty_stage ty =
+  match ty with
+  | Ty_fun t -> t.stage
+  | Ty_int -> Runtime
+;;
+
+let rec get_ty_exn e =
+  match e with
+  | Expr_fun { ann; _ } -> Option.value_exn ann
+  | Expr_app { ann; _ } -> Option.value_exn ann
+  | Expr_int _ -> Ty_int
+  | Expr_bin _ -> Ty_int
+  | Expr_let { ann; _ } -> Option.value_exn ann
+  | Expr_var { ann; _ } -> Option.value_exn ann
+;;
+
+let get_ty_stage ty =
+  match ty with
+  | Ty_fun { stage; _ } -> stage
+  | Ty_int -> Runtime
+;;
+
+let ty_fun_exn = function
+  | Ty_fun t -> t
+  | ty -> raise_s [%message "Expected function type" (ty : ty)]
+;;

@@ -3,7 +3,7 @@ open Prelude
 open struct
   module Token = Shrubbery_token
   module Token_tree = Shrubbery_token_tree
-  module Shrub = Shrubbery_shrub
+  module Syntax = Shrubbery_syntax
 end
 
 module State : sig
@@ -71,7 +71,7 @@ end = struct
   ;;
 end
 
-let rec parse_colon_block st : Shrub.colon_block =
+let rec parse_colon_block st : Syntax.token_block =
   let token =
     State.expect_if st ~f:(function
       | Colon | Equal -> true
@@ -80,7 +80,7 @@ let rec parse_colon_block st : Shrub.colon_block =
   let block = parse_block st in
   { token; block }
 
-and parse_block st : Shrub.block =
+and parse_block st : Syntax.block =
   match State.next st with
   | Some (Token VLBrace) -> parse_virtual_block st
   | Some (Tree { ldelim = LBrace as lbrace; tts; rdelim = rbrace }) ->
@@ -92,9 +92,9 @@ and parse_block st : Shrub.block =
         "precondition: colon should always have VLBrace or delimited LBrace after it"
           ~got:(tok : Token_tree.t option)]
 
-and parse_virtual_block st : Shrub.block = parse_virtual_block_rec st []
+and parse_virtual_block st : Syntax.block = parse_virtual_block_rec st []
 
-and parse_virtual_block_rec (st : State.t) (acc : Shrub.group_sep list) =
+and parse_virtual_block_rec (st : State.t) (acc : Syntax.group_sep list) =
   match State.peek st with
   | Some (Token VRBrace) ->
     let _ = State.expect st VRBrace in
@@ -113,7 +113,7 @@ and parse_delimited_groups ~sep tts =
   let st = State.create (Array.of_list tts) in
   parse_delimited_groups_rec ~sep st []
 
-and parse_delimited_groups_rec ~sep st (acc : Shrub.group_sep list) =
+and parse_delimited_groups_rec ~sep st (acc : Syntax.group_sep list) =
   match State.peek st with
   | None -> List.rev acc
   | Some _ ->
@@ -121,7 +121,7 @@ and parse_delimited_groups_rec ~sep st (acc : Shrub.group_sep list) =
     let sep_tok = State.next_if st ~f:(Token.equal sep) in
     parse_delimited_groups_rec ~sep st ({ group; sep = sep_tok } :: acc)
 
-and parse_group (st : State.t) : Shrub.group =
+and parse_group (st : State.t) : Syntax.group =
   let items = parse_items st in
   let block =
     match State.peek st with
@@ -143,7 +143,7 @@ and parse_items_rec st acc =
 
 and parse_item st =
   match State.next st |> Option.value_exn with
-  | Token token -> Shrub.Token token
+  | Token token -> Syntax.Token token
   | Tree { ldelim; tts; rdelim } ->
     let groups = parse_delimited_groups ~sep:Comma tts in
     Tree { ldelim; groups; rdelim }
@@ -157,10 +157,10 @@ and parse_alts_rec st acc =
     parse_alts_rec st (alt :: acc)
   | Some _ | None -> List.rev acc
 
-and parse_alt st : Shrub.alt =
+and parse_alt st : Syntax.alt =
   let pipe = State.expect st Pipe in
   let block = parse_block st in
-  { pipe; block }
+  { token = pipe; block }
 ;;
 
 (* precondition: 
@@ -168,7 +168,21 @@ and parse_alt st : Shrub.alt =
    this means that all colons should either be followed by delimited LBrace or by VLBrace ... VRBrace where ... is are arbitrary tokens
    we must also always have VLBrace matched by a VRBrace, which is guaranteed by the layout calculator
 *)
-let parse tts =
+let parse_tts tts =
   let st = State.create (Array.of_list tts) in
   parse_block st
+;;
+
+let parse ?(remove_trivia = false) s =
+  let open struct
+    module Lexer = Shrubbery_lexer
+    module Delimit = Shrubbery_delimit
+    module Layout = Shrubbery_layout
+  end in
+  let tokens = Lexer.lex s |> Array.of_list in
+  let tts, errors = Delimit.delimit tokens in
+  let tts = Layout.insert_virtual_tokens tokens (Token_tree.root_to_indexed tts) in
+  let tts = if remove_trivia then Token_tree.remove_trivia_root tts else tts in
+  let block = parse_tts tts in
+  block, errors
 ;;

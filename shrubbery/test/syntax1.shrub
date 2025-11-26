@@ -7,6 +7,11 @@ record Testing:
   first int
   second int
 
+variant Another:
+| First(int)
+| Second(int, bool, int)
+| Third(string)
+
 record Testing: {
   first int
   second int
@@ -29,16 +34,47 @@ def testing:
 def fib pos_int
 | fib(0): 1
 | fib(1): 1
-| fib(n nat, n bool): fib(n - 1) + fib(n -2 )
+| fib(n nat, n bool): fib(n - 1) + fib(n - 2)
 
 def c: Cell(~row=1, ~column=2)
 
-def c =
+let c int =
+  let first: 134
   first;
   second;
   third
   
-def another =
+let c =
+  first;
+  second;
+  third
+
+type bruh: fun(int) fun(int) string
+
+type bruh: int -> int -> string
+
+let f[x int, y int, z int](c int, c bool, c fun(int) fun(string) int) int -> int -> bool:
+  let another: fun(x, y, z): 1324
+  
+  let bruh:
+    let another: 1234
+    let bruh: 1234
+    another + bruh
+  c + c
+
+let f (c int) (c bool) int -> int -> string =
+  let bruh = 134
+  let another = 1234234
+  let x, y, z = bruh + another
+  c + c
+  
+record Bruh:
+  first int
+  second int
+  
+type first: Bruh
+
+def another:
   first;
   second;
   third

@@ -4,7 +4,7 @@ module Token := Shrubbery_token
 
 type group =
   { items : item list
-  ; block : colon_block option
+  ; block : token_block option
   ; alts : alt list
   }
 
@@ -16,7 +16,7 @@ and item =
       ; rdelim : Token.t
       }
 
-and colon_block =
+and token_block =
   { token : Token.t
   ; block : block
   }
@@ -32,10 +32,6 @@ and group_sep =
   ; sep : Token.t option
   }
 
-and alt =
-  { pipe : Token.t
-  ; block : block
-  }
-[@@deriving sexp, equal, compare]
+and alt = token_block [@@deriving sexp, equal, compare]
 
 val block_to_list : block -> Token.t list

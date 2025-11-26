@@ -7,7 +7,7 @@ end
 
 type group =
   { items : item list
-  ; block : colon_block option
+  ; block : token_block option
   ; alts : alt list
   }
 
@@ -19,7 +19,7 @@ and item =
       ; rdelim : Token.t
       }
 
-and colon_block =
+and token_block =
   { token : Token.t
   ; block : block
   }
@@ -35,11 +35,7 @@ and group_sep =
   ; sep : Token.t option
   }
 
-and alt =
-  { pipe : Token.t
-  ; block : block
-  }
-[@@deriving sexp, equal, compare]
+and alt = token_block [@@deriving sexp, equal, compare]
 
 let rec block_to_list_ref l t =
   l := t.lbrace :: !l;
@@ -48,11 +44,11 @@ let rec block_to_list_ref l t =
 
 and group_to_list_ref l t =
   List.iter t.items ~f:(item_to_list_ref l);
-  Option.iter t.block ~f:(colon_block_to_list_ref l);
-  List.iter t.alts ~f:(alt_to_list_ref l);
+  Option.iter t.block ~f:(token_block_to_list_ref l);
+  List.iter t.alts ~f:(token_block_to_list_ref l);
   ()
 
-and colon_block_to_list_ref l t =
+and token_block_to_list_ref l t =
   l := t.token :: !l;
   block_to_list_ref l t.block
 
@@ -67,10 +63,6 @@ and item_to_list_ref l t =
     l := ldelim :: !l;
     List.iter groups ~f:(group_sep_to_list_ref l);
     l := rdelim :: !l
-
-and alt_to_list_ref l t =
-  l := t.pipe :: !l;
-  block_to_list_ref l t.block
 ;;
 
 let block_to_list block =
