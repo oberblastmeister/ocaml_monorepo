@@ -12,8 +12,10 @@ bug-reports: "https://github.com/username/reponame/issues"
 depends: [
   "dune" {>= "3.20"}
   "ocaml" {= "5.4.0"}
-  "shrubbery"
   "core" {= "v0.17.1"}
+  "ppx_jane" {= "v0.17.0"}
+  "shrubbery"
+  "utility"
   "odoc" {with-doc}
 ]
 build: [

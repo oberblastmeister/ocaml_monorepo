@@ -4,6 +4,7 @@ open struct
   module Syntax = Staged_syntax
   module Stage = Syntax.Stage
   module Var = Staged_var
+  module Acc = Utility.Acc
 end
 
 type st = { mutable next_id : int }
@@ -45,14 +46,14 @@ let add_var env var ty = { context = Map.set env.context ~key:var ~data:ty }
 let get_var env var = Map.find_exn env.context var
 
 let rec add_bindings bindings body =
-  match bindings with
-  | { var; expr } :: bs ->
-    let body = add_bindings bs body in
-    Syntax.Expr_let { var; expr; body; ann = Some (Syntax.get_ty_exn body) }
-  | [] -> body
+  let body_ty = Syntax.get_ty_exn body in
+  Acc.to_list_rev bindings
+  |> List.fold ~init:body ~f:(fun expr binding ->
+    Syntax.Expr_let
+      { var = binding.var; expr = binding.expr; body = expr; ann = Some body_ty })
 ;;
 
-let rec evaluate st env (expr : Syntax.expr) : let_binding list * value =
+let rec evaluate st env (expr : Syntax.expr) : let_binding Acc.t * value =
   match expr with
   | Expr_fun fn -> begin
     match fn.stage with
@@ -66,8 +67,8 @@ let rec evaluate st env (expr : Syntax.expr) : let_binding list * value =
       in
       let bindings, body_value = evaluate st env' fn.body in
       let body_expr = value_code_exn body_value |> add_bindings bindings in
-      [], Quote (Expr_fun { fn with body = body_expr })
-    | Comptime -> [], Closure { env; fn }
+      Acc.empty, Quote (Expr_fun { fn with body = body_expr })
+    | Comptime -> Acc.empty, Closure { env; fn }
   end
   | Expr_app { fn; args; ann } ->
     let fn_ty = Syntax.get_ty_exn fn |> Syntax.ty_fun_exn in
@@ -82,7 +83,7 @@ let rec evaluate st env (expr : Syntax.expr) : let_binding list * value =
           ; ann
           }
       in
-      binds @ binds', Quote expr
+      Acc.(binds @ binds'), Quote expr
     | Comptime ->
       let fn_value = value_closure_exn fn_value in
       let binds'', env' =
@@ -103,7 +104,7 @@ let rec evaluate st env (expr : Syntax.expr) : let_binding list * value =
               binds, env)
       in
       let binds''', res = evaluate st env' fn_value.fn.body in
-      binds @ binds' @ binds'' @ binds''', res
+      Acc.(binds @ binds' @ of_list binds'' @ binds'''), res
     end
   | Expr_let ({ expr; body; _ } as expr_let) ->
     let binds, expr_value = evaluate st env expr in
@@ -115,30 +116,31 @@ let rec evaluate st env (expr : Syntax.expr) : let_binding list * value =
         add_var env expr_let.var (Quote (Expr_var { var; ann = Some expr_ty }))
       in
       let binds', body_value = evaluate st env' body in
-      binds @ [ { var; expr = value_code_exn expr_value } ] @ binds', body_value
+      ( Acc.(binds @ singleton { var; expr = value_code_exn expr_value } @ binds')
+      , body_value )
     | Comptime ->
       let env = add_var env expr_let.var expr_value in
       let binds', body_value = evaluate st env body in
-      binds @ binds', body_value
+      Acc.(binds @ binds'), body_value
     end
-  | Expr_int _ -> [], Quote expr
+  | Expr_int _ -> Acc.empty, Quote expr
   | Expr_bin { lhs; op; rhs } ->
     let binds, lhs = evaluate st env lhs in
     let binds', rhs = evaluate st env rhs in
     let res =
       Quote (Expr_bin { lhs = value_code_exn lhs; op; rhs = value_code_exn rhs })
     in
-    binds @ binds', res
-  | Expr_var { var; ann = _ } -> [], get_var env var
+    Acc.(binds @ binds'), res
+  | Expr_var { var; ann = _ } -> Acc.empty, get_var env var
 
-and evaluate_many st env exprs =
+and evaluate_many st env exprs : let_binding Acc.t * value list =
   let rec go exprs =
     match exprs with
-    | [] -> [], []
+    | [] -> Acc.empty, []
     | e :: es ->
       let binds, v = evaluate st env e in
       let binds', vs = go es in
-      binds @ binds', v :: vs
+      Acc.(binds @ binds'), v :: vs
   in
   go exprs
 ;;

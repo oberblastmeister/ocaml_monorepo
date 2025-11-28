@@ -22,9 +22,12 @@
  (depends
   (ocaml
    (= 5.4.0))
-  shrubbery
   (core
    (= v0.17.1))
+  (ppx_jane
+   (= v0.17.0))
+  shrubbery
+  utility
  )
  (tags
   ("add topics" "to describe" your project)))
