@@ -22,20 +22,16 @@ let get_var_ty env var =
 
 let rec infer env (expr : Syntax.expr) =
   match expr with
-  | Expr_fun { params; stage; body; ann = _ } ->
-    let env' =
-      List.fold params ~init:env ~f:(fun env param -> add_var env param.var param.ty)
-    in
+  | Expr_fun { param_var; param_ty; stage; body; ann = _ } ->
+    let env' = add_var env param_var param_ty in
     let body = infer env' body in
     let body_ty = Syntax.get_ty_exn body in
     let body_stage = Syntax.ty_stage body_ty in
     if Stage.compare body_stage stage > 0
     then throw_s [%message "stage is too high" (body_stage : Stage.t) (stage : Stage.t)];
-    let ty =
-      Syntax.Ty_fun { params = List.map ~f:(fun p -> p.ty) params; stage; ret = body_ty }
-    in
-    Expr_fun { params; stage; body; ann = Some ty }
-  | Expr_app { fn; args; ann = _ } ->
+    let ty = Syntax.Ty_fun { param = param_ty; stage; ret = body_ty } in
+    Expr_fun { param_var; param_ty; stage; body; ann = Some ty }
+  | Expr_app { fn; arg; ann = _ } ->
     let fn = infer env fn in
     let fn_ty = Syntax.get_ty_exn fn in
     let fn_ty =
@@ -43,19 +39,9 @@ let rec infer env (expr : Syntax.expr) =
       | Ty_fun t -> t
       | _ -> throw_s [%message "expected function type for app" (fn_ty : Syntax.ty)]
     in
-    let args_with_ty =
-      match List.zip args fn_ty.params with
-      | Ok t -> t
-      | Unequal_lengths ->
-        throw_s
-          [%message
-            "unequal lengths for parameters"
-              (args : Syntax.expr list)
-              ~params:(fn_ty.params : Syntax.ty list)]
-    in
-    let args = List.map args_with_ty ~f:(fun (arg, ty) -> check env arg ty) in
+    let arg = check env arg fn_ty.param in
     let ty = fn_ty.ret in
-    Expr_app { fn; args; ann = Some ty }
+    Expr_app { fn; arg; ann = Some ty }
   | Expr_int i -> Expr_int i
   | Expr_bin { lhs; op; rhs } ->
     let lhs = check env lhs Ty_int in
@@ -80,15 +66,7 @@ and check env (expr : Syntax.expr) (ty : Syntax.ty) : Syntax.expr =
 and check_ty_eq env (ty : Syntax.ty) (ty' : Syntax.ty) =
   match ty, ty' with
   | Ty_fun t1, Ty_fun t2 ->
-    begin match List.iter2 t1.params t2.params ~f:(check_ty_eq env) with
-    | Ok _ -> ()
-    | Unequal_lengths ->
-      throw_s
-        [%message
-          "unequal lengths for parameters"
-            (t1.params : Syntax.ty list)
-            (t2.params : Syntax.ty list)]
-    end;
+    check_ty_eq env t1.param t2.param;
     if not (Syntax.Stage.equal t1.stage t2.stage)
     then
       throw_s

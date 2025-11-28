@@ -6,17 +6,11 @@ module Var = Staged_var
 
 module Syntax_helpers = struct
   module Expr = struct
-    let app fn args = Syntax.Expr_app { fn; args; ann = None }
+    let app fn arg = Syntax.Expr_app { fn; arg; ann = None }
 
-    let efun ?(stage = Syntax.Stage.Runtime) params body =
+    let efun ?(stage = Syntax.Stage.Runtime) (param_var, param_ty) body =
       Syntax.Expr_fun
-        { params =
-            List.map params ~f:(fun (var, ty) ->
-              ({ var = Var.create_source var; ty } : Syntax.param))
-        ; stage
-        ; body
-        ; ann = None
-        }
+        { param_var = Var.create_source param_var; param_ty; stage; body; ann = None }
     ;;
 
     let ecfun = efun ~stage:Comptime
@@ -30,8 +24,8 @@ module Syntax_helpers = struct
   end
 
   module Ty = struct
-    let tfun ?(stage = Syntax.Stage.Runtime) params ret =
-      Syntax.Ty_fun { params; stage; ret }
+    let tfun ?(stage = Syntax.Stage.Runtime) param ret =
+      Syntax.Ty_fun { param; stage; ret }
     ;;
 
     let int = Syntax.Ty_int
@@ -54,18 +48,18 @@ let%expect_test "simple" =
   let open Import in
   check (E.int 1234);
   [%expect {| (Expr_int 1234) |}];
-  check (E.app (E.efun [ "x", T.int ] (E.var "x")) [ E.int 1 ]);
+  check (E.app (E.efun ("x", T.int) (E.var "x")) (E.int 1));
   [%expect
     {|
     (Expr_app
      (fn
       (Expr_fun
-       ((params (((var x) (ty Ty_int)))) (stage Runtime)
+       ((param_var x) (param_ty Ty_int) (stage Runtime)
         (body (Expr_var (var x) (ann (Ty_int))))
-        (ann ((Ty_fun ((params (Ty_int)) (stage Runtime) (ret Ty_int))))))))
-     (args ((Expr_int 1))) (ann (Ty_int)))
+        (ann ((Ty_fun ((param Ty_int) (stage Runtime) (ret Ty_int))))))))
+     (arg (Expr_int 1)) (ann (Ty_int)))
     |}];
-  check (E.app (E.ecfun [ "x", T.int ] (E.var "x")) [ E.int 1 ]);
+  check (E.app (E.ecfun ("x", T.int) (E.var "x")) (E.int 1));
   [%expect
     {|
     (Expr_let (var x_0) (expr (Expr_int 1))
@@ -79,20 +73,20 @@ let%expect_test "captured" =
     (E.elet
        "f"
        (E.ecfun
-          [ "x", T.int ]
+          ("x", T.int)
           (E.elet
              "y"
              (E.add (E.int 1) (E.int 2))
-             (E.ecfun [ "z", T.int ] (E.add (E.add (E.var "z") (E.var "y")) (E.var "x")))))
+             (E.ecfun ("z", T.int) (E.add (E.add (E.var "z") (E.var "y")) (E.var "x")))))
        (E.elet
           "g"
-          (E.app (E.var "f") [ E.add (E.int 9) (E.int 1234) ])
+          (E.app (E.var "f") (E.add (E.int 9) (E.int 1234)))
           (E.elet
              "y"
-             (E.app (E.var "g") [ E.add (E.int 10) (E.int 0) ])
+             (E.app (E.var "g") (E.add (E.int 10) (E.int 0)))
              (E.elet
                 "r2"
-                (E.app (E.var "g") [ E.add (E.int 0) (E.int 2) ])
+                (E.app (E.var "g") (E.add (E.int 0) (E.int 2)))
                 (E.add (E.var "y") (E.var "r2"))))));
   [%expect
     {|

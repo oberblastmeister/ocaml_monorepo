@@ -49,20 +49,21 @@ let c =
   second;
   third
 
-type bruh: fun(int) fun(int) string
-
 type bruh: int -> int -> string
 
-let f[x int, y int, z int](c int, c bool, c fun(int) fun(string) int) int -> int -> bool:
+let {x type} (c int) (c bool) (x x) :: int -> int -> int =
+  
+
+let f[x int, y int, z int](c int, c bool, c fun(int) fun(string) int) fun(int) fun(int) bool:
   let another: fun(x, y, z): 1324
   
   let bruh:
-    let another: 1234
+    let another: 123
     let bruh: 1234
     another + bruh
   c + c
 
-let f (c int) (c bool) int -> int -> string =
+let f [a type] (c int) (c bool) string =
   let bruh = 134
   let another = 1234234
   let x, y, z = bruh + another

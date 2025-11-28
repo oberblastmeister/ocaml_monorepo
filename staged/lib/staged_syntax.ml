@@ -19,7 +19,7 @@ type expr =
   | Expr_fun of expr_fun
   | Expr_app of
       { fn : expr
-      ; args : expr list
+      ; arg : expr
       ; ann : ann
       }
   | Expr_int of int
@@ -40,15 +40,11 @@ type expr =
       }
 
 and expr_fun =
-  { params : param list
+  { param_var : Var.t
+  ; param_ty : ty
   ; stage : Stage.t
   ; body : expr
   ; ann : ann
-  }
-
-and param =
-  { var : Var.t
-  ; ty : ty
   }
 
 and ty =
@@ -56,7 +52,7 @@ and ty =
   | Ty_int
 
 and ty_fun =
-  { params : ty list
+  { param : ty
   ; stage : Stage.t
   ; ret : ty
   }
