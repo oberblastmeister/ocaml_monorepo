@@ -2,6 +2,7 @@ open Prelude
 module Infer = Staged_infer
 module Evaluate = Staged_evaluate
 module Syntax = Staged_syntax
+module Var = Staged_var
 
 module Syntax_helpers = struct
   module Expr = struct
@@ -9,7 +10,9 @@ module Syntax_helpers = struct
 
     let efun ?(stage = Syntax.Stage.Runtime) params body =
       Syntax.Expr_fun
-        { params = List.map params ~f:(fun (var, ty) -> ({ var; ty } : Syntax.param))
+        { params =
+            List.map params ~f:(fun (var, ty) ->
+              ({ var = Var.create_source var; ty } : Syntax.param))
         ; stage
         ; body
         ; ann = None
@@ -18,9 +21,12 @@ module Syntax_helpers = struct
 
     let ecfun = efun ~stage:Comptime
     let add lhs rhs = Syntax.Expr_bin { lhs; op = Add; rhs }
-    let var var = Syntax.Expr_var { var; ann = None }
+    let var var = Syntax.Expr_var { var = Var.create_source var; ann = None }
     let int i = Syntax.Expr_int i
-    let elet var expr body = Syntax.Expr_let { var; expr; body; ann = None }
+
+    let elet var expr body =
+      Syntax.Expr_let { var = Var.create_source var; expr; body; ann = None }
+    ;;
   end
 
   module Ty = struct
@@ -62,8 +68,8 @@ let%expect_test "simple" =
   check (E.app (E.ecfun [ "x", T.int ] (E.var "x")) [ E.int 1 ]);
   [%expect
     {|
-    (Expr_let (var x) (expr (Expr_int 1))
-     (body (Expr_var (var x) (ann (Ty_int)))) (ann (Ty_int)))
+    (Expr_let (var x_0) (expr (Expr_int 1))
+     (body (Expr_var (var x_0) (ann (Ty_int)))) (ann (Ty_int)))
     |}]
 ;;
 
@@ -82,44 +88,44 @@ let%expect_test "captured" =
           "g"
           (E.app (E.var "f") [ E.add (E.int 9) (E.int 1234) ])
           (E.elet
-             "r1"
+             "y"
              (E.app (E.var "g") [ E.add (E.int 10) (E.int 0) ])
              (E.elet
                 "r2"
                 (E.app (E.var "g") [ E.add (E.int 0) (E.int 2) ])
-                (E.add (E.var "r1") (E.var "r2"))))));
+                (E.add (E.var "y") (E.var "r2"))))));
   [%expect
     {|
-    (Expr_let (var x)
+    (Expr_let (var x_0)
      (expr (Expr_bin (lhs (Expr_int 9)) (op Add) (rhs (Expr_int 1234))))
      (body
-      (Expr_let (var y)
+      (Expr_let (var y_1)
        (expr (Expr_bin (lhs (Expr_int 1)) (op Add) (rhs (Expr_int 2))))
        (body
-        (Expr_let (var z)
+        (Expr_let (var z_2)
          (expr (Expr_bin (lhs (Expr_int 10)) (op Add) (rhs (Expr_int 0))))
          (body
-          (Expr_let (var r1)
+          (Expr_let (var y_3)
            (expr
             (Expr_bin
              (lhs
-              (Expr_bin (lhs (Expr_var (var z) (ann (Ty_int)))) (op Add)
-               (rhs (Expr_var (var y) (ann (Ty_int))))))
-             (op Add) (rhs (Expr_var (var x) (ann (Ty_int))))))
+              (Expr_bin (lhs (Expr_var (var z_2) (ann (Ty_int)))) (op Add)
+               (rhs (Expr_var (var y_1) (ann (Ty_int))))))
+             (op Add) (rhs (Expr_var (var x_0) (ann (Ty_int))))))
            (body
-            (Expr_let (var z)
+            (Expr_let (var z_4)
              (expr (Expr_bin (lhs (Expr_int 0)) (op Add) (rhs (Expr_int 2))))
              (body
-              (Expr_let (var r2)
+              (Expr_let (var r2_5)
                (expr
                 (Expr_bin
                  (lhs
-                  (Expr_bin (lhs (Expr_var (var z) (ann (Ty_int)))) (op Add)
-                   (rhs (Expr_var (var y) (ann (Ty_int))))))
-                 (op Add) (rhs (Expr_var (var x) (ann (Ty_int))))))
+                  (Expr_bin (lhs (Expr_var (var z_4) (ann (Ty_int)))) (op Add)
+                   (rhs (Expr_var (var y_1) (ann (Ty_int))))))
+                 (op Add) (rhs (Expr_var (var x_0) (ann (Ty_int))))))
                (body
-                (Expr_bin (lhs (Expr_var (var r1) (ann (Ty_int)))) (op Add)
-                 (rhs (Expr_var (var r2) (ann (Ty_int))))))
+                (Expr_bin (lhs (Expr_var (var y_3) (ann (Ty_int)))) (op Add)
+                 (rhs (Expr_var (var r2_5) (ann (Ty_int))))))
                (ann (Ty_int))))
              (ann (Ty_int))))
            (ann (Ty_int))))

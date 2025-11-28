@@ -1,4 +1,5 @@
 open Prelude
+module Var = Staged_var
 
 type bin_op =
   | Add
@@ -28,13 +29,13 @@ type expr =
       ; rhs : expr
       }
   | Expr_let of
-      { var : string
+      { var : Var.t
       ; expr : expr
       ; body : expr
       ; ann : ann
       }
   | Expr_var of
-      { var : string
+      { var : Var.t
       ; ann : ann
       }
 
@@ -46,7 +47,7 @@ and expr_fun =
   }
 
 and param =
-  { var : string
+  { var : Var.t
   ; ty : ty
   }
 

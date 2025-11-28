@@ -1,6 +1,7 @@
 open Prelude
 
 open struct
+  module Var = Staged_var
   module Syntax = Staged_syntax
   module Stage = Syntax.Stage
 end
@@ -9,13 +10,13 @@ exception Error of Sexp.t
 
 let throw_s s = raise (Error s)
 
-type env = { context : Syntax.ty String.Map.t } [@@deriving sexp_of]
+type env = { context : Syntax.ty Var.Map.t } [@@deriving sexp_of]
 
 let add_var env var ty = { context = Map.set env.context ~key:var ~data:ty }
 
 let get_var_ty env var =
   match Map.find env.context var with
-  | None -> throw_s [%message "Var not found" (var : string)]
+  | None -> throw_s [%message "Var not found" (var : Var.t)]
   | Some ty -> ty
 ;;
 
@@ -99,7 +100,7 @@ and check_ty_eq env (ty : Syntax.ty) (ty' : Syntax.ty) =
 ;;
 
 let infer' expr =
-  let env = { context = String.Map.empty } in
+  let env = { context = Var.Map.empty } in
   let expr = infer env expr in
   let ty = Syntax.get_ty_exn expr in
   if not (Stage.equal (Syntax.get_ty_stage ty) Stage.Runtime)
