@@ -67,7 +67,7 @@ let ty_stage ty =
   | Ty_int -> Runtime
 ;;
 
-let rec get_ty_exn e =
+let rec expr_ty_exn e =
   match e with
   | Expr_fun { ann; _ } -> Option.value_exn ann
   | Expr_app { ann; _ } -> Option.value_exn ann
@@ -75,12 +75,6 @@ let rec get_ty_exn e =
   | Expr_bin _ -> Ty_int
   | Expr_let { ann; _ } -> Option.value_exn ann
   | Expr_var { ann; _ } -> Option.value_exn ann
-;;
-
-let get_ty_stage ty =
-  match ty with
-  | Ty_fun { stage; _ } -> stage
-  | Ty_int -> Runtime
 ;;
 
 let ty_fun_exn = function

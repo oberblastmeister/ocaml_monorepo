@@ -26,7 +26,7 @@ and value =
   | Quote of Syntax.expr
   | Closure of closure
 
-and let_binding =
+and binding =
   { var : Var.t
   ; expr : Syntax.expr
   }
@@ -48,14 +48,14 @@ let add_var env var ty = { context = Map.set env.context ~key:var ~data:ty }
 let get_var env var = Map.find_exn env.context var
 
 let rec add_bindings bindings body =
-  let body_ty = Syntax.get_ty_exn body in
+  let body_ty = Syntax.expr_ty_exn body in
   Acc.to_list_rev bindings
   |> List.fold ~init:body ~f:(fun expr binding ->
     Syntax.Expr_let
       { var = binding.var; expr = binding.expr; body = expr; ann = Some body_ty })
 ;;
 
-let rec evaluate st env (expr : Syntax.expr) : let_binding Acc.t * value =
+let rec evaluate st env (expr : Syntax.expr) : binding Acc.t * value =
   match expr with
   | Expr_fun fn -> begin
     match fn.stage with
@@ -72,7 +72,7 @@ let rec evaluate st env (expr : Syntax.expr) : let_binding Acc.t * value =
     | Comptime -> Acc.empty, Closure { env; fn }
   end
   | Expr_app { fn; arg; ann } ->
-    let fn_ty = Syntax.get_ty_exn fn |> Syntax.ty_fun_exn in
+    let fn_ty = Syntax.expr_ty_exn fn |> Syntax.ty_fun_exn in
     let binds, fn_value = evaluate st env fn in
     let binds', arg_value = evaluate st env arg in
     begin match fn_ty.stage with
@@ -105,7 +105,7 @@ let rec evaluate st env (expr : Syntax.expr) : let_binding Acc.t * value =
     end
   | Expr_let ({ expr; body; _ } as expr_let) ->
     let binds, expr_value = evaluate st env expr in
-    let expr_ty = Syntax.get_ty_exn expr in
+    let expr_ty = Syntax.expr_ty_exn expr in
     begin match Syntax.ty_stage expr_ty with
     | Runtime ->
       let var = fresh_var st expr_let.var.name in

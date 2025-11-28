@@ -25,7 +25,7 @@ let rec infer env (expr : Syntax.expr) =
   | Expr_fun { param_var; param_ty; stage; body; ann = _ } ->
     let env' = add_var env param_var param_ty in
     let body = infer env' body in
-    let body_ty = Syntax.get_ty_exn body in
+    let body_ty = Syntax.expr_ty_exn body in
     let body_stage = Syntax.ty_stage body_ty in
     if Stage.compare body_stage stage > 0
     then throw_s [%message "stage is too high" (body_stage : Stage.t) (stage : Stage.t)];
@@ -33,7 +33,7 @@ let rec infer env (expr : Syntax.expr) =
     Expr_fun { param_var; param_ty; stage; body; ann = Some ty }
   | Expr_app { fn; arg; ann = _ } ->
     let fn = infer env fn in
-    let fn_ty = Syntax.get_ty_exn fn in
+    let fn_ty = Syntax.expr_ty_exn fn in
     let fn_ty =
       match fn_ty with
       | Ty_fun t -> t
@@ -49,9 +49,9 @@ let rec infer env (expr : Syntax.expr) =
     Expr_bin { lhs; op; rhs }
   | Expr_let { var; expr; body; ann = _ } ->
     let expr = infer env expr in
-    let env' = add_var env var (Syntax.get_ty_exn expr) in
+    let env' = add_var env var (Syntax.expr_ty_exn expr) in
     let body = infer env' body in
-    let ty = Syntax.get_ty_exn body in
+    let ty = Syntax.expr_ty_exn body in
     Expr_let { var; expr; body; ann = Some ty }
   | Expr_var { var; ann = _ } ->
     let ty = get_var_ty env var in
@@ -59,7 +59,7 @@ let rec infer env (expr : Syntax.expr) =
 
 and check env (expr : Syntax.expr) (ty : Syntax.ty) : Syntax.expr =
   let expr = infer env expr in
-  let ty' = Syntax.get_ty_exn expr in
+  let ty' = Syntax.expr_ty_exn expr in
   check_ty_eq env ty ty';
   expr
 
@@ -80,8 +80,8 @@ and check_ty_eq env (ty : Syntax.ty) (ty' : Syntax.ty) =
 let infer' expr =
   let env = { context = Var.Map.empty } in
   let expr = infer env expr in
-  let ty = Syntax.get_ty_exn expr in
-  if not (Stage.equal (Syntax.get_ty_stage ty) Stage.Runtime)
+  let ty = Syntax.expr_ty_exn expr in
+  if not (Stage.equal (Syntax.ty_stage ty) Stage.Runtime)
   then throw_s [%message "Root expression should be at stage runtime"];
   expr
 ;;
