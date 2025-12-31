@@ -3,9 +3,14 @@ let another: import("another")
 let struct {first, second, third}: import("another")
 let struct {first, second, third}: import("another")
 
-record Testing:
-  first int
-  second int
+rec:
+  record Testing:
+    first int
+    second Another
+    
+  record Another:
+    first int
+    second Testing
 
 variant Another:
 | First(int)
@@ -16,6 +21,10 @@ record Testing: {
   first int
   second int
 }
+
+fun testing(x, y, z):
+  let first: 234
+  let second: 234
 
 def another: {
   let first: 1324;
@@ -30,6 +39,13 @@ def testing:
   fourth
   fifth
   sixth
+
+rec:
+  def even?(n nat):
+    match n with
+    | S(n): odd?(n) 
+    | Z: True
+
 
 def fib pos_int
 | fib(0): 1
@@ -52,7 +68,6 @@ let c =
 type bruh: int -> int -> string
 
 let {x type} (c int) (c bool) (x x) :: int -> int -> int =
-  
 
 let f[x int, y int, z int](c int, c bool, c fun(int) fun(string) int) fun(int) fun(int) bool:
   let another: fun(x, y, z): 1324
@@ -99,3 +114,51 @@ let second: {
     second;
     third;
 }
+
+if e is
+| Var(x) and context.get(x) is
+  | Some(IntVal(v)): Left(v)
+  | Some(BoolVal(v)): Right(v)
+| Lit(IntVal(v)): Left(v)
+| Lit(BoolVal(v)): Right(v)
+  
+
+if e is
+| Lit(value) and Map.find_opt(value) is Some(result):
+  Some(result)
+| Lit(value) | Add(0, value) | Add(value, 0): print_int(value); Some(value)
+
+if x == 
+| 0: "zero"
+| 1: "unit"
+| ~else: "?"
+
+if x
+| == 0: "null"
+| > 0: "positive"
+| < 0: then "negative"
+
+if pred(0, 1, 2) of
+| (3, 4): "A"
+| (0, 1, 2, 3): "B"
+| ~else: "C"
+
+fun zip_with(f, xs, ys):
+  if
+  | xs is x :: xs
+    and ys is y :: ys 
+    and zip_with(f, xs, ys) is
+    | Some(tail):
+      Some(f(x, y)) :: tail
+    | None: None
+  | ~else: None
+
+if
+| name.startsWith("_")
+  and name.tailoption is Some(namePostfix)
+  and namePostfix.forall(..isDigit)
+  and namePostfix.toIntOption is Some(index)
+  and index <= arity and index > 0:
+  Right(index, name)
+| ~else: Left(name)
+

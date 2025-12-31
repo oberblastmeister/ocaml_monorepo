@@ -62,6 +62,7 @@ let[@inline] fold i ~init ~f =
 ;;
 
 let[@inline] sum = fold ~init:0 ~f:( + )
+let[@inline] count = fold ~init:0 ~f:(fun acc _ -> acc + 1)
 let[@inline] filter i ~f:pred ~f:f' = i ~f:(fun x -> if pred x then f' x)
 let[@inline] concat_map i ~f ~f:f' = i ~f:(fun x -> f x ~f:f')
 let bind = concat_map
@@ -253,10 +254,19 @@ let[@inline] find_map seq ~f =
 let[@inline] find i ~f = find_map i ~f:(fun x -> if f x then Some x else None)
 let[@inline] exists i ~f = find i ~f |> Option.is_some
 
-let[@inline] int_range ~start ~stop ~f =
-  for i = start to stop do
-    f i
-  done
+let[@inline] range ?(stride = 1) ?(start = `inclusive) ?(stop = `exclusive) start_i stop_i ~f =
+  if stride = 0 then invalid_arg "Iter.range: stride must be non-zero";
+  let start_i = match start with
+  | `inclusive -> start_i
+  | `exclusive -> start_i + 1 in
+  let stop_i = match stop with
+  | `inclusive -> stop_i
+  | `exclusive -> stop_i - 1 in
+  let i = ref start_i in
+  while start_i <= !i && !i <= stop_i do
+    f !i;
+    i := !i + stride;
+  done;
 ;;
 
 (* TODO: make this faster *)
@@ -266,7 +276,7 @@ let rev i =
 ;;
 
 module Infix = struct
-  let ( -- ) start stop = int_range ~start ~stop
+  let ( -- ) start stop = range start stop
 end
 
 include Infix
@@ -352,5 +362,14 @@ let max_elt t ~compare =
     match !m with
     | None -> m := Some x
     | Some x' -> if compare x x' > 0 then m := Some x);
+  !m
+;;
+
+let min_elt t ~compare =
+  let m = ref None in
+  t ~f:(fun x ->
+    match !m with
+    | None -> m := Some x
+    | Some x' -> if compare x x' < 0 then m := Some x);
   !m
 ;;

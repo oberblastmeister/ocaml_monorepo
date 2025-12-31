@@ -19,7 +19,8 @@ module Syntax_helpers = struct
     let int i = Syntax.Expr_int i
 
     let elet var expr body =
-      Syntax.Expr_let { var = Var.create_source var; expr; body; ann = None }
+      Syntax.Expr_let
+        { binding = { var = Var.create_source var; expr }; body; ann = None }
     ;;
   end
 
@@ -62,7 +63,7 @@ let%expect_test "simple" =
   check (E.app (E.ecfun ("x", T.int) (E.var "x")) (E.int 1));
   [%expect
     {|
-    (Expr_let (var x_0) (expr (Expr_int 1))
+    (Expr_let (binding ((var x_0) (expr (Expr_int 1))))
      (body (Expr_var (var x_0) (ann (Ty_int)))) (ann (Ty_int)))
     |}]
 ;;
@@ -90,33 +91,45 @@ let%expect_test "captured" =
                 (E.add (E.var "y") (E.var "r2"))))));
   [%expect
     {|
-    (Expr_let (var x_0)
-     (expr (Expr_bin (lhs (Expr_int 9)) (op Add) (rhs (Expr_int 1234))))
+    (Expr_let
+     (binding
+      ((var x_0)
+       (expr (Expr_bin (lhs (Expr_int 9)) (op Add) (rhs (Expr_int 1234))))))
      (body
-      (Expr_let (var y_1)
-       (expr (Expr_bin (lhs (Expr_int 1)) (op Add) (rhs (Expr_int 2))))
+      (Expr_let
+       (binding
+        ((var y_1)
+         (expr (Expr_bin (lhs (Expr_int 1)) (op Add) (rhs (Expr_int 2))))))
        (body
-        (Expr_let (var z_2)
-         (expr (Expr_bin (lhs (Expr_int 10)) (op Add) (rhs (Expr_int 0))))
+        (Expr_let
+         (binding
+          ((var z_2)
+           (expr (Expr_bin (lhs (Expr_int 10)) (op Add) (rhs (Expr_int 0))))))
          (body
-          (Expr_let (var y_3)
-           (expr
-            (Expr_bin
-             (lhs
-              (Expr_bin (lhs (Expr_var (var z_2) (ann (Ty_int)))) (op Add)
-               (rhs (Expr_var (var y_1) (ann (Ty_int))))))
-             (op Add) (rhs (Expr_var (var x_0) (ann (Ty_int))))))
+          (Expr_let
+           (binding
+            ((var y_3)
+             (expr
+              (Expr_bin
+               (lhs
+                (Expr_bin (lhs (Expr_var (var z_2) (ann (Ty_int)))) (op Add)
+                 (rhs (Expr_var (var y_1) (ann (Ty_int))))))
+               (op Add) (rhs (Expr_var (var x_0) (ann (Ty_int))))))))
            (body
-            (Expr_let (var z_4)
-             (expr (Expr_bin (lhs (Expr_int 0)) (op Add) (rhs (Expr_int 2))))
+            (Expr_let
+             (binding
+              ((var z_4)
+               (expr (Expr_bin (lhs (Expr_int 0)) (op Add) (rhs (Expr_int 2))))))
              (body
-              (Expr_let (var r2_5)
-               (expr
-                (Expr_bin
-                 (lhs
-                  (Expr_bin (lhs (Expr_var (var z_4) (ann (Ty_int)))) (op Add)
-                   (rhs (Expr_var (var y_1) (ann (Ty_int))))))
-                 (op Add) (rhs (Expr_var (var x_0) (ann (Ty_int))))))
+              (Expr_let
+               (binding
+                ((var r2_5)
+                 (expr
+                  (Expr_bin
+                   (lhs
+                    (Expr_bin (lhs (Expr_var (var z_4) (ann (Ty_int)))) (op Add)
+                     (rhs (Expr_var (var y_1) (ann (Ty_int))))))
+                   (op Add) (rhs (Expr_var (var x_0) (ann (Ty_int))))))))
                (body
                 (Expr_bin (lhs (Expr_var (var y_3) (ann (Ty_int)))) (op Add)
                  (rhs (Expr_var (var r2_5) (ann (Ty_int))))))

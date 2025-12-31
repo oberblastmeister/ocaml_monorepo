@@ -47,12 +47,13 @@ let rec infer env (expr : Syntax.expr) =
     let lhs = check env lhs Ty_int in
     let rhs = check env rhs Ty_int in
     Expr_bin { lhs; op; rhs }
-  | Expr_let { var; expr; body; ann = _ } ->
-    let expr = infer env expr in
-    let env' = add_var env var (Syntax.expr_ty_exn expr) in
+  | Expr_let { binding; body; ann = _ } ->
+    let binding = { binding with expr = infer env binding.expr } in
+    let env' = add_var env binding.var (Syntax.expr_ty_exn binding.expr) in
     let body = infer env' body in
     let ty = Syntax.expr_ty_exn body in
-    Expr_let { var; expr; body; ann = Some ty }
+    Expr_let { binding; body; ann = Some ty }
+  | Expr_let_rec _ -> failwith ""
   | Expr_var { var; ann = _ } ->
     let ty = get_var_ty env var in
     Expr_var { var; ann = Some ty }

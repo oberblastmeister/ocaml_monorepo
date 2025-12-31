@@ -23,6 +23,7 @@ val snoc : 'a t -> 'a -> 'a t
 val iter : 'a t -> f:('a -> unit) -> unit
 val fold : 'a t -> init:'b -> f:('b -> 'a -> 'b) -> 'b
 val sum : int t -> int
+val count : 'a t -> int
 val filter : 'a t -> f:('a -> bool) -> 'a t
 val filter_map : 'a t -> f:('a -> 'b option) -> 'b t
 val concat_map : 'a t -> f:('a -> 'b t) -> 'b t
@@ -37,13 +38,19 @@ val find_map : 'a t -> f:('a -> 'b option) -> 'b option
 val find : 'a t -> f:('a -> bool) -> 'a option
 val exists : 'a t -> f:('a -> bool) -> bool
 val for_all : f:('a -> bool) -> 'a t -> bool
-val int_range : start:int -> stop:int -> int t
+val range : 
+  ?stride:int ->
+  ?start:[ `exclusive | `inclusive ] ->
+  ?stop:[ `exclusive | `inclusive ] ->
+  int ->
+  int -> int t
 val rev : 'a t -> 'a t
 val repeat : 'a -> 'a t
 val scan : 'a t -> init:'b -> f:('b -> 'a -> 'b) -> 'b t
 val product : 'a t -> 'b t -> ('a * 'b) t
 val ensure_ephemeral : 'a t -> 'a t
 val max_elt : 'a t -> compare:('a -> 'a -> int) -> 'a option
+val min_elt : 'a t -> compare:('a -> 'a -> int) -> 'a option
 
 module Infix : sig
   val ( -- ) : int -> int -> int t

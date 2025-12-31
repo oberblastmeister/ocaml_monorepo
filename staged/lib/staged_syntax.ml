@@ -29,8 +29,12 @@ type expr =
       ; rhs : expr
       }
   | Expr_let of
-      { var : Var.t
-      ; expr : expr
+      { binding : binding
+      ; body : expr
+      ; ann : ann
+      }
+  | Expr_let_rec of
+      { bindings : binding list
       ; body : expr
       ; ann : ann
       }
@@ -38,6 +42,11 @@ type expr =
       { var : Var.t
       ; ann : ann
       }
+
+and binding =
+  { var : Var.t
+  ; expr : expr
+  }
 
 and expr_fun =
   { param_var : Var.t
@@ -74,6 +83,7 @@ let rec expr_ty_exn e =
   | Expr_int _ -> Ty_int
   | Expr_bin _ -> Ty_int
   | Expr_let { ann; _ } -> Option.value_exn ann
+  | Expr_let_rec { ann; _ } -> Option.value_exn ann
   | Expr_var { ann; _ } -> Option.value_exn ann
 ;;
 
