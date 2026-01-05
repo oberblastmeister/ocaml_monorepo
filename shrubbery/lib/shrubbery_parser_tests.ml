@@ -843,3 +843,60 @@ def nested_match(x, y):
      (rbrace VRBrace))
     |}]
 ;;
+
+let%expect_test "equal sign" =
+  check
+    {|
+    let first: fun:
+      let x: 1324234
+      let y: 12341324
+    |};
+  [%expect {|
+    ((lbrace VLBrace)
+     (groups
+      (((group
+         ((items ((Token (Ident let)) (Token (Ident first))))
+          (block
+           (((token Colon)
+             (block
+              ((lbrace VLBrace)
+               (groups
+                (((group
+                   ((items ((Token (Ident fun))))
+                    (block
+                     (((token Colon)
+                       (block ((lbrace VLBrace) (groups ()) (rbrace VRBrace))))))
+                    (alts ())))
+                  (sep ()))))
+               (rbrace VRBrace))))))
+          (alts ())))
+        (sep ()))
+       ((group
+         ((items ((Token (Ident let)) (Token (Ident x))))
+          (block
+           (((token Colon)
+             (block
+              ((lbrace VLBrace)
+               (groups
+                (((group
+                   ((items ((Token (Number 1324234)))) (block ()) (alts ())))
+                  (sep ()))))
+               (rbrace VRBrace))))))
+          (alts ())))
+        (sep ()))
+       ((group
+         ((items ((Token (Ident let)) (Token (Ident y))))
+          (block
+           (((token Colon)
+             (block
+              ((lbrace VLBrace)
+               (groups
+                (((group
+                   ((items ((Token (Number 12341324)))) (block ()) (alts ())))
+                  (sep ()))))
+               (rbrace VRBrace))))))
+          (alts ())))
+        (sep ()))))
+     (rbrace VRBrace))
+    |}]
+;;

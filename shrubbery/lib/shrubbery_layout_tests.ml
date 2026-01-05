@@ -238,3 +238,20 @@ hello_world } another
      (Token (Ident another)) (Token VRBrace))
     |}]
 ;;
+
+let%expect_test "equal sign" =
+  check
+    {|
+    let first: fun:
+      let x: 1324234
+      let y: 12341324
+    |};
+  [%expect {|
+    ((Token VLBrace) (Token (Ident let)) (Token (Ident first)) (Token Colon)
+     (Token VLBrace) (Token (Ident fun)) (Token Colon) (Token VLBrace)
+     (Token VRBrace) (Token VRBrace) (Token (Ident let)) (Token (Ident x))
+     (Token Colon) (Token VLBrace) (Token (Number 1324234)) (Token VRBrace)
+     (Token (Ident let)) (Token (Ident y)) (Token Colon) (Token VLBrace)
+     (Token (Number 12341324)) (Token VRBrace) (Token VRBrace))
+    |}]
+  
