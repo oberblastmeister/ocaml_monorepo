@@ -118,6 +118,12 @@ let y square(int):
     let y: 12342134
     
 let x: |x Int, y Bool, z Type| Int:
+    match x
+    | first:
+        1234234
+    | second:
+        1341234
+    
     x + y + z
 
 let x(x, y, z) = 12341234

@@ -100,7 +100,7 @@ let rec infer st (e : Syntax.expr) : Effects.t * Syntax.path =
       match Map.find st.State.context var with
       | None -> fail_s [%message "Variable not found" (var : Var.t)]
       | Some ty ->
-          let kind = infer_transparent_exn st (Syntax.path_to_expr ty) in
+          let kind = natural_kind st ty in
           begin match get_universe_exn st kind with
           | Type -> (Effects.empty, ty)
           | Kind | KIND -> (Effects.empty, Path_ty_sing { e = ty; ty = kind })
@@ -256,11 +256,6 @@ let rec infer st (e : Syntax.expr) : Effects.t * Syntax.path =
                   (field : string)])
       in
       (e_eff, decl.ty)
-  | Syntax.Expr_irrelevant ty ->
-      let kind = infer_transparent_exn st (Syntax.path_to_expr ty) in
-      let universe = get_universe_exn st kind in
-      assert (Syntax.Universe.equal universe Type);
-      (Effects.empty, ty)
   | Syntax.Expr_mod decls ->
       begin match
         String.Map.of_list_with_key decls ~get_key:(fun decl -> decl.field)
@@ -360,8 +355,16 @@ and natural_kind st (ty : Syntax.path) : Syntax.path =
       eval_subst_path subst ty_fun.ty
   | Path_proj { e; field } ->
       let ty_mod = natural_kind st e |> zonk st |> Syntax.path_ty_mod_exn in
-      (* let var_to_field =  *)
-      failwith ""
+      let var_subst =
+        List.map ty_mod ~f:(fun decl ->
+            (decl.var, Syntax.Path_proj { e; field = decl.field }))
+        |> Var.Map.of_alist_exn
+      in
+      let decl =
+        List.find ty_mod ~f:(fun decl -> String.equal decl.field field)
+        |> Option.value_exn
+      in
+      subst_path var_subst decl.ty
 
 and check st (e : Syntax.expr) (ty : Syntax.path) : Effects.t =
   match (e, ty) with

@@ -80,7 +80,6 @@ type expr =
   | Expr_core_ty of core_ty
   | Expr_universe of Universe.t
   (* invariant: path for expr_irrelevant is normalized *)
-  | Expr_irrelevant of path
   | Expr_if of { e1 : expr; e2 : expr; e3 : expr }
 
 and expr_ty_sing = { e : expr; ty : expr }
@@ -129,44 +128,3 @@ let path_ty_mod_exn = function
 let value_path_exn = function
   | Value_path p -> p
   | Value_abs _ | Value_mod _ | Value_irrelevant _ -> failwith "not a path"
-
-(* let rec path_to_expr = function
-  | Path_var v -> Expr_var v
-  | Path_core_ty ty -> Expr_core_ty ty
-  | Path_universe u -> Expr_universe u
-  | Path_ty_sing { e; ty } ->
-      Expr_ty_sing { e = path_to_expr e; ty = path_to_expr ty }
-  | Path_ty_mod decls -> Expr_ty_mod (List.map decls ~f:path_ty_decl_to_ty_decl)
-  | Path_ty_fun { params; ty; purity } ->
-      Expr_ty_fun
-        {
-          params = List.map params ~f:path_param_to_param;
-          ty = path_to_expr ty;
-          purity;
-        }
-  | Path_app { e; es } ->
-      Expr_app { e = path_to_expr e; es = List.map es ~f:value_to_expr }
-  | Path_proj { e; field } -> Expr_proj { e = path_to_expr e; field }
-
-and value_to_expr = function
-  | Value_path p -> path_to_expr p
-  | Value_irrelevant ty -> Expr_irrelevant ty
-  | Value_mod decls ->
-      Expr_mod
-        (List.map decls ~f:(fun { field; var; e } ->
-             ({ field; var; e = value_to_expr e } : decl)))
-  | Value_abs { params; body; purity } ->
-      Expr_abs
-        {
-          params = List.map params ~f:path_param_to_expr;
-          body = value_to_expr body;
-          purity;
-        }
-
-and path_param_to_expr ({ var; ty } : path_param) : param =
-  { var; ty = path_to_expr ty }
-
-and path_ty_decl_to_ty_decl { field; var; ty } : ty_decl =
-  { field; var; ty = path_to_expr ty }
-
-and path_param_to_param { var; ty } : param = { var; ty = path_to_expr ty } *)
