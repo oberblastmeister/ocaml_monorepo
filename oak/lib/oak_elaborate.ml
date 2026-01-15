@@ -5,11 +5,8 @@ open struct
   module Core = Oak_core
   module Acc = Utility.Acc
   module Purity = Syntax.Purity
-  module Transparency = Syntax.Transparency
   module Var = Syntax.Var
   module Cvar = Syntax.Cvar
-
-  type path = Syntax.path
 end
 
 module State = struct
@@ -57,127 +54,6 @@ exception Exn of Error.t
 let fail e = raise_notrace (Exn e)
 let fail_s s = fail (Error.t_of_sexp s)
 
-let rec subst_value (subst : Syntax.path Var.Map.t) (v : Syntax.value) :
-    Syntax.value =
-  match v with
-  | Value_path p -> Value_path (subst_path subst p)
-  | Value_irrelevant -> Value_irrelevant
-  | Value_mod { var; decls } ->
-      let decls =
-        List.map decls ~f:(fun { field; e } ->
-            ({ field; e = subst_value subst e } : Syntax.value_decl))
-      in
-      Value_mod { var; decls }
-  | Value_abs { params; body; purity } ->
-      let params = List.map params ~f:(subst_param subst) in
-      let body = subst_value subst body in
-      Value_abs { params; body; purity }
-
-and subst_path (subst : Syntax.path Var.Map.t) (p : Syntax.path) : Syntax.path =
-  match p with
-  | Path_var (Var var) -> Map.find subst var |> Option.value ~default:p
-  | Path_var (Record_field _) -> p
-  | Path_core_ty _ | Path_universe _ -> p
-  | Path_ty_sing { e; ty } ->
-      let e = subst_path subst e in
-      let ty = subst_path subst ty in
-      Path_ty_sing { e; ty }
-  | Path_ty_mod { var; ty_decls } ->
-      let ty_decls =
-        List.map ty_decls ~f:(fun ty_decl ->
-            { ty_decl with ty = subst_path subst ty_decl.ty })
-      in
-
-      Path_ty_mod { var; ty_decls }
-  | Path_ty_fun { params; ty; purity } ->
-      let params = List.map params ~f:(subst_param subst) in
-      let ty = subst_path subst ty in
-      Path_ty_fun { params; ty; purity }
-  | Path_app { e; es } ->
-      let e = subst_path subst e in
-      let es = List.map es ~f:(subst_value subst) in
-      Path_app { e; es }
-  | Path_proj { e; field } -> Path_proj { e = subst_path subst e; field }
-
-and subst_param (subst : Syntax.path Var.Map.t)
-    ({ var; ty } : Syntax.path_param) : Syntax.path_param =
-  let ty = subst_path subst ty in
-  { var; ty }
-
-and eval_subst_path (subst : Syntax.value Var.Map.t) (p : Syntax.path) :
-    Syntax.path =
-  eval_subst_path' subst p |> Syntax.value_path_exn
-
-(* p and subst must be well typed in some context *)
-and eval_subst_path' (subst : Syntax.value Var.Map.t) (p : Syntax.path) :
-    Syntax.value =
-  match p with
-  | Path_var (Var var) ->
-      Map.find subst var |> Option.value ~default:(Value_path p)
-  | Path_var (Record_field _) -> Value_path p
-  | Path_core_ty _ | Path_universe _ -> Value_path p
-  | Path_ty_sing { e; ty } ->
-      let e = eval_subst_path subst e in
-      let ty = eval_subst_path subst ty in
-      Value_path (Path_ty_sing { e; ty })
-  | Path_ty_mod { var; ty_decls } ->
-      let ty_decls =
-        List.map ty_decls ~f:(fun { field; ty } ->
-            ({ field; ty = eval_subst_path subst ty } : Syntax.path_ty_decl))
-      in
-      Value_path (Path_ty_mod { var; ty_decls })
-  | Path_ty_fun { params; ty; purity } ->
-      let params =
-        List.map params ~f:(fun { var; ty } : Syntax.path_param ->
-            { var; ty = eval_subst_path subst ty })
-      in
-      let ty = eval_subst_path subst ty in
-      Value_path (Path_ty_fun { params; ty; purity })
-  | Path_app { e; es } ->
-      let e = eval_subst_path' subst e in
-      let es = List.map es ~f:(eval_subst_value subst) in
-      begin match e with
-      | Value_mod _ -> failwith "invalid value for applications"
-      | Value_path e -> Value_path (Path_app { e; es })
-      | Value_irrelevant -> Value_irrelevant
-      | Value_abs { params; body; purity } ->
-          assert (Purity.equal purity Pure);
-          let subst =
-            List.fold (List.zip_exn params es) ~init:subst
-              ~f:(fun subst (param, arg) ->
-                Map.add_exn subst ~key:param.var ~data:arg)
-          in
-          eval_subst_value subst body
-      end
-  | Path_proj { e; field } ->
-      let e = eval_subst_path' subst e in
-      begin match e with
-      | Value_mod { var; decls } ->
-          let decl =
-            List.find decls ~f:(fun decl -> String.equal decl.field field)
-            |> Option.value_exn ~message:"field should exist"
-          in
-          decl.e
-      | Value_path e -> Value_path (Path_proj { e; field })
-      | Value_irrelevant -> Value_irrelevant
-      | Value_abs _ -> failwith "invalid value for projection"
-      end
-
-(* does not evaluate under lambdas, which is okay because they will be evaluated when they are applied *)
-and eval_subst_value (subst : Syntax.value Var.Map.t) (v : Syntax.value) :
-    Syntax.value =
-  match v with
-  | Value_mod { var; decls } ->
-      let decls =
-        List.map decls ~f:(fun { field; e } : Syntax.value_decl ->
-            let e = eval_subst_value subst e in
-            { field; e })
-      in
-      Value_mod { var; decls }
-  | Value_abs _ -> v
-  | Value_irrelevant -> Value_irrelevant
-  | Value_path p -> eval_subst_path' subst p
-
 (*
 the path should be well typed in the context
 natural kind returns the most natural kind, which is the kind that is inferred in the singleton when inferred normally
@@ -185,34 +61,36 @@ since we are already taking a path as input, the input already has identity and 
 *)
 let rec natural_kind st (ty : Syntax.path) : Syntax.path =
   match ty with
-  | Path_var var -> Map.find_exn st.State.context var
   | Path_core_ty _ -> Path_universe Type
   | Path_universe u -> Path_universe (Syntax.Universe.incr_exn u)
   | Path_ty_sing { e = _; ty } -> natural_kind st ty
-  | Path_ty_mod { var; ty_decls } ->
-      let _, universe =
-        List.fold ty_decls ~init:(st, Syntax.Universe.minimum)
-          ~f:(fun (st, u) ty_decl ->
-            let kind = natural_kind st ty_decl.ty in
-            let v = get_universe_exn st kind in
-            ( State.add
-                (Record_field { var; field = ty_decl.field })
-                ty_decl.ty st,
-              Syntax.Universe.max u v ))
-      in
-      Path_universe universe
+  | Path_ty_mod ty_mod ->
+      Syntax.Path_ty_mod.unpack ty_mod ~f:(fun { var; ty_decls } ->
+          let _, universe =
+            List.fold ty_decls ~init:(st, Syntax.Universe.minimum)
+              ~f:(fun (st, u) ty_decl ->
+                let kind = natural_kind st ty_decl.ty in
+                let v = get_universe_exn st kind in
+                ( State.add
+                    (Record_field { var; field = ty_decl.field })
+                    ty_decl.ty st,
+                  Syntax.Universe.max u v ))
+          in
+          Syntax.Path_universe universe)
   | Path_ty_fun ty_fun ->
-      let st, universe =
-        List.fold ty_fun.params ~init:(st, Syntax.Universe.minimum)
-          ~f:(fun (st, u) param ->
-            let kind = natural_kind st param.ty in
-            let v = get_universe_exn st kind in
-            (State.add (Var param.var) param.ty st, Syntax.Universe.max u v))
-      in
-      let ret_kind = natural_kind st ty_fun.ty in
-      let ret_universe = get_universe_exn st ret_kind in
-      let universe = Syntax.Universe.max universe ret_universe in
-      Path_universe universe
+      Syntax.Path_ty_fun.unpack ty_fun ~f:(fun { params; ty; purity = _ } ->
+          let st, universe =
+            List.fold params ~init:(st, Syntax.Universe.minimum)
+              ~f:(fun (st, u) param ->
+                let kind = natural_kind st param.ty in
+                let v = get_universe_exn st kind in
+                (State.add (Var param.var) param.ty st, Syntax.Universe.max u v))
+          in
+          let ret_kind = natural_kind st ty in
+          let ret_universe = get_universe_exn st ret_kind in
+          let universe = Syntax.Universe.max universe ret_universe in
+          Syntax.Path_universe universe)
+  (* | Path_var var -> Map.find_exn st.State.context var
   | Path_app { e; es } ->
       let ty_fun = natural_kind st e |> zonk st |> Syntax.path_ty_fun_exn in
       let subst =
@@ -223,7 +101,7 @@ let rec natural_kind st (ty : Syntax.path) : Syntax.path =
       eval_subst_path subst ty_fun.ty
   | Path_proj { e; field } ->
       let ty_mod = natural_kind st e |> zonk st |> Syntax.path_ty_mod_exn in
-      (* let var_subst =
+      let var_subst =
         List.map ty_mod.decls ~f:(fun decl ->
             (decl.var, Syntax.Path_proj { e; field = decl.field }))
         |> Var.Map.of_alist_exn
@@ -233,7 +111,7 @@ let rec natural_kind st (ty : Syntax.path) : Syntax.path =
         |> Option.value_exn
       in
       subst_path var_subst decl.ty *)
-      failwith ""
+  | _ -> failwith ""
 
 (* exposes the head of a path by normalizing and pushing singletons down one layer *)
 and zonk st (path : Syntax.path) : Syntax.path =
@@ -247,7 +125,7 @@ and maybe_reduce_sing (st : State.t) (path : Syntax.path) : Syntax.path =
 
 (* normalizes a path to whnf *)
 and normalize_path (st : State.t) (path : Syntax.path) : Syntax.path =
-  let path : Syntax.path =
+  (* let path : Syntax.path =
     match path with
     | Path_app { e; es } ->
         let e = normalize_path st e in
@@ -260,11 +138,12 @@ and normalize_path (st : State.t) (path : Syntax.path) : Syntax.path =
     | Path_ty_fun _ ->
         path
   in
-  path
+  path *)
+  failwith ""
 
 (* pushes singletons down one layer *)
 and push_sing st (path : Syntax.path) : Syntax.path =
-  match path with
+  (* match path with
   | Path_ty_sing { e; ty } -> begin
       match zonk st ty with
       | Path_universe _ -> path
@@ -290,7 +169,8 @@ and push_sing st (path : Syntax.path) : Syntax.path =
           Path_ty_fun { params; ty = Path_ty_sing { e; ty }; purity = Pure }
       | Path_var _ | Path_app _ | Path_proj _ -> ty
     end
-  | _ -> path
+  | _ -> path *)
+  failwith ""
 
 and get_universe st (ty : Syntax.path) : Syntax.Universe.t option =
   match zonk st ty with
@@ -307,18 +187,25 @@ exception Synthesize_value
 
 let rec synthesize_value' (ty : Syntax.path) : Syntax.value =
   match ty with
-  | Path_var _ | Path_app _ | Path_proj _ | Path_core_ty _ | Path_universe _ ->
-      raise_notrace Synthesize_value
+  | Path_long_ident _ -> failwith "cannot synthesize value from long ident"
+  | Path_core_ty _ | Path_universe _ -> raise_notrace Synthesize_value
   | Path_ty_sing { e; ty = _ } -> Value_path e
-  | Path_ty_mod { var; ty_decls } ->
-      let decls =
-        List.map ty_decls ~f:(fun { field; ty } : Syntax.value_decl ->
-            { field; e = synthesize_value' ty })
-      in
-      Value_mod { var; decls }
-  | Path_ty_fun { params = _; ty = _; purity = Impure } -> Value_irrelevant
-  | Path_ty_fun { params; ty; purity = Pure } ->
-      Value_abs { params; body = synthesize_value' ty; purity = Pure }
+  | Path_ty_mod ty_mod ->
+      Syntax.Path_ty_mod.unpack ty_mod ~f:(fun { var; ty_decls } ->
+          (* TODO: make this non dependent *)
+          let decls =
+            List.map ty_decls ~f:(fun { field; ty } : Syntax.value_decl ->
+                { field; e = synthesize_value' ty })
+          in
+          Syntax.Value_mod { decls })
+  | Path_ty_fun ty_fun ->
+      Syntax.Path_ty_fun.unpack ty_fun ~f:(fun { params; ty; purity } ->
+          match purity with
+          | Impure -> Syntax.Value_irrelevant
+          | Pure ->
+              Value_abs
+                (Syntax.Value_abs.pack
+                   { params; body = synthesize_value' ty; purity = Pure }))
 
 (* precondition: is_ty_transparent ty = true *)
 and synthesize_value_exn st (ty : Syntax.path) : Syntax.value =
@@ -356,28 +243,38 @@ let rec subtype st (ty1 : Syntax.path) (ty2 : Syntax.path) : unit =
               (u : Syntax.Universe.t)
               (v : Syntax.Universe.t)];
       equivalent st e1 e2 (Path_universe u)
-  | Path_ty_mod decls1, Path_ty_mod decls2 ->
-      (* let zipped_decls =
-        match List.zip decls1 decls2 with
-        | Ok t -> t
-        | Unequal_lengths ->
-            fail_s
-              [%message
-                "different number of declarations"
-                  (decls1 : Syntax.path_ty_decl list)
-                  (decls2 : Syntax.path_ty_decl list)]
-      in
-      let st =
-        List.fold zipped_decls ~init:st ~f:(fun st (decl1, decl2) ->
-            failwith "")
-      in *)
-      ()
-  | ( Path_ty_fun { params = params1; ty = ty1; purity = purity1 },
-      Path_ty_fun { params = params2; ty = ty2; purity = purity2 } ) ->
-      if Purity.(purity1 > purity2) then
-        fail_s
-          [%message
-            "purity was not a subtype" (purity1 : Purity.t) (purity2 : Purity.t)]
+  | Path_ty_mod ty_mod1, Path_ty_mod ty_mod2 ->
+      Syntax.Path_ty_mod.unpack ty_mod1
+        ~f:(fun { var = var1; ty_decls = decls1 } ->
+          Syntax.Path_ty_mod.unpack ty_mod2
+            ~f:(fun { var = var2; ty_decls = decls2 } ->
+              (* let zipped_decls =
+              match List.zip decls1 decls2 with
+              | Ok t -> t
+              | Unequal_lengths ->
+                  fail_s
+                    [%message
+                      "different number of declarations"
+                        (decls1 : Syntax.path_ty_decl list)
+                        (decls2 : Syntax.path_ty_decl list)]
+            in
+            let st =
+              List.fold zipped_decls ~init:st ~f:(fun st (decl1, decl2) ->
+                  failwith "")
+            in *)
+              ()))
+  | Path_ty_fun ty_fun1, Path_ty_fun ty_fun2 ->
+      Syntax.Path_ty_fun.unpack ty_fun1
+        ~f:(fun { params = params1; ty = ty1; purity = purity1 } ->
+          Syntax.Path_ty_fun.unpack ty_fun2
+            ~f:(fun { params = params2; ty = ty2; purity = purity2 } ->
+              if Purity.(purity1 > purity2) then
+                fail_s
+                  [%message
+                    "purity was not a subtype"
+                      (purity1 : Purity.t)
+                      (purity2 : Purity.t)];
+              ()))
   | _ -> fail_s [%message "Not subtype" (ty1 : Syntax.path) (ty2 : Syntax.path)]
 
 (*
@@ -433,26 +330,27 @@ let rec infer st (e : Syntax.expr) : Effects.t * Syntax.path =
             let st = State.add_list vars st in
             ((st, eff_acc ++ eff), ty))
       in
-      let tys_and_params =
-        match List.zip es_tys e_ty.params with
-        | Ok t -> t
-        | Unequal_lengths ->
-            fail_s
-              [%message
-                "Invalid number of parameters passed"
-                  ~expected:(List.length e_ty.params : int)
-                  ~actual:(List.length es_tys : int)]
-      in
-      let subst =
-        List.fold tys_and_params ~init:Var.Map.empty
-          ~f:(fun subst (ty, param) ->
-            subtype st ty (eval_subst_path subst param.ty);
-            let v = synthesize_value_exn st ty in
-            Map.add_exn subst ~key:param.var ~data:v)
-      in
-      let res_eff = e_eff ++ Effects.of_purity e_ty.purity ++ es_eff in
-      let res_ty = eval_subst_path subst e_ty.ty in
-      (res_eff, res_ty)
+      Syntax.Path_ty_fun.unpack e_ty ~f:(fun e_ty ->
+          let tys_and_params =
+            match List.zip es_tys e_ty.params with
+            | Ok t -> t
+            | Unequal_lengths ->
+                fail_s
+                  [%message
+                    "Invalid number of parameters passed"
+                      ~expected:(List.length e_ty.params : int)
+                      ~actual:(List.length es_tys : int)]
+          in
+          let subst =
+            List.fold tys_and_params ~init:Var.Map.empty
+              ~f:(fun subst (ty, param) ->
+                subtype st ty (Syntax.eval_subst_path subst param.ty);
+                let v = synthesize_value_exn st ty in
+                Map.add_exn subst ~key:param.var ~data:v)
+          in
+          let res_eff = e_eff ++ Effects.of_purity e_ty.purity ++ es_eff in
+          let res_ty = Syntax.eval_subst_path subst e_ty.ty in
+          (res_eff, res_ty))
   | Syntax.Expr_abs { params; body; purity } ->
       let st', params =
         List.fold_map ~init:st
@@ -477,9 +375,11 @@ let rec infer st (e : Syntax.expr) : Effects.t * Syntax.path =
                 "Cannot generate hidden existential types in impure functor"
                   ~vars:(body_eff_vars : (Var.t * Syntax.path) list)];
           ( Effects.empty,
-            Syntax.Path_ty_fun { params; ty = body_ty; purity = Impure } )
+            Syntax.Path_ty_fun
+              (Syntax.Path_ty_fun.pack
+                 { params; ty = body_ty; purity = Impure }) )
       | Pure ->
-          let new_body_eff_vars =
+          (* let new_body_eff_vars =
             List.map body_eff_vars ~f:(fun (var, ty) ->
                 let new_params =
                   List.map params ~f:(fun param ->
@@ -504,11 +404,13 @@ let rec infer st (e : Syntax.expr) : Effects.t * Syntax.path =
                 (var, Var.clone var, ty'))
           in
           let app_exprs =
-            List.map params ~f:(fun p -> Syntax.Value_path (Path_var (Var p.var)))
+            List.map params ~f:(fun p ->
+                Syntax.Value_path (Path_var (Var p.var)))
           in
           let subst =
             List.map new_body_eff_vars ~f:(fun (var1, var2, _ty) ->
-                (var1, Syntax.Path_app { e = Path_var (Var var2); es = app_exprs }))
+                ( var1,
+                  Syntax.Path_app { e = Path_var (Var var2); es = app_exprs } ))
             |> Var.Map.of_alist_exn
           in
           let res_ty =
@@ -521,7 +423,8 @@ let rec infer st (e : Syntax.expr) : Effects.t * Syntax.path =
           let res_eff =
             { Effects.vars = Acc.of_list eff_vars; purity = Pure }
           in
-          (res_eff, res_ty)
+          (res_eff, res_ty) *)
+          assert false
       end
   | Syntax.Expr_let { var; rhs; body } ->
       let rhs_eff, rhs_ty = infer_force_transparent st var.name rhs in
@@ -532,24 +435,25 @@ let rec infer st (e : Syntax.expr) : Effects.t * Syntax.path =
       in
       let value = synthesize_value_exn st rhs_ty in
       let subst = Var.Map.singleton var value in
-      let res_ty = eval_subst_path subst body_ty in
+      let res_ty = Syntax.eval_subst_path subst body_ty in
       (rhs_eff ++ body_eff, res_ty)
   | Syntax.Expr_proj { e; field } ->
       let e_eff, e_ty = infer_force_transparent st "proj" e in
       let vars, e_eff = Effects.get_cvars e_eff in
       let st = State.add_list vars st in
       let ty_mod = Syntax.path_ty_mod_exn (zonk st e_ty) in
-      let decl =
-        List.find ty_mod.ty_decls ~f:(fun ty_decl ->
-            String.equal ty_decl.field field)
-        |> Option.value_or_thunk ~default:(fun () ->
-            fail_s
-              [%message
-                "Field not found"
-                  ~ty:(ty_mod : Syntax.path_ty_mod)
-                  (field : string)])
-      in
-      (e_eff, decl.ty)
+      Syntax.Path_ty_mod.unpack ty_mod ~f:(fun ty_mod ->
+          let decl =
+            List.find ty_mod.ty_decls ~f:(fun ty_decl ->
+                String.equal ty_decl.field field)
+            |> Option.value_or_thunk ~default:(fun () ->
+                fail_s
+                  [%message
+                    "Field not found"
+                      ~ty:(ty_mod : Syntax.Path_ty_mod.data)
+                      (field : string)])
+          in
+          (e_eff, decl.ty))
   | Syntax.Expr_mod { var; decls } ->
       begin match
         String.Map.of_list_with_key decls ~get_key:(fun decl -> decl.field)
@@ -572,7 +476,7 @@ let rec infer st (e : Syntax.expr) : Effects.t * Syntax.path =
             ( (State.add (Record_field { var; field }) ty st, acc_eff ++ eff),
               ty_decl ))
       in
-      (eff, Syntax.Path_ty_mod { var; ty_decls })
+      (eff, Syntax.Path_ty_mod (Syntax.Path_ty_mod.pack { var; ty_decls }))
   | Syntax.Expr_ty_fun ty_fun ->
       let ty_fun = expr_ty_fun_to_path st ty_fun in
       let kind = natural_kind st (Path_ty_fun ty_fun) in
@@ -636,7 +540,7 @@ and expr_ty_fun_to_path st ({ params; ty; purity } : Syntax.expr_ty_fun) :
         (State.add (Var param.var) param.ty st, param))
   in
   let ty = expr_to_path st ty in
-  { params; ty; purity }
+  Syntax.Path_ty_fun.pack { params; ty; purity }
 
 and expr_ty_mod_to_path st ({ var; ty_decls } : Syntax.ty_mod) :
     Syntax.path_ty_mod =
@@ -646,7 +550,7 @@ and expr_ty_mod_to_path st ({ var; ty_decls } : Syntax.ty_mod) :
         ( State.add (Record_field { var; field }) ty st,
           ({ field; ty } : Syntax.path_ty_decl) ))
   in
-  { var; ty_decls }
+  Syntax.Path_ty_mod.pack { var; ty_decls }
 
 (* forces the inferred type to always be transparent by possibly generating abstract types *)
 and infer_force_transparent st name (expr : Syntax.expr) :
@@ -658,7 +562,8 @@ and infer_force_transparent st name (expr : Syntax.expr) :
     | false ->
         let var = Var.create name in
         ( Effects.of_var (var, ty),
-          Syntax.Path_ty_sing { e = Path_var (Var var); ty } )
+          Syntax.Path_ty_sing
+            { e = Path_long_ident (Long_ident_var (Var var)); ty } )
   in
   (eff1 ++ eff2, rhs_ty_transparent)
 
