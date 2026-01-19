@@ -128,6 +128,15 @@ let x: |x Int, y Bool, z Type| Int:
 
 let x(x, y, z) = 12341234
 
+let my_function(another)
+  x + y + z
+
+type my_function(another)
+  x + y + z
+
+let my_function((x Int, y Int, z Bool)):
+  x + y + z
+  
 let my_function(x Int, y Int, z Bool):
     x + y + z + 1234234
 
