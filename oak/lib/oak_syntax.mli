@@ -17,7 +17,6 @@ module Universe : sig
   val maximum : t
   val to_int : t -> int
   val of_int_exn : int -> t
-  val lub : t -> t -> t
   val incr_exn : t -> t
 end
 

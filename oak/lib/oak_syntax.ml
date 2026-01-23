@@ -33,7 +33,6 @@ module Universe = struct
     | 2 -> Sig
     | _ -> failwith "invalid universe"
 
-  let lub u v = of_int_exn (Int.max (to_int u) (to_int v))
   let incr_exn u = of_int_exn (to_int u + 1)
 end
 
