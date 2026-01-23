@@ -26,6 +26,7 @@
    (= v0.17.1))
   (ppx_jane
    (= v0.17.0))
+  utility
  )
  (tags
   ("add topics" "to describe" your project)))

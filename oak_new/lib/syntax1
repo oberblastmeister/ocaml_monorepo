@@ -90,11 +90,11 @@ let Io = sig:
 let Eq = sig {
   type K Kind
   
-  type T func (K) Type
+  type T func(K) Type
   
-  let sexp_of_t func(k K, T(k)) sexp.T
+  let sexp_of_t func('k K @ 0, 'b type @ 0, T(k)) sexp.T
   
-  let t_of_sexp func(k K, sexp.T) T
+  let t_of_sexp func (k K) T -> T
 }
   
 (= (lambda(A type): A) func(type) type)
@@ -126,7 +126,7 @@ let x: |x Int, y Bool, z Type| Int:
     
     x + y + z
 
-let x(x, y, z) = 12341234
+type x(x, y, z) = 12341234
 
 let my_function(another)
   x + y + z
@@ -134,9 +134,6 @@ let my_function(another)
 type my_function(another)
   x + y + z
 
-let my_function((x Int, y Int, z Bool)):
-  x + y + z
-  
 let my_function(x Int, y Int, z Bool):
     x + y + z + 1234234
 
