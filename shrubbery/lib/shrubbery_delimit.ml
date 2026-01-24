@@ -105,7 +105,7 @@ let rec single st : Token_tree.t =
         State.add_error st (Error.Mismatching_delimiters { ldelim; rdelim });
         rdelim
     in
-    Token_tree.Tree { ldelim = ldelim.token; tts; rdelim = rdelim.token }
+    Token_tree.Delim { ldelim = ldelim.token; tts; rdelim = rdelim.token }
   | Some t -> Token_tree.Token t.token
 
 and many st is_top_level = many_rec [] st is_top_level
@@ -152,23 +152,24 @@ let%expect_test "smoke" =
     {|
     ((Token Newline) (Token (Whitespace 4)) (Token (Ident awef))
      (Token (Whitespace 1)) (Token (Ident call_function))
-     (Tree (ldelim LParen)
+     (Delim (ldelim LParen)
       (tts
        ((Token (Ident fiaefw)) (Token Comma) (Token (Whitespace 1))
         (Token (Ident waef)) (Token Comma) (Token (Whitespace 1))
-        (Tree (ldelim LParen)
+        (Delim (ldelim LParen)
          (tts
           ((Token (Ident aewf)) (Token Comma) (Token (Whitespace 1))
-           (Tree (ldelim LBrack)
+           (Delim (ldelim LBrack)
             (tts
              ((Token (Ident aewf)) (Token (Whitespace 1))
-              (Tree (ldelim LBrace) (tts ((Token (Ident awef)))) (rdelim RBrace))))
+              (Delim (ldelim LBrace) (tts ((Token (Ident awef))))
+               (rdelim RBrace))))
             (rdelim RBrack))
            (Token (Whitespace 1)) (Token (Ident awef))))
          (rdelim RParen))))
       (rdelim RParen))
      (Token Newline) (Token (Whitespace 4))
-     (Tree (ldelim LBrack)
+     (Delim (ldelim LBrack)
       (tts
        ((Token (Ident another)) (Token (Whitespace 1)) (Token (Ident one))
         (Token Comma) (Token (Whitespace 1)) (Token (Ident another))

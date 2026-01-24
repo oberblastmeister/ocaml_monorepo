@@ -1,3 +1,4 @@
+module Match = Shrubbery_match
 module Lexer = Shrubbery_lexer
 module Parser = Shrubbery_parser
 module Token = Shrubbery_token

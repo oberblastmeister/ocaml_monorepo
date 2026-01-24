@@ -126,11 +126,11 @@ let insert_virtual_tokens tokens tts =
         add_tt st (Token token.token)
       end
     end
-    | Tree { ldelim; tts = inner_tts; rdelim } ->
+    | Delim { ldelim; tts = inner_tts; rdelim } ->
       let curr_lc = line_cols.(ldelim.index) in
       let inner_tts = go_inner inner_tts in
       let tt =
-        Token_tree.Tree { ldelim = ldelim.token; tts = inner_tts; rdelim = rdelim.token }
+        Token_tree.Delim { ldelim = ldelim.token; tts = inner_tts; rdelim = rdelim.token }
       in
       if Token.equal ldelim.token LBrace && top_is st Unknown_indent
       then begin

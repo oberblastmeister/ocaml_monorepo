@@ -69,8 +69,11 @@ type bruh: int -> int -> string
 
 let {x type} (c int) (c bool) (x x) :: int -> int -> int =
 
-let f[x int, y int, z int](c int, c bool, c fun(int) fun(string) int) fun(int) fun(int) bool:
-  let another: fun(x, y, z): 1324
+let f(c Int, c Bool, c Fun(int) Fun(string) Int) Fun(Int) Fun(Int) Bool:
+  let another = fun(x, y, z): 1324
+  
+  let final Fun(Int, Int, Int) Int = fun(x, y, z):
+    x + y + z
   
   let bruh:
     let another: 123
@@ -78,7 +81,7 @@ let f[x int, y int, z int](c int, c bool, c fun(int) fun(string) int) fun(int) f
     another + bruh
   c + c
 
-let f [a type] (c int) (c bool) string =
+let f (c int) (c bool) string =
   let bruh = 134
   let another = 1234234
   let x, y, z = bruh + another
@@ -88,6 +91,10 @@ record Bruh:
   first int
   second int
   
+let another = .(first: 1234, second: 21334)
+
+let final = .First(first: 1243, second: 234324)
+
 type first: Bruh
 
 def another:

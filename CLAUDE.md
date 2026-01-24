@@ -143,6 +143,29 @@ Benefits:
 
 **Important**: Use `raise_notrace` instead of `raise` when using exceptions for control flow. This avoids the performance overhead of capturing backtraces for expected error conditions.
 
+### Prefer Pattern Matching Over Equality Functions
+
+When matching on record fields or variant payloads, use pattern matching instead of equality functions like `Token.equal`:
+
+```ocaml
+(* Good: Pattern matching *)
+match State.peek st with
+| Some (Token { token = VLBrace; _ }) -> ...
+| Some (Token { token = Colon | Equal; _ }) -> ...
+| Some (Delim { ldelim = { token = LBrace; _ }; tts; rdelim }) -> ...
+
+(* Less preferred: Equality functions with guards *)
+match State.peek st with
+| Some (Token ti) when Token.equal ti.token VLBrace -> ...
+| Some (Token ti) when Token.equal ti.token Colon || Token.equal ti.token Equal -> ...
+```
+
+Benefits:
+- More idiomatic OCaml
+- Compiler can check exhaustiveness
+- Often more concise, especially with or-patterns
+- Binds values directly without needing to extract from records
+
 ## Naming conventions
 
 Follow core library naming conventions:

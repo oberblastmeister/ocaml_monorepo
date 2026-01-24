@@ -14,21 +14,21 @@ let unwrap env o =
   | Some x -> x
 ;;
 
-let optional env f =
-  match f env with
+let optional f =
+  match f () with
   | exception Fail -> None
   | x -> Some x
 ;;
 
-let either env f g =
-  match f env with
-  | exception Fail -> First (g env)
+let either f g =
+  match f () with
+  | exception Fail -> First (g ())
   | x -> Second x
 ;;
 
-let many_rev env f =
+let many_rev f =
   let rec loop acc =
-    match f env with
+    match f () with
     | exception Fail -> acc
     | x -> loop (x :: acc)
   in
@@ -36,16 +36,24 @@ let many_rev env f =
 ;;
 
 let guard env b = if not b then fail env
+let many f = many_rev f |> List.rev
 
-let many env f = many_rev env f |> List.rev
-
-let some_rev env f =
-  let x = f env in
-  let xs = many_rev env f in
+let some_rev f =
+  let x = f () in
+  let xs = many_rev f in
   x :: xs
 ;;
 
-let some env f = some_rev env f |> List.rev
+let some f = some_rev f |> List.rev
+
+let rec one_of fs =
+  match fs with
+  | [] -> raise_notrace Fail
+  | f :: rest ->
+    (match f () with
+     | exception Fail -> one_of rest
+     | x -> x)
+;;
 
 module List = struct
   type 'a t = 'a list ref
@@ -72,30 +80,63 @@ module List = struct
 
   let create env xs ~f =
     let r = ref xs in
-    f env r;
+    f r;
     empty env r
   ;;
 
-  let backtrack env items f =
-    let saved = !items in
-    match f env with
+  let optional t f =
+    let saved = !t in
+    match f () with
     | exception Fail ->
-      items := saved;
-      fail env
-    | x -> x
+      t := saved;
+      None
+    | x -> Some x
+  ;;
+
+  let either t f g =
+    let saved = !t in
+    match f () with
+    | exception Fail ->
+      t := saved;
+      First (g ())
+    | x -> Second x
+  ;;
+
+  let many_rev t f =
+    let rec loop acc =
+      let saved = !t in
+      match f () with
+      | exception Fail ->
+        t := saved;
+        acc
+      | x -> loop (x :: acc)
+    in
+    loop []
+  ;;
+
+  let guard env _t b = if not b then fail env
+  let many t f = many_rev t f |> List.rev
+
+  let some_rev t f =
+    let x = f () in
+    let xs = many_rev t f in
+    x :: xs
+  ;;
+
+  let some t f = some_rev t f |> List.rev
+
+  let rec one_of t fs =
+    match fs with
+    | [] -> raise_notrace Fail
+    | f :: rest ->
+      let saved = !t in
+      (match f () with
+       | exception Fail ->
+         t := saved;
+         one_of t rest
+       | x -> x)
   ;;
 end
-
-let rec one_of env fs =
-  match fs with
-  | [] -> fail env
-  | f :: rest ->
-    (match f env with
-     | exception Fail -> one_of env rest
-     | x -> x)
-;;
-
-
 
 let run f =
   match f Env with
@@ -104,9 +145,62 @@ let run f =
 ;;
 
 module Syntax = struct
-  let ( <|> ) env f g =
-    match f env with
-    | exception Fail -> g env
+  let ( <|> ) f g =
+    match f () with
+    | exception Fail -> g ()
     | x -> x
   ;;
 end
+
+let%test_module "List tests" =
+  (module struct
+    let%expect_test "many consumes all" =
+      let t = ref [ 1; 2; 3 ] in
+      let res = List.many t (fun () -> List.next Env t) in
+      print_s [%sexp (res : int list)];
+      [%expect {| (1 2 3) |}]
+    ;;
+
+    let%expect_test "optional backtracks" =
+      let t = ref [ 1; 2 ] in
+      let res =
+        List.optional t (fun () ->
+          let _ = List.next Env t in
+          fail Env)
+      in
+      print_s [%sexp (res : int option)];
+      print_s [%sexp (!t : int list)];
+      [%expect
+        {|
+      ()
+      (1 2)
+    |}]
+    ;;
+
+    let%expect_test "either backtracks" =
+      let t = ref [ 1; 2 ] in
+      let res =
+        List.either
+          t
+          (fun () ->
+             let _ = List.next Env t in
+             fail Env)
+          (fun () -> List.next Env t)
+      in
+      (match res with
+       | First x ->
+         print_endline "First";
+         print_s [%sexp (x : int)]
+       | Second x ->
+         print_endline "Second";
+         print_s [%sexp (x : int)]);
+      print_s [%sexp (!t : int list)];
+      [%expect
+        {|
+      First
+      1
+      (2)
+    |}]
+    ;;
+  end)
+;;

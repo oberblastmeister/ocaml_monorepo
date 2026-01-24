@@ -1,15 +1,16 @@
 type t
 
+val env : t
 val fail : t -> 'a
 val unwrap : t -> 'a option -> 'a
-val optional : t -> (t -> 'a) -> 'a option
-val either : t -> (t -> 'a) -> (t -> 'b) -> ('b, 'a) Base.Either.t
-val many_rev : t -> (t -> 'a) -> 'a list
-val many : t -> (t -> 'a) -> 'a list
-val some_rev : t -> (t -> 'a) -> 'a list
-val some : t -> (t -> 'a) -> 'a list
+val optional : (unit -> 'a) -> 'a option
+val either : (unit -> 'a) -> (unit -> 'b) -> ('b, 'a) Base.Either.t
+val many_rev : (unit -> 'a) -> 'a list
+val many : (unit -> 'a) -> 'a list
+val some_rev : (unit -> 'a) -> 'a list
+val some : (unit -> 'a) -> 'a list
 val guard : t -> bool -> unit
-val one_of : t -> (t -> 'a) list -> 'a
+val one_of : (unit -> 'a) list -> 'a
 val run : (t -> 'a) -> 'a option
 
 module List : sig
@@ -19,10 +20,17 @@ module List : sig
   val next : env -> 'a t -> 'a
   val take : 'a t -> 'a list
   val empty : env -> 'a t -> unit
-  val create : env -> 'a list -> f:(env -> 'a t -> unit) -> unit
-  val backtrack : env -> 'a t -> (env -> 'b) -> 'b
+  val create : env -> 'a list -> f:('a t -> unit) -> unit
+  val optional : 'a t -> (unit -> 'b) -> 'b option
+  val either : 'a t -> (unit -> 'b) -> (unit -> 'c) -> ('c, 'b) Base.Either.t
+  val many_rev : 'a t -> (unit -> 'b) -> 'b list
+  val many : 'a t -> (unit -> 'b) -> 'b list
+  val some_rev : 'a t -> (unit -> 'b) -> 'b list
+  val some : 'a t -> (unit -> 'b) -> 'b list
+  val guard : env -> 'a t -> bool -> unit
+  val one_of : 'a t -> (unit -> 'b) list -> 'b
 end
 
 module Syntax : sig
-  val ( <|> ) : t -> (t -> 'a) -> (t -> 'a) -> 'a
+  val ( <|> ) : (unit -> 'a) -> (unit -> 'a) -> 'a
 end

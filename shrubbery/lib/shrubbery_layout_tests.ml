@@ -58,7 +58,7 @@ def first:
     {|
     ((Token VLBrace) (Token VSemi) (Token (Ident def)) (Token (Ident first))
      (Token Colon) (Token VLBrace) (Token (Ident call_function))
-     (Tree (ldelim LParen)
+     (Delim (ldelim LParen)
       (tts
        ((Token (Ident do)) (Token Colon) (Token VLBrace) (Token (Ident a))
         (Token VSemi) (Token (Ident b)) (Token Semi) (Token (Ident c))

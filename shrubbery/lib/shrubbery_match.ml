@@ -9,12 +9,12 @@ module Item = struct
   let token env (t : Syntax.item) =
     match t with
     | Token t -> t
-    | Tree _ -> Fail.fail env
+    | Delim _ -> Fail.fail env
   ;;
 
   let tree env (t : Syntax.item) =
     match t with
     | Token _ -> Fail.fail env
-    | Tree t -> t
+    | Delim t -> t
   ;;
 end

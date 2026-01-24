@@ -3,7 +3,7 @@ module Token := Shrubbery_token
 
 type t =
   | Token of Token.t
-  | Tree of
+  | Delim of
       { ldelim : Token.t
       ; tts : t list
       ; rdelim : Token.t
@@ -15,7 +15,7 @@ type root = t list [@@deriving sexp, equal, compare]
 module Indexed : sig
   type t =
     | Token of Token.ti
-    | Tree of
+    | Delim of
         { ldelim : Token.ti
         ; tts : t list
         ; rdelim : Token.ti
@@ -26,6 +26,8 @@ module Indexed : sig
 
   val is_trivia_token : t -> bool
   val first_token : t -> Token.ti
+  val remove_trivia : t -> t option
+  val remove_trivia_root : t list -> t list
 end
 
 val is_trivia_token : t -> bool

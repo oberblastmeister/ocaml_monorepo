@@ -10,8 +10,9 @@ open struct
   module Syntax = Shrubbery_syntax
 end
 
-let check ?(remove_trivia = true) s =
-  let block, errors = Parser.parse ~remove_trivia s in
+let check s =
+  let block, errors = Parser.parse s in
+  let block = Syntax.block_of_indexed block in
   print_s [%sexp (block : Syntax.block)];
   if not (List.is_empty errors) then print_s [%sexp (errors : Delimit.Error.t list)];
   ()
@@ -81,85 +82,86 @@ def first:
                 (((group
                    ((items
                      ((Token (Ident call_function))
-                      (Tree (ldelim LParen)
-                       (groups
-                        (((group
-                           ((items ((Token (Ident do))))
-                            (block
-                             (((token Colon)
-                               (block
-                                ((lbrace VLBrace)
-                                 (groups
-                                  (((group
-                                     ((items ((Token (Ident a)))) (block ())
-                                      (alts ())))
-                                    (sep (VSemi)))
-                                   ((group
-                                     ((items ((Token (Ident b)))) (block ())
-                                      (alts ())))
-                                    (sep (Semi)))
-                                   ((group
-                                     ((items ((Token (Ident c)))) (block ())
-                                      (alts ())))
-                                    (sep (VSemi)))
-                                   ((group
-                                     ((items ((Token (Ident d)))) (block ())
-                                      (alts ())))
-                                    (sep ()))))
-                                 (rbrace VRBrace))))))
-                            (alts ())))
-                          (sep (Comma)))
-                         ((group
-                           ((items ((Token (Ident do))))
-                            (block
-                             (((token Colon)
-                               (block
-                                ((lbrace VLBrace)
-                                 (groups
-                                  (((group
-                                     ((items ((Token (Ident x)))) (block ())
-                                      (alts ())))
-                                    (sep (Semi)))
-                                   ((group
-                                     ((items ((Token (Ident y)))) (block ())
-                                      (alts ())))
-                                    (sep (Semi)))
-                                   ((group ((items ()) (block ()) (alts ())))
-                                    (sep (VSemi)))
-                                   ((group
-                                     ((items ((Token (Ident z)))) (block ())
-                                      (alts ())))
-                                    (sep ()))))
-                                 (rbrace VRBrace))))))
-                            (alts ())))
-                          (sep (Comma)))
-                         ((group
-                           ((items ((Token (Ident do))))
-                            (block
-                             (((token Colon)
-                               (block
-                                ((lbrace VLBrace)
-                                 (groups
-                                  (((group
-                                     ((items ((Token (Ident a)))) (block ())
-                                      (alts ())))
-                                    (sep (Semi)))
-                                   ((group
-                                     ((items ((Token (Ident b)))) (block ())
-                                      (alts ())))
-                                    (sep (Semi)))
-                                   ((group
-                                     ((items ((Token (Ident c)))) (block ())
-                                      (alts ())))
-                                    (sep (Semi)))
-                                   ((group
-                                     ((items ((Token (Ident d)))) (block ())
-                                      (alts ())))
-                                    (sep ()))))
-                                 (rbrace VRBrace))))))
-                            (alts ())))
-                          (sep ()))))
-                       (rdelim RParen))))
+                      (Delim
+                       ((ldelim LParen)
+                        (groups
+                         (((group
+                            ((items ((Token (Ident do))))
+                             (block
+                              (((token Colon)
+                                (block
+                                 ((lbrace VLBrace)
+                                  (groups
+                                   (((group
+                                      ((items ((Token (Ident a)))) (block ())
+                                       (alts ())))
+                                     (sep (VSemi)))
+                                    ((group
+                                      ((items ((Token (Ident b)))) (block ())
+                                       (alts ())))
+                                     (sep (Semi)))
+                                    ((group
+                                      ((items ((Token (Ident c)))) (block ())
+                                       (alts ())))
+                                     (sep (VSemi)))
+                                    ((group
+                                      ((items ((Token (Ident d)))) (block ())
+                                       (alts ())))
+                                     (sep ()))))
+                                  (rbrace VRBrace))))))
+                             (alts ())))
+                           (sep (Comma)))
+                          ((group
+                            ((items ((Token (Ident do))))
+                             (block
+                              (((token Colon)
+                                (block
+                                 ((lbrace VLBrace)
+                                  (groups
+                                   (((group
+                                      ((items ((Token (Ident x)))) (block ())
+                                       (alts ())))
+                                     (sep (Semi)))
+                                    ((group
+                                      ((items ((Token (Ident y)))) (block ())
+                                       (alts ())))
+                                     (sep (Semi)))
+                                    ((group ((items ()) (block ()) (alts ())))
+                                     (sep (VSemi)))
+                                    ((group
+                                      ((items ((Token (Ident z)))) (block ())
+                                       (alts ())))
+                                     (sep ()))))
+                                  (rbrace VRBrace))))))
+                             (alts ())))
+                           (sep (Comma)))
+                          ((group
+                            ((items ((Token (Ident do))))
+                             (block
+                              (((token Colon)
+                                (block
+                                 ((lbrace VLBrace)
+                                  (groups
+                                   (((group
+                                      ((items ((Token (Ident a)))) (block ())
+                                       (alts ())))
+                                     (sep (Semi)))
+                                    ((group
+                                      ((items ((Token (Ident b)))) (block ())
+                                       (alts ())))
+                                     (sep (Semi)))
+                                    ((group
+                                      ((items ((Token (Ident c)))) (block ())
+                                       (alts ())))
+                                     (sep (Semi)))
+                                    ((group
+                                      ((items ((Token (Ident d)))) (block ())
+                                       (alts ())))
+                                     (sep ()))))
+                                  (rbrace VRBrace))))))
+                             (alts ())))
+                           (sep ()))))
+                        (rdelim RParen)))))
                     (block ()) (alts ())))
                   (sep ()))))
                (rbrace VRBrace))))))
@@ -363,12 +365,13 @@ def another:
                 (((group
                    ((items
                      ((Token (Ident fib))
-                      (Tree (ldelim LParen)
-                       (groups
-                        (((group
-                           ((items ((Token (Number 0)))) (block ()) (alts ())))
-                          (sep ()))))
-                       (rdelim RParen))))
+                      (Delim
+                       ((ldelim LParen)
+                        (groups
+                         (((group
+                            ((items ((Token (Number 0)))) (block ()) (alts ())))
+                           (sep ()))))
+                        (rdelim RParen)))))
                     (block
                      (((token Colon)
                        (block
@@ -388,12 +391,13 @@ def another:
                 (((group
                    ((items
                      ((Token (Ident fib))
-                      (Tree (ldelim LParen)
-                       (groups
-                        (((group
-                           ((items ((Token (Number 1)))) (block ()) (alts ())))
-                          (sep ()))))
-                       (rdelim RParen))))
+                      (Delim
+                       ((ldelim LParen)
+                        (groups
+                         (((group
+                            ((items ((Token (Number 1)))) (block ()) (alts ())))
+                           (sep ()))))
+                        (rdelim RParen)))))
                     (block
                      (((token Colon)
                        (block
@@ -413,17 +417,18 @@ def another:
                 (((group
                    ((items
                      ((Token (Ident fib))
-                      (Tree (ldelim LParen)
-                       (groups
-                        (((group
-                           ((items ((Token (Ident n)) (Token (Ident nat))))
-                            (block ()) (alts ())))
-                          (sep (Comma)))
-                         ((group
-                           ((items ((Token (Ident n)) (Token (Ident bool))))
-                            (block ()) (alts ())))
-                          (sep ()))))
-                       (rdelim RParen))))
+                      (Delim
+                       ((ldelim LParen)
+                        (groups
+                         (((group
+                            ((items ((Token (Ident n)) (Token (Ident nat))))
+                             (block ()) (alts ())))
+                           (sep (Comma)))
+                          ((group
+                            ((items ((Token (Ident n)) (Token (Ident bool))))
+                             (block ()) (alts ())))
+                           (sep ()))))
+                        (rdelim RParen)))))
                     (block
                      (((token Colon)
                        (block
@@ -432,25 +437,27 @@ def another:
                           (((group
                              ((items
                                ((Token (Ident fib))
-                                (Tree (ldelim LParen)
-                                 (groups
-                                  (((group
-                                     ((items
-                                       ((Token (Ident n)) (Token (Operator -))
-                                        (Token (Number 1))))
-                                      (block ()) (alts ())))
-                                    (sep ()))))
-                                 (rdelim RParen))
+                                (Delim
+                                 ((ldelim LParen)
+                                  (groups
+                                   (((group
+                                      ((items
+                                        ((Token (Ident n)) (Token (Operator -))
+                                         (Token (Number 1))))
+                                       (block ()) (alts ())))
+                                     (sep ()))))
+                                  (rdelim RParen)))
                                 (Token (Operator +)) (Token (Ident fib))
-                                (Tree (ldelim LParen)
-                                 (groups
-                                  (((group
-                                     ((items
-                                       ((Token (Ident n)) (Token (Operator -))
-                                        (Token (Number 2))))
-                                      (block ()) (alts ())))
-                                    (sep ()))))
-                                 (rdelim RParen))))
+                                (Delim
+                                 ((ldelim LParen)
+                                  (groups
+                                   (((group
+                                      ((items
+                                        ((Token (Ident n)) (Token (Operator -))
+                                         (Token (Number 2))))
+                                       (block ()) (alts ())))
+                                     (sep ()))))
+                                  (rdelim RParen)))))
                               (block ()) (alts ())))
                             (sep ()))))
                          (rbrace VRBrace))))))
@@ -467,18 +474,19 @@ def another:
                (groups
                 (((group
                    ((items
-                     ((Tree (ldelim LParen)
-                       (groups
-                        (((group
-                           ((items ((Token (Ident x)))) (block ()) (alts ())))
-                          (sep (Comma)))
-                         ((group
-                           ((items ((Token (Ident y)))) (block ()) (alts ())))
-                          (sep (Comma)))
-                         ((group
-                           ((items ((Token (Ident z)))) (block ()) (alts ())))
-                          (sep ()))))
-                       (rdelim RParen))))
+                     ((Delim
+                       ((ldelim LParen)
+                        (groups
+                         (((group
+                            ((items ((Token (Ident x)))) (block ()) (alts ())))
+                           (sep (Comma)))
+                          ((group
+                            ((items ((Token (Ident y)))) (block ()) (alts ())))
+                           (sep (Comma)))
+                          ((group
+                            ((items ((Token (Ident z)))) (block ()) (alts ())))
+                           (sep ()))))
+                        (rdelim RParen)))))
                     (block ()) (alts ())))
                   (sep ()))))
                (rbrace VRBrace))))))
@@ -501,11 +509,12 @@ hello_world } another { awefawe )
        ((group
          ((items
            ((Token (Ident hello_world)) (Token (Error })) (Token (Ident another))
-            (Tree (ldelim LBrace)
-             (groups
-              (((group ((items ((Token (Ident awefawe)))) (block ()) (alts ())))
-                (sep ()))))
-             (rdelim RParen))))
+            (Delim
+             ((ldelim LBrace)
+              (groups
+               (((group ((items ((Token (Ident awefawe)))) (block ()) (alts ())))
+                 (sep ()))))
+              (rdelim RParen)))))
           (block ()) (alts ())))
         (sep ()))))
      (rbrace VRBrace))
@@ -575,11 +584,12 @@ record Pair(a, b):
        ((group
          ((items
            ((Token (Ident data)) (Token (Ident Option))
-            (Tree (ldelim LParen)
-             (groups
-              (((group ((items ((Token (Ident a)))) (block ()) (alts ())))
-                (sep ()))))
-             (rdelim RParen))))
+            (Delim
+             ((ldelim LParen)
+              (groups
+               (((group ((items ((Token (Ident a)))) (block ()) (alts ())))
+                 (sep ()))))
+              (rdelim RParen)))))
           (block
            (((token Colon)
              (block ((lbrace VLBrace) (groups ()) (rbrace VRBrace))))))
@@ -591,12 +601,13 @@ record Pair(a, b):
                 (((group
                    ((items
                      ((Token (Ident Some))
-                      (Tree (ldelim LParen)
-                       (groups
-                        (((group
-                           ((items ((Token (Ident a)))) (block ()) (alts ())))
-                          (sep ()))))
-                       (rdelim RParen))))
+                      (Delim
+                       ((ldelim LParen)
+                        (groups
+                         (((group
+                            ((items ((Token (Ident a)))) (block ()) (alts ())))
+                           (sep ()))))
+                        (rdelim RParen)))))
                     (block ()) (alts ())))
                   (sep ()))))
                (rbrace VRBrace))))
@@ -613,13 +624,14 @@ record Pair(a, b):
        ((group
          ((items
            ((Token (Ident data)) (Token (Ident Either))
-            (Tree (ldelim LParen)
-             (groups
-              (((group ((items ((Token (Ident a)))) (block ()) (alts ())))
-                (sep (Comma)))
-               ((group ((items ((Token (Ident b)))) (block ()) (alts ())))
-                (sep ()))))
-             (rdelim RParen))))
+            (Delim
+             ((ldelim LParen)
+              (groups
+               (((group ((items ((Token (Ident a)))) (block ()) (alts ())))
+                 (sep (Comma)))
+                ((group ((items ((Token (Ident b)))) (block ()) (alts ())))
+                 (sep ()))))
+              (rdelim RParen)))))
           (block ())
           (alts
            (((token Pipe)
@@ -629,12 +641,13 @@ record Pair(a, b):
                 (((group
                    ((items
                      ((Token (Ident Left))
-                      (Tree (ldelim LParen)
-                       (groups
-                        (((group
-                           ((items ((Token (Ident a)))) (block ()) (alts ())))
-                          (sep ()))))
-                       (rdelim RParen))))
+                      (Delim
+                       ((ldelim LParen)
+                        (groups
+                         (((group
+                            ((items ((Token (Ident a)))) (block ()) (alts ())))
+                           (sep ()))))
+                        (rdelim RParen)))))
                     (block ()) (alts ())))
                   (sep ()))))
                (rbrace VRBrace))))
@@ -645,12 +658,13 @@ record Pair(a, b):
                 (((group
                    ((items
                      ((Token (Ident Right))
-                      (Tree (ldelim LParen)
-                       (groups
-                        (((group
-                           ((items ((Token (Ident b)))) (block ()) (alts ())))
-                          (sep ()))))
-                       (rdelim RParen))))
+                      (Delim
+                       ((ldelim LParen)
+                        (groups
+                         (((group
+                            ((items ((Token (Ident b)))) (block ()) (alts ())))
+                           (sep ()))))
+                        (rdelim RParen)))))
                     (block ()) (alts ())))
                   (sep ()))))
                (rbrace VRBrace))))))))
@@ -658,13 +672,14 @@ record Pair(a, b):
        ((group
          ((items
            ((Token (Ident record)) (Token (Ident Pair))
-            (Tree (ldelim LParen)
-             (groups
-              (((group ((items ((Token (Ident a)))) (block ()) (alts ())))
-                (sep (Comma)))
-               ((group ((items ((Token (Ident b)))) (block ()) (alts ())))
-                (sep ()))))
-             (rdelim RParen))))
+            (Delim
+             ((ldelim LParen)
+              (groups
+               (((group ((items ((Token (Ident a)))) (block ()) (alts ())))
+                 (sep (Comma)))
+                ((group ((items ((Token (Ident b)))) (block ()) (alts ())))
+                 (sep ()))))
+              (rdelim RParen)))))
           (block
            (((token Colon)
              (block
@@ -706,13 +721,14 @@ def nested_match(x, y):
        ((group
          ((items
            ((Token (Ident def)) (Token (Ident nested_match))
-            (Tree (ldelim LParen)
-             (groups
-              (((group ((items ((Token (Ident x)))) (block ()) (alts ())))
-                (sep (Comma)))
-               ((group ((items ((Token (Ident y)))) (block ()) (alts ())))
-                (sep ()))))
-             (rdelim RParen))))
+            (Delim
+             ((ldelim LParen)
+              (groups
+               (((group ((items ((Token (Ident x)))) (block ()) (alts ())))
+                 (sep (Comma)))
+                ((group ((items ((Token (Ident y)))) (block ()) (alts ())))
+                 (sep ()))))
+              (rdelim RParen)))))
           (block
            (((token Colon)
              (block
@@ -731,13 +747,14 @@ def nested_match(x, y):
                           (((group
                              ((items
                                ((Token (Ident Some))
-                                (Tree (ldelim LParen)
-                                 (groups
-                                  (((group
-                                     ((items ((Token (Ident x)))) (block ())
-                                      (alts ())))
-                                    (sep ()))))
-                                 (rdelim RParen))))
+                                (Delim
+                                 ((ldelim LParen)
+                                  (groups
+                                   (((group
+                                      ((items ((Token (Ident x)))) (block ())
+                                       (alts ())))
+                                     (sep ()))))
+                                  (rdelim RParen)))))
                               (block
                                (((token Colon)
                                  (block
@@ -758,13 +775,14 @@ def nested_match(x, y):
                                     (((group
                                        ((items
                                          ((Token (Ident Some))
-                                          (Tree (ldelim LParen)
-                                           (groups
-                                            (((group
-                                               ((items ((Token (Ident y))))
-                                                (block ()) (alts ())))
-                                              (sep ()))))
-                                           (rdelim RParen))))
+                                          (Delim
+                                           ((ldelim LParen)
+                                            (groups
+                                             (((group
+                                                ((items ((Token (Ident y))))
+                                                 (block ()) (alts ())))
+                                               (sep ()))))
+                                            (rdelim RParen)))))
                                         (block
                                          (((token Colon)
                                            (block
@@ -773,19 +791,20 @@ def nested_match(x, y):
                                               (((group
                                                  ((items
                                                    ((Token (Ident print))
-                                                    (Tree (ldelim LParen)
-                                                     (groups
-                                                      (((group
-                                                         ((items
-                                                           ((Token (Ident x))))
-                                                          (block ()) (alts ())))
-                                                        (sep (Comma)))
-                                                       ((group
-                                                         ((items
-                                                           ((Token (Ident y))))
-                                                          (block ()) (alts ())))
-                                                        (sep ()))))
-                                                     (rdelim RParen))))
+                                                    (Delim
+                                                     ((ldelim LParen)
+                                                      (groups
+                                                       (((group
+                                                          ((items
+                                                            ((Token (Ident x))))
+                                                           (block ()) (alts ())))
+                                                         (sep (Comma)))
+                                                        ((group
+                                                          ((items
+                                                            ((Token (Ident y))))
+                                                           (block ()) (alts ())))
+                                                         (sep ()))))
+                                                      (rdelim RParen)))))
                                                   (block ()) (alts ())))
                                                 (sep ()))))
                                              (rbrace VRBrace))))))
@@ -806,8 +825,9 @@ def nested_match(x, y):
                                               (((group
                                                  ((items
                                                    ((Token (Ident throw))
-                                                    (Tree (ldelim LParen)
-                                                     (groups ()) (rdelim RParen))))
+                                                    (Delim
+                                                     ((ldelim LParen) (groups ())
+                                                      (rdelim RParen)))))
                                                   (block ()) (alts ())))
                                                 (sep ()))))
                                              (rbrace VRBrace))))))
@@ -831,8 +851,8 @@ def nested_match(x, y):
                            ((group
                              ((items
                                ((Token (Ident throw))
-                                (Tree (ldelim LParen) (groups ())
-                                 (rdelim RParen))))
+                                (Delim
+                                 ((ldelim LParen) (groups ()) (rdelim RParen)))))
                               (block ()) (alts ())))
                             (sep ()))))
                          (rbrace VRBrace))))))))
@@ -851,7 +871,8 @@ let%expect_test "equal sign" =
       let x: 1324234
       let y: 12341324
     |};
-  [%expect {|
+  [%expect
+    {|
     ((lbrace VLBrace)
      (groups
       (((group
@@ -893,6 +914,45 @@ let%expect_test "equal sign" =
                (groups
                 (((group
                    ((items ((Token (Number 12341324)))) (block ()) (alts ())))
+                  (sep ()))))
+               (rbrace VRBrace))))))
+          (alts ())))
+        (sep ()))))
+     (rbrace VRBrace))
+    |}]
+;;
+
+let%expect_test "comma in block" =
+  check
+    {|
+let testing:
+  first
+  second
+  ,
+  third
+  fourth
+    |};
+  [%expect
+    {|
+    ((lbrace VLBrace)
+     (groups
+      (((group ((items ()) (block ()) (alts ()))) (sep (VSemi)))
+       ((group
+         ((items ((Token (Ident let)) (Token (Ident testing))))
+          (block
+           (((token Colon)
+             (block
+              ((lbrace VLBrace)
+               (groups
+                (((group ((items ((Token (Ident first)))) (block ()) (alts ())))
+                  (sep (VSemi)))
+                 ((group ((items ((Token (Ident second)))) (block ()) (alts ())))
+                  (sep (VSemi)))
+                 ((group ((items ((Token (Error ,)))) (block ()) (alts ())))
+                  (sep (VSemi)))
+                 ((group ((items ((Token (Ident third)))) (block ()) (alts ())))
+                  (sep (VSemi)))
+                 ((group ((items ((Token (Ident fourth)))) (block ()) (alts ())))
                   (sep ()))))
                (rbrace VRBrace))))))
           (alts ())))
