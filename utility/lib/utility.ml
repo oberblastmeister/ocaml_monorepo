@@ -1,2 +1,2 @@
 module Acc = Utility_acc
-module Backtrack = Utility_backtrack
+module Fail = Utility_fail

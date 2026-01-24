@@ -1,0 +1,64 @@
+let std = import("std")
+
+let bruh = 1234234
+
+let first { fun x y z {
+  x + y = z
+  }
+}
+
+let another = {
+  import("another")
+}
+
+rec {
+  record Testing {
+    first : int
+    second : Another
+  }
+}
+
+data Another
+| First {
+    first : int
+    third : int
+  }
+| Second {
+    second: int
+    third: int
+  }
+
+data First {
+  first : int
+  second : int
+  third : int
+}
+
+let another = .First { first = 1234; second = 23423 }
+
+let another = .{ bruh = 1234324 }
+
+let hello = First {
+  first = 1234
+  second = 23423
+  third = 123423
+}
+
+fun testing(x : fun(Int, Int, Bool) -> Int, y, z) {
+  13241234
+}
+
+fun testing (x : Int) (y : fun (x : Type) (y : Type) Type) (w : Int) (z : Int) (l : Int) (y : option.T Int) : Int {
+  fun another (x : Int) : Int {
+    x + y + z + w
+  }
+  
+  match y
+  | None {
+      let z = x
+      let w = y
+    }
+  | None { int }
+}
+
+let hello_world = fun {
