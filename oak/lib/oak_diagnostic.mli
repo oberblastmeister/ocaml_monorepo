@@ -2,11 +2,10 @@ open Core
 module Snippet = Diagnostic.Snippet
 
 module Text : sig
-  type t = Format.formatter -> unit
+  type t = Format.formatter -> unit [@@deriving sexp_of]
 
-  val sexp_of_t : t -> Sexp.t
   val of_string : string -> t
-  val to_string : ?width:int -> t -> string
+  val to_string : width:int -> color:bool -> t -> string
 end
 
 module Severity : sig
@@ -16,7 +15,8 @@ module Severity : sig
     | Note
   [@@deriving sexp_of]
 
-  val format : color:bool -> t -> string
+  val pp : Format.formatter -> t -> unit
+  val to_string : color:bool -> t -> string
 end
 
 module Part : sig

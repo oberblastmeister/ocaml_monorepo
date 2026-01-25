@@ -1,26 +1,22 @@
 open Core
 module Snippet = Diagnostic.Snippet
 
-module Ansi = struct
-  let red s = sprintf "\027[31m%s\027[0m" s
-  let cyan s = sprintf "\027[36m%s\027[0m" s
-  let bold s = sprintf "\027[1m%s\027[0m" s
-end
-
 module Text = struct
   type t = Format.formatter -> unit
 
-  let sexp_of_t _ = Sexp.Atom "<text>"
   let of_string s : t = fun fmt -> Format.pp_print_string fmt s
 
-  let to_string ~width (t : t) =
+  let to_string ~width ~color (t : t) =
     let buf = Buffer.create 128 in
     let fmt = Format.formatter_of_buffer buf in
     Format.pp_set_margin fmt width;
+    Fmt.set_style_renderer fmt (if color then `Ansi_tty else `None);
     t fmt;
     Format.pp_print_flush fmt ();
     Buffer.contents buf
   ;;
+
+  let sexp_of_t t = Sexp.Atom (to_string ~width:80 ~color:false t)
 end
 
 module Severity = struct
@@ -30,19 +26,28 @@ module Severity = struct
     | Note
   [@@deriving sexp_of]
 
-  let format ~color t =
+  let pp ppf t =
     let label =
       match t with
       | Error -> "error:"
       | Warning -> "warning:"
       | Note -> "note:"
     in
-    if color
-    then (
+    let style =
       match t with
-      | Error -> Ansi.red (Ansi.bold label)
-      | Warning | Note -> Ansi.cyan (Ansi.bold label))
-    else label
+      | Error -> Fmt.(styled `Bold (styled (`Fg `Red) string))
+      | Warning | Note -> Fmt.(styled `Bold (styled (`Fg `Cyan) string))
+    in
+    style ppf label
+  ;;
+
+  let to_string ~color t =
+    let buf = Buffer.create 32 in
+    let fmt = Format.formatter_of_buffer buf in
+    Fmt.set_style_renderer fmt (if color then `Ansi_tty else `None);
+    pp fmt t;
+    Format.pp_print_flush fmt ();
+    Buffer.contents buf
   ;;
 end
 
@@ -83,8 +88,8 @@ let format_header ~width code filename =
 ;;
 
 let format_part ~width ~color files part =
-  let label = Severity.format ~color part.Part.severity in
-  let message = Text.to_string ~width part.Part.message in
+  let label = Severity.to_string ~color part.Part.severity in
+  let message = Text.to_string ~width ~color part.Part.message in
   match part.Part.snippet with
   | Some snippet ->
     let snippet_str = Snippet.format_snippet files snippet in
