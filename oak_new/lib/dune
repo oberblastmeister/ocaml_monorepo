@@ -1,8 +1,0 @@
-(library
- (name oak_new)
- (inline_tests)
- (preprocess
-  (pps ppx_inline_test ppx_jane))
- (flags
-  (:standard -warn-error -A -w -23))
- (libraries core shrubbery utility))

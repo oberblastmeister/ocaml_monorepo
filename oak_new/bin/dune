@@ -1,4 +1,0 @@
-(executable
- (public_name oak_new)
- (name main)
- (libraries oak_new))
