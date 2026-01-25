@@ -164,7 +164,7 @@ let%expect_test "smoke" =
        ((Token another) (Token " ") (Token one) (Token ,) (Token " ")
         (Token another) (Token " ") (Token one)))
       (rdelim ]))
-     (Token "\n") (Token "    "))
+     (Token "\n") (Token "    ") (Token _eof))
     ()
     |}]
 ;;

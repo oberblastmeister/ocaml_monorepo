@@ -33,7 +33,7 @@ def first:
     {|
     ((Token _{) (Token "_;") (Token def) (Token first) (Token :) (Token _{)
      (Token x) (Token "_;") (Token y) (Token "_;") (Token z) (Token _})
-     (Token _}))
+     (Token _}) (Token _eof))
     |}]
 ;;
 
@@ -66,7 +66,7 @@ def first:
         (Token :) (Token _{) (Token a) (Token ";") (Token b) (Token ";")
         (Token c) (Token ";") (Token d) (Token _})))
       (rdelim ")"))
-     (Token _}) (Token _}))
+     (Token _}) (Token _}) (Token _eof))
     |}]
 ;;
 
@@ -85,7 +85,7 @@ def another:
      (Token x) (Token ";") (Token y) (Token ";") (Token z) (Token _})
      (Token "_;") (Token ,) (Token "_;") (Token def) (Token another) (Token :)
      (Token _{) (Token x) (Token ";") (Token y) (Token ";") (Token z) (Token _})
-     (Token _}))
+     (Token _}) (Token _eof))
     |}]
 ;;
 
@@ -109,7 +109,7 @@ def g:
      (Token y) (Token ";") (Token z) (Token _}) (Token "_;") (Token def)
      (Token another) (Token :) (Token _{) (Token x) (Token "_;") (Token y)
      (Token _}) (Token "_;") (Token def) (Token g) (Token :) (Token _{) (Token x)
-     (Token ";") (Token y) (Token _}) (Token _}))
+     (Token ";") (Token y) (Token _}) (Token _}) (Token _eof))
     |}]
 ;;
 
@@ -127,7 +127,7 @@ program:
     ((Token _{) (Token "_;") (Token program) (Token :) (Token _{) (Token x)
      (Token "_;") (Token ";") (Token y) (Token "_;") (Token z) (Token "_;")
      (Token ";") (Token ";") (Token ";") (Token ";") (Token ";") (Token w)
-     (Token _}) (Token _}))
+     (Token _}) (Token _}) (Token _eof))
     |}]
 ;;
 
@@ -143,7 +143,7 @@ let%expect_test "weird empty blocks" =
     {|
     ((Token _{) (Token "_;") (Token :) (Token _{) (Token :) (Token _{) (Token :)
      (Token _{) (Token first) (Token "_;") (Token second) (Token "_;")
-     (Token third) (Token _}) (Token _}) (Token _}) (Token _}))
+     (Token third) (Token _}) (Token _}) (Token _}) (Token _}) (Token _eof))
     |}]
 ;;
 
@@ -159,7 +159,7 @@ let%expect_test "weird empty blocks find first token" =
     {|
     ((Token _{) (Token :) (Token _{) (Token :) (Token _{) (Token :) (Token _{)
      (Token _}) (Token "_;") (Token x) (Token "_;") (Token y) (Token "_;")
-     (Token z) (Token _}) (Token _}) (Token _}))
+     (Token z) (Token _}) (Token _}) (Token _}) (Token _eof))
     |}];
   check
     {|
@@ -172,7 +172,7 @@ let%expect_test "weird empty blocks find first token" =
     {|
     ((Token _{) (Token "_;") (Token :) (Token _{) (Token :) (Token _{) (Token :)
      (Token _{) (Token _}) (Token _}) (Token x) (Token y) (Token z) (Token _})
-     (Token _}))
+     (Token _}) (Token _eof))
     |}]
 ;;
 
@@ -191,7 +191,7 @@ def second = x; y
     ((Token _{) (Token "_;") (Token def) (Token first) (Token =) (Token _{)
      (Token x) (Token "_;") (Token y) (Token "_;") (Token z) (Token _})
      (Token "_;") (Token def) (Token second) (Token =) (Token _{) (Token x)
-     (Token ";") (Token y) (Token _}) (Token _}))
+     (Token ";") (Token y) (Token _}) (Token _}) (Token _eof))
     |}]
 ;;
 
@@ -207,7 +207,7 @@ def first:
     {|
     ((Token _{) (Token "_;") (Token def) (Token first) (Token :) (Token _{)
      (Token x) (Token ";") (Token "_;") (Token y) (Token ";") (Token "_;")
-     (Token z) (Token _}) (Token _}))
+     (Token z) (Token _}) (Token _}) (Token _eof))
     |}]
 ;;
 
@@ -219,7 +219,7 @@ hello_world } another
   [%expect
     {|
     ((Token _{) (Token "_;") (Token hello_world) (Token }) (Token another)
-     (Token _}))
+     (Token _}) (Token _eof))
     |}]
 ;;
 
@@ -235,6 +235,6 @@ let%expect_test "equal sign" =
     ((Token _{) (Token let) (Token first) (Token :) (Token _{) (Token fun)
      (Token :) (Token _{) (Token _}) (Token _}) (Token let) (Token x) (Token :)
      (Token _{) (Token 1324234) (Token _}) (Token let) (Token y) (Token :)
-     (Token _{) (Token 12341324) (Token _}) (Token _}))
+     (Token _{) (Token 12341324) (Token _}) (Token _}) (Token _eof))
     |}]
 ;;
