@@ -92,24 +92,15 @@ let pop_offside ~add_semi st col =
 *)
 let insert_virtual_tokens tokens tts =
   let line_cols = Token.calculate_line_col tokens in
-  let rec go_inner tts =
+  let rec loop_inner tts =
     let st = create_state () in
-    go st tts;
+    List.iter tts ~f:(fun tt -> loop_tt st tt);
     pop_all st;
     let res = finish_state st in
     res
-  and go_root tts =
-    let st = create_state () in
-    add_tt st (Token VLBrace);
-    add_context st (Known_indent 0);
-    go st tts;
-    pop_all st;
-    let res = finish_state st in
-    res
-  and go (st : st) (tts : Token_tree.Indexed.t list) =
-    List.iter tts ~f:(fun tt -> go_tt st tt)
-  and go_tt st (tt : Token_tree.Indexed.t) =
+  and loop_tt st (tt : Token_tree.Indexed.t) =
     begin match tt with
+    | Token { token = Veof; _ } -> ()
     | Token token when Token.is_trivia token.token ->
       (* skip over trivia tokens *)
       add_tt st (Token token.token)
@@ -128,7 +119,7 @@ let insert_virtual_tokens tokens tts =
     end
     | Delim { ldelim; tts = inner_tts; rdelim } ->
       let curr_lc = line_cols.(ldelim.index) in
-      let inner_tts = go_inner inner_tts in
+      let inner_tts = loop_inner inner_tts in
       let tt =
         Token_tree.Delim { ldelim = ldelim.token; tts = inner_tts; rdelim = rdelim.token }
       in
@@ -142,5 +133,12 @@ let insert_virtual_tokens tokens tts =
       add_tt st tt
     end
   in
-  go_root tts
+  let st = create_state () in
+  add_tt st (Token VLBrace);
+  add_context st (Known_indent 0);
+  List.iter tts ~f:(fun tt -> loop_tt st tt);
+  pop_all st;
+  add_tt st (Token Veof);
+  let res = finish_state st in
+  res
 ;;

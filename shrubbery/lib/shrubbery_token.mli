@@ -26,6 +26,7 @@ type t =
   | Ident of string
   | Keyword of string
   | Error of string
+  | Veof
 [@@deriving sexp_of, equal, compare]
 
 val to_string : t -> string

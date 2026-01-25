@@ -55,6 +55,12 @@ let rec one_of fs =
      | x -> x)
 ;;
 
+let cannot_fail ~f =
+  match f () with
+  | exception Fail -> failwith "Expected computation not to fail"
+  | x -> x
+;;
+
 module List = struct
   type 'a t = 'a list ref
 

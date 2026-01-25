@@ -181,7 +181,7 @@ module Token = struct
     | String of string
     | Integer of int64
     | Left_bracket
-    | Eof
+    | Veof
   [@@deriving sexp, compare, equal]
 end
 

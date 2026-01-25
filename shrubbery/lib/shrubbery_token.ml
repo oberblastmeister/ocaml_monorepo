@@ -30,6 +30,7 @@ type t =
   | Ident of string
   | Keyword of string
   | Error of string
+  | Veof
 [@@deriving equal, compare]
 
 let is_trivia = function
@@ -38,7 +39,7 @@ let is_trivia = function
 ;;
 
 let length = function
-  | VSemi | VLBrace | VRBrace -> 0
+  | VSemi | VLBrace | VRBrace | Veof -> 0
   | LParen
   | RParen
   | LBrace
@@ -62,10 +63,11 @@ let length = function
   | Error s -> String.length s
 ;;
 
-let to_string_gen vsemi vlbrace vrbrace = function
+let to_string_gen ~vsemi ~vlbrace ~vrbrace ~veof = function
   | VSemi -> vsemi
   | VLBrace -> vlbrace
   | VRBrace -> vrbrace
+  | Veof -> veof
   | LParen -> "("
   | RParen -> ")"
   | LBrace -> "{"
@@ -89,8 +91,14 @@ let to_string_gen vsemi vlbrace vrbrace = function
   | Error s -> s
 ;;
 
-let to_string t = to_string_gen "" "" "" t
-let sexp_of_t t = Sexp.Atom (to_string_gen "_;" "_{" "_}" t)
+let to_string_hide_virtual t = to_string_gen ~vsemi:"" ~vlbrace:"" ~vrbrace:"" ~veof:"" t
+
+let to_string_show_show_virtual t =
+  to_string_gen ~vsemi:"_;" ~vlbrace:"_{" ~vrbrace:"_}" ~veof:"_eof" t
+;;
+
+let to_string t = to_string_hide_virtual t
+let sexp_of_t t = Sexp.Atom (to_string_show_show_virtual t)
 
 type ti =
   { token : t

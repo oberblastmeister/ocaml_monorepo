@@ -1,4 +1,5 @@
 open Core
+module Token = Shrubbery.Token
 
 module Purity = struct
   module T = struct
@@ -58,17 +59,20 @@ module Var = struct
     type t =
       { id : int
       ; name : string
+      ; token : Token.ti option
       }
-    [@@deriving sexp, compare, equal]
+    [@@deriving sexp_of, compare, equal]
   end
 
-  include Comparable.Make (T)
+  include Comparable.Make_plain (T)
   include T
 
-  let create name =
+  let create_initial name token = { name; id = -1; token = Some token }
+
+  let create ?token name =
     let id = !stamp in
     incr stamp;
-    { name; id }
+    { name; id; token }
   ;;
 
   let make_fresh var =
@@ -97,10 +101,10 @@ module Cvar = struct
     type t =
       | Var of Var.t
       | Mod_var of Mod_var.t
-    [@@deriving sexp, compare, equal]
+    [@@deriving sexp_of, compare, equal]
   end
 
-  include Comparable.Make (T)
+  include Comparable.Make_plain (T)
   include T
 
   let create_var name = Var (Var.create name)

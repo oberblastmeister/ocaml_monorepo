@@ -1,4 +1,5 @@
 open Core
+module Token = Shrubbery.Token
 
 module Purity : sig
   type t =
@@ -16,7 +17,7 @@ module Universe : sig
     | Type
     | Kind
     | Sig
-  [@@deriving sexp, equal, compare]
+  [@@deriving sexp_of, equal, compare]
 
   include Base.Comparable.S with type t := t
 
@@ -32,19 +33,21 @@ module Var : sig
   type t = private
     { id : int
     ; name : string
+    ; token : Token.ti option
     }
-  [@@deriving sexp, compare, equal]
+  [@@deriving sexp_of, compare, equal]
 
-  include Comparable.S with type t := t
+  include Comparable.S_plain with type t := t
 
-  val create : string -> t
+  val create_initial : string -> Token.ti -> t
+  val create : ?token:Token.ti -> string -> t
   val make_fresh : t -> t
 end
 
 module Mod_var : sig
   type t = private int
 
-  include Comparable.S with type t := t
+  include Comparable.S_plain with type t := t
 
   val create : unit -> t
 end
@@ -53,12 +56,9 @@ module Cvar : sig
   type t =
     | Var of Var.t
     | Mod_var of Mod_var.t
-  [@@deriving sexp, compare, equal]
+  [@@deriving sexp_of, compare, equal]
 
-  include Comparable.S with type t := t
-
-  val create_var : string -> t
-  val create_mod_var : unit -> t
+  include Comparable.S_plain with type t := t
 end
 
 type core_ty =

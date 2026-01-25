@@ -12,6 +12,7 @@ val some : (unit -> 'a) -> 'a list
 val guard : t -> bool -> unit
 val one_of : (unit -> 'a) list -> 'a
 val run : (t -> 'a) -> 'a option
+val cannot_fail : f:(unit -> 'a) -> 'a
 
 module List : sig
   type env := t

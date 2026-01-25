@@ -87,7 +87,7 @@ let lex s =
   and lex_whitespace acc start i =
     let i = take_while ~f:(Char.equal ' ') i s in
     lex (Token.Whitespace (i - start) :: acc) i
-  and finish acc = List.rev acc in
+  and finish acc = List.rev (Token.Veof :: acc) in
   lex [] 0
 ;;
 
@@ -108,6 +108,6 @@ let%expect_test "smoke" =
     ("\n" + " " / " " + " " == " " awefpoiu'aewf? " " "\"aewf\"" first . second
      " " call_function "(" arg1 , " " arg2 ")" " " ~first " " ~second " " ~else
      "\n" "//  awefaewfaewfawef" "\n" 1.23__1.3_4.3 "\n" "//  another" "\n"
-     "    ")
+     "    " _eof)
     |}]
 ;;

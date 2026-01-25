@@ -43,7 +43,12 @@ end = struct
     let tok = next t in
     match tok with
     | Some (Token ti) when Token.equal ti.token token -> ti
-    | _ -> failwith "expect"
+    | _ ->
+      raise_s
+        [%message
+          "expected token"
+            ~expected:(token : Token.t)
+            ~actual:(tok : Token_tree.Indexed.t option)]
   ;;
 
   let expect_if t ~f =
@@ -92,8 +97,7 @@ and parse_block st : Syntax.block =
         "precondition: colon should always have VLBrace or delimited LBrace after it"
           ~got:(tok : Token_tree.Indexed.t option)]
 
-and parse_virtual_block st lbrace : Syntax.block =
-  parse_virtual_block_rec st lbrace []
+and parse_virtual_block st lbrace : Syntax.block = parse_virtual_block_rec st lbrace []
 
 and parse_virtual_block_rec (st : State.t) lbrace (acc : Syntax.group_sep list) =
   match State.peek st with
@@ -172,7 +176,9 @@ and parse_alt st : Syntax.alt =
 *)
 let parse_tts tts : Syntax.block =
   let st = State.create (Array.of_list tts) in
-  parse_block st
+  let block = parse_block st in
+  let _ = State.expect st Veof in
+  block
 ;;
 
 let parse s =
@@ -182,6 +188,7 @@ let parse s =
     module Layout = Shrubbery_layout
   end in
   let tokens = Lexer.lex s |> Array.of_list in
+  (* TODO: the errors should be shown immediately or else the index will be messed up *)
   let tts, errors = Delimit.delimit tokens in
   let tts = Token_tree.Root.to_indexed tts in
   let tts = Layout.insert_virtual_tokens tokens tts in
