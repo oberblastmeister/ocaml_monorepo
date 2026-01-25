@@ -30,11 +30,7 @@ def first:
     |};
   ();
   [%expect
-    {|
-    ((Token _{) (Token "_;") (Token def) (Token first) (Token :) (Token _{)
-     (Token x) (Token "_;") (Token y) (Token "_;") (Token z) (Token _})
-     (Token _}) (Token _eof))
-    |}]
+    {| (_{ "_;" def first : _{ x "_;" y "_;" z _} _} _eof) |}]
 ;;
 
 let%expect_test "more" =
@@ -55,18 +51,10 @@ def first:
     |};
   [%expect
     {|
-    ((Token _{) (Token "_;") (Token def) (Token first) (Token :) (Token _{)
-     (Token call_function)
-     (Delim (ldelim "(")
-      (tts
-       ((Token do) (Token :) (Token _{) (Token a) (Token "_;") (Token b)
-        (Token ";") (Token c) (Token "_;") (Token d) (Token _}) (Token ,)
-        (Token do) (Token :) (Token _{) (Token x) (Token ";") (Token y)
-        (Token ";") (Token "_;") (Token z) (Token _}) (Token ,) (Token do)
-        (Token :) (Token _{) (Token a) (Token ";") (Token b) (Token ";")
-        (Token c) (Token ";") (Token d) (Token _})))
-      (rdelim ")"))
-     (Token _}) (Token _}) (Token _eof))
+    (_{ "_;" def first : _{ call_function
+     ("(" do : _{ a "_;" b ";" c "_;" d _} , do : _{ x ";" y ";" "_;" z _} , do :
+      _{ a ";" b ";" c ";" d _} ")")
+     _} _} _eof)
     |}]
 ;;
 
@@ -81,11 +69,8 @@ def another:
     |};
   [%expect
     {|
-    ((Token _{) (Token "_;") (Token def) (Token first) (Token :) (Token _{)
-     (Token x) (Token ";") (Token y) (Token ";") (Token z) (Token _})
-     (Token "_;") (Token ,) (Token "_;") (Token def) (Token another) (Token :)
-     (Token _{) (Token x) (Token ";") (Token y) (Token ";") (Token z) (Token _})
-     (Token _}) (Token _eof))
+    (_{ "_;" def first : _{ x ";" y ";" z _} "_;" , "_;" def another : _{ x ";" y
+     ";" z _} _} _eof)
     |}]
 ;;
 
@@ -105,11 +90,8 @@ def g:
   |};
   [%expect
     {|
-    ((Token _{) (Token def) (Token f) (Token :) (Token _{) (Token x) (Token ";")
-     (Token y) (Token ";") (Token z) (Token _}) (Token "_;") (Token def)
-     (Token another) (Token :) (Token _{) (Token x) (Token "_;") (Token y)
-     (Token _}) (Token "_;") (Token def) (Token g) (Token :) (Token _{) (Token x)
-     (Token ";") (Token y) (Token _}) (Token _}) (Token _eof))
+    (_{ def f : _{ x ";" y ";" z _} "_;" def another : _{ x "_;" y _} "_;" def g
+     : _{ x ";" y _} _} _eof)
     |}]
 ;;
 
@@ -124,10 +106,8 @@ program:
     |};
   [%expect
     {|
-    ((Token _{) (Token "_;") (Token program) (Token :) (Token _{) (Token x)
-     (Token "_;") (Token ";") (Token y) (Token "_;") (Token z) (Token "_;")
-     (Token ";") (Token ";") (Token ";") (Token ";") (Token ";") (Token w)
-     (Token _}) (Token _}) (Token _eof))
+    (_{ "_;" program : _{ x "_;" ";" y "_;" z "_;" ";" ";" ";" ";" ";" w _} _}
+     _eof)
     |}]
 ;;
 
@@ -140,11 +120,7 @@ let%expect_test "weird empty blocks" =
                  third
     |};
   [%expect
-    {|
-    ((Token _{) (Token "_;") (Token :) (Token _{) (Token :) (Token _{) (Token :)
-     (Token _{) (Token first) (Token "_;") (Token second) (Token "_;")
-     (Token third) (Token _}) (Token _}) (Token _}) (Token _}) (Token _eof))
-    |}]
+    {| (_{ "_;" : _{ : _{ : _{ first "_;" second "_;" third _} _} _} _} _eof) |}]
 ;;
 
 let%expect_test "weird empty blocks find first token" =
@@ -156,11 +132,7 @@ let%expect_test "weird empty blocks find first token" =
         z
     |};
   [%expect
-    {|
-    ((Token _{) (Token :) (Token _{) (Token :) (Token _{) (Token :) (Token _{)
-     (Token _}) (Token "_;") (Token x) (Token "_;") (Token y) (Token "_;")
-     (Token z) (Token _}) (Token _}) (Token _}) (Token _eof))
-    |}];
+    {| (_{ : _{ : _{ : _{ _} "_;" x "_;" y "_;" z _} _} _} _eof) |}];
   check
     {|
 : :    :
@@ -169,11 +141,7 @@ let%expect_test "weird empty blocks find first token" =
       z
     |};
   [%expect
-    {|
-    ((Token _{) (Token "_;") (Token :) (Token _{) (Token :) (Token _{) (Token :)
-     (Token _{) (Token _}) (Token _}) (Token x) (Token y) (Token z) (Token _})
-     (Token _}) (Token _eof))
-    |}]
+    {| (_{ "_;" : _{ : _{ : _{ _} _} x y z _} _} _eof) |}]
 ;;
 
 let%expect_test "start block with equal" =
@@ -188,10 +156,8 @@ def second = x; y
     |};
   [%expect
     {|
-    ((Token _{) (Token "_;") (Token def) (Token first) (Token =) (Token _{)
-     (Token x) (Token "_;") (Token y) (Token "_;") (Token z) (Token _})
-     (Token "_;") (Token def) (Token second) (Token =) (Token _{) (Token x)
-     (Token ";") (Token y) (Token _}) (Token _}) (Token _eof))
+    (_{ "_;" def first = _{ x "_;" y "_;" z _} "_;" def second = _{ x ";" y _} _}
+     _eof)
     |}]
 ;;
 
@@ -204,11 +170,7 @@ def first:
   z
     |};
   [%expect
-    {|
-    ((Token _{) (Token "_;") (Token def) (Token first) (Token :) (Token _{)
-     (Token x) (Token ";") (Token "_;") (Token y) (Token ";") (Token "_;")
-     (Token z) (Token _}) (Token _}) (Token _eof))
-    |}]
+    {| (_{ "_;" def first : _{ x ";" "_;" y ";" "_;" z _} _} _eof) |}]
 ;;
 
 let%expect_test "" =
@@ -217,10 +179,7 @@ let%expect_test "" =
 hello_world } another
 |};
   [%expect
-    {|
-    ((Token _{) (Token "_;") (Token hello_world) (Token }) (Token another)
-     (Token _}) (Token _eof))
-    |}]
+    {| (_{ "_;" hello_world } another _} _eof) |}]
 ;;
 
 let%expect_test "equal sign" =
@@ -232,9 +191,7 @@ let%expect_test "equal sign" =
     |};
   [%expect
     {|
-    ((Token _{) (Token let) (Token first) (Token :) (Token _{) (Token fun)
-     (Token :) (Token _{) (Token _}) (Token _}) (Token let) (Token x) (Token :)
-     (Token _{) (Token 1324234) (Token _}) (Token let) (Token y) (Token :)
-     (Token _{) (Token 12341324) (Token _}) (Token _}) (Token _eof))
+    (_{ let first : _{ fun : _{ _} _} let x : _{ 1324234 _} let y : _{ 12341324
+     _} _} _eof)
     |}]
 ;;

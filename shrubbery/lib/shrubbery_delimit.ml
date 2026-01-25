@@ -143,28 +143,10 @@ let%expect_test "smoke" =
     |};
   [%expect
     {|
-    ((Token "\n") (Token "    ") (Token awef) (Token " ") (Token call_function)
-     (Delim (ldelim "(")
-      (tts
-       ((Token fiaefw) (Token ,) (Token " ") (Token waef) (Token ,) (Token " ")
-        (Delim (ldelim "(")
-         (tts
-          ((Token aewf) (Token ,) (Token " ")
-           (Delim (ldelim [)
-            (tts
-             ((Token aewf) (Token " ")
-              (Delim (ldelim {) (tts ((Token awef))) (rdelim }))))
-            (rdelim ]))
-           (Token " ") (Token awef)))
-         (rdelim ")"))))
-      (rdelim ")"))
-     (Token "\n") (Token "    ")
-     (Delim (ldelim [)
-      (tts
-       ((Token another) (Token " ") (Token one) (Token ,) (Token " ")
-        (Token another) (Token " ") (Token one)))
-      (rdelim ]))
-     (Token "\n") (Token "    ") (Token _eof))
+    ("\n" "    " awef " " call_function
+     ("(" fiaefw , " " waef , " "
+      ("(" aewf , " " ([ aewf " " ({ awef }) ]) " " awef ")") ")")
+     "\n" "    " ([ another " " one , " " another " " one ]) "\n" "    " _eof)
     ()
     |}]
 ;;

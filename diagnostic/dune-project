@@ -1,6 +1,6 @@
 (lang dune 3.20)
 
-(name oak)
+(name diagnostic)
 
 (generate_opam_files true)
 
@@ -16,7 +16,7 @@
 (documentation https://url/to/documentation)
 
 (package
- (name oak)
+ (name diagnostic)
  (synopsis "A short synopsis")
  (description "A longer description")
  (depends
@@ -24,13 +24,8 @@
    (= 5.4.0))
   (core
    (= v0.17.1))
-  (core_unix
-   (= v0.17.1))
   (ppx_jane
    (= v0.17.0))
-  shrubbery
-  utility
-  diagnostic
  )
  (tags
   ("add topics" "to describe" your project)))

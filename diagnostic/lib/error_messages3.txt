@@ -1,0 +1,8 @@
+Main.hs:15:9: error: [GHC-83865]
+    • Couldn't match expected type ‘Bool’ with actual type ‘First’
+    • In the expression: First {a = 1234, b = 12342, c = 12341324}
+      In an equation for ‘hello’:
+          hello = First {a = 1234, b = 12342, c = 12341324}
+   |
+15 | hello = First { a = 1234,
+   |         ^^^^^^^^^^^^^^^^^...

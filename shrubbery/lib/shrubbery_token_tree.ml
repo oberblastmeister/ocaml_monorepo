@@ -11,7 +11,17 @@ type t =
       ; tts : t list
       ; rdelim : Token.t
       }
-[@@deriving sexp_of, equal, compare]
+[@@deriving equal, compare]
+
+let rec sexp_of_t t =
+  match t with
+  | Token t -> Token.sexp_of_t t
+  | Delim { ldelim; tts; rdelim } ->
+    let ldelim = Token.sexp_of_t ldelim in
+    let tts = List.map tts ~f:sexp_of_t in
+    let rdelim = Token.sexp_of_t rdelim in
+    Sexp.List ([ ldelim ] @ tts @ [ rdelim ])
+;;
 
 module Indexed = struct
   type t =
@@ -21,7 +31,17 @@ module Indexed = struct
         ; tts : t list
         ; rdelim : Token.ti
         }
-  [@@deriving sexp_of, equal, compare]
+  [@@deriving equal, compare]
+
+  let rec sexp_of_t t =
+    match t with
+    | Token t -> Token.sexp_of_ti t
+    | Delim { ldelim; tts; rdelim } ->
+      let ldelim = Token.sexp_of_ti ldelim in
+      let tts = List.map tts ~f:sexp_of_t in
+      let rdelim = Token.sexp_of_ti rdelim in
+      Sexp.List ([ ldelim ] @ tts @ [ rdelim ])
+  ;;
 
   let first_token t =
     match t with

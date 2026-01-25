@@ -1,0 +1,19 @@
+---- Field not found [E004] --------------------------------------------- build.zig
+error: no field or member function
+     build.zig
+     |
+  18 |    const lib = b.addStaticLibrary(.{
+     |                ~~~~~~~~~~~~~~~~~~~~~...
+note: struct declared here   
+     /home/brian/.cache/zig/p/N-V-__8AANeVhBSiRwesZrZKZ1hTkJd-goYzJWpN6kwXi-FJ/lib/std/Build.zig
+     |
+   1 | const std = @import("std.zig");
+     | ~~~~~
+note: method invocation only supports up to one level of implicit pointer dereferencing
+note: use '.*' to dereference pointer
+
+---- Type Mismatch [E005] ------------------------------------------ types/list.zig
+error: The 3rd element of this list is an unexpected type of value.
+     | another.zig
+  15 |    [ alice, bob, "/users/chuck/pic" ]
+     |                  ~~~~~~~~~~~~~~~~~~

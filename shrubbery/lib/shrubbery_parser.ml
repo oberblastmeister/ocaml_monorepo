@@ -6,6 +6,7 @@ open struct
   module Syntax = Shrubbery_syntax
 end
 
+(* TODO: change to use Eof instead of option *)
 module State : sig
   type t
 

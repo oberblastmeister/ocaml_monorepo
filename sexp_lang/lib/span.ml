@@ -1,7 +1,8 @@
 open! O
 
 type t =
-  { start : int
+  { 
+    start : int
   ; stop : int
   }
 [@@deriving sexp, equal, compare, hash, fields]
