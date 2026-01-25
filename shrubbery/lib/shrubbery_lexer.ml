@@ -105,12 +105,9 @@ let%expect_test "smoke" =
     |};
   [%expect
     {|
-    (Newline (Operator +) (Whitespace 1) (Operator /) (Whitespace 1) (Operator +)
-     (Whitespace 1) (Operator ==) (Whitespace 1) (Ident awefpoiu'aewf?)
-     (Whitespace 1) (String aewf) (Ident first) Dot (Ident second) (Whitespace 1)
-     (Ident call_function) LParen (Ident arg1) Comma (Whitespace 1) (Ident arg2)
-     RParen (Whitespace 1) (Keyword first) (Whitespace 1) (Keyword second)
-     (Whitespace 1) (Keyword else) Newline (Comment " awefaewfaewfawef") Newline
-     (Number 1.23__1.3_4.3) Newline (Comment " another") Newline (Whitespace 4))
+    ("\n" + " " / " " + " " == " " awefpoiu'aewf? " " "\"aewf\"" first . second
+     " " call_function "(" arg1 , " " arg2 ")" " " ~first " " ~second " " ~else
+     "\n" "//  awefaewfaewfawef" "\n" 1.23__1.3_4.3 "\n" "//  another" "\n"
+     "    ")
     |}]
 ;;

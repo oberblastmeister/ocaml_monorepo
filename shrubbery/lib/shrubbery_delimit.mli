@@ -9,7 +9,7 @@ module Error : sig
         ; rdelim : Token.ti
         }
     | Expecting_delimiter of Token.ti
-  [@@deriving sexp]
+  [@@deriving sexp_of]
 end
 
 val delimit : Token.t array -> Token_tree.t list * Error.t list

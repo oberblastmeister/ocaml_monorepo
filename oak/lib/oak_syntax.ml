@@ -1,4 +1,5 @@
 open Core
+module Token = Shrubbery.Token
 
 module Purity = struct
   module T = struct
@@ -17,7 +18,7 @@ end
 
 module Universe = struct
   module T = struct
-    type t = Type | Kind | Sig [@@deriving sexp, equal, compare]
+    type t = Type | Kind | Sig [@@deriving sexp_of, equal, compare]
   end
 
   include T
@@ -40,16 +41,19 @@ module Var = struct
   let stamp = ref 0
 
   module T = struct
-    type t = { id : int; name : string } [@@deriving sexp, compare, equal]
+    type t = { id : int; name : string; token : Token.ti option }
+    [@@deriving sexp_of, compare, equal]
   end
 
-  include Comparable.Make (T)
+  include Comparable.Make_plain (T)
   include T
 
-  let create name =
+  let create_initial name token = { name; id = -1; token = Some token }
+
+  let create ?token name =
     let id = !stamp in
     incr stamp;
-    { name; id }
+    { name; id; token }
 
   let make_fresh var =
     let id = !stamp in
@@ -74,14 +78,11 @@ module Cvar = struct
     type t =
       | Var of Var.t
       | Record_field of { var : Record_var.t; field : string }
-    [@@deriving sexp, compare, equal]
+    [@@deriving sexp_of, compare, equal]
   end
 
-  include Comparable.Make (T)
+  include Comparable.Make_plain (T)
   include T
-
-  let create name = Var (Var.create name)
-  let create_field field = Record_field { var = Record_var.create (); field }
 end
 
 type core_ty = Ty_bool | Ty_unit [@@deriving sexp_of, equal, compare]

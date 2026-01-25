@@ -26,7 +26,7 @@ type t =
   | Ident of string
   | Keyword of string
   | Error of string
-[@@deriving sexp, equal, compare]
+[@@deriving sexp_of, equal, compare]
 
 val to_string : t -> string
 val length : t -> int
@@ -36,7 +36,7 @@ type ti =
   { token : t
   ; index : int
   }
-[@@deriving sexp, equal, compare]
+[@@deriving sexp_of, equal, compare]
 
 val to_indexed : t list -> ti list
 val advance_line_col : t -> Line_col.t -> Line_col.t

@@ -30,7 +30,7 @@ module Error = struct
         ; rdelim : Token.ti
         }
     | Expecting_delimiter of Token.ti
-  [@@deriving sexp]
+  [@@deriving sexp_of]
 end
 
 module State : sig
@@ -150,32 +150,28 @@ let%expect_test "smoke" =
     |};
   [%expect
     {|
-    ((Token Newline) (Token (Whitespace 4)) (Token (Ident awef))
-     (Token (Whitespace 1)) (Token (Ident call_function))
-     (Delim (ldelim LParen)
+    ((Token "\n") (Token "    ") (Token awef) (Token " ") (Token call_function)
+     (Delim (ldelim "(")
       (tts
-       ((Token (Ident fiaefw)) (Token Comma) (Token (Whitespace 1))
-        (Token (Ident waef)) (Token Comma) (Token (Whitespace 1))
-        (Delim (ldelim LParen)
+       ((Token fiaefw) (Token ,) (Token " ") (Token waef) (Token ,) (Token " ")
+        (Delim (ldelim "(")
          (tts
-          ((Token (Ident aewf)) (Token Comma) (Token (Whitespace 1))
-           (Delim (ldelim LBrack)
+          ((Token aewf) (Token ,) (Token " ")
+           (Delim (ldelim [)
             (tts
-             ((Token (Ident aewf)) (Token (Whitespace 1))
-              (Delim (ldelim LBrace) (tts ((Token (Ident awef))))
-               (rdelim RBrace))))
-            (rdelim RBrack))
-           (Token (Whitespace 1)) (Token (Ident awef))))
-         (rdelim RParen))))
-      (rdelim RParen))
-     (Token Newline) (Token (Whitespace 4))
-     (Delim (ldelim LBrack)
+             ((Token aewf) (Token " ")
+              (Delim (ldelim {) (tts ((Token awef))) (rdelim }))))
+            (rdelim ]))
+           (Token " ") (Token awef)))
+         (rdelim ")"))))
+      (rdelim ")"))
+     (Token "\n") (Token "    ")
+     (Delim (ldelim [)
       (tts
-       ((Token (Ident another)) (Token (Whitespace 1)) (Token (Ident one))
-        (Token Comma) (Token (Whitespace 1)) (Token (Ident another))
-        (Token (Whitespace 1)) (Token (Ident one))))
-      (rdelim RBrack))
-     (Token Newline) (Token (Whitespace 4)))
+       ((Token another) (Token " ") (Token one) (Token ,) (Token " ")
+        (Token another) (Token " ") (Token one)))
+      (rdelim ]))
+     (Token "\n") (Token "    "))
     ()
     |}]
 ;;

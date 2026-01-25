@@ -71,7 +71,7 @@ end = struct
   ;;
 end
 
-let rec parse_colon_block st : Syntax.Indexed.token_block =
+let rec parse_colon_block st : Syntax.token_block =
   let token =
     State.expect_if st ~f:(function
       | Colon | Equal -> true
@@ -80,7 +80,7 @@ let rec parse_colon_block st : Syntax.Indexed.token_block =
   let block = parse_block st in
   { token; block }
 
-and parse_block st : Syntax.Indexed.block =
+and parse_block st : Syntax.block =
   match State.next st with
   | Some (Token ({ token = VLBrace; _ } as ti)) -> parse_virtual_block st ti
   | Some (Delim { ldelim = { token = LBrace; _ } as ldelim; tts; rdelim }) ->
@@ -92,10 +92,10 @@ and parse_block st : Syntax.Indexed.block =
         "precondition: colon should always have VLBrace or delimited LBrace after it"
           ~got:(tok : Token_tree.Indexed.t option)]
 
-and parse_virtual_block st lbrace : Syntax.Indexed.block =
+and parse_virtual_block st lbrace : Syntax.block =
   parse_virtual_block_rec st lbrace []
 
-and parse_virtual_block_rec (st : State.t) lbrace (acc : Syntax.Indexed.group_sep list) =
+and parse_virtual_block_rec (st : State.t) lbrace (acc : Syntax.group_sep list) =
   match State.peek st with
   | Some (Token { token = VRBrace; _ }) ->
     let rbrace = State.expect st VRBrace in
@@ -114,7 +114,7 @@ and parse_delimited_groups ~sep tts =
   let st = State.create (Array.of_list tts) in
   parse_delimited_groups_rec ~sep st []
 
-and parse_delimited_groups_rec ~sep st (acc : Syntax.Indexed.group_sep list) =
+and parse_delimited_groups_rec ~sep st (acc : Syntax.group_sep list) =
   match State.peek st with
   | None -> List.rev acc
   | Some _ ->
@@ -122,7 +122,7 @@ and parse_delimited_groups_rec ~sep st (acc : Syntax.Indexed.group_sep list) =
     let sep_tok = State.next_if st ~f:(Token.equal sep) in
     parse_delimited_groups_rec ~sep st ({ group; sep = sep_tok } :: acc)
 
-and parse_group (st : State.t) : Syntax.Indexed.group =
+and parse_group (st : State.t) : Syntax.group =
   let items = parse_items st in
   let block =
     match State.peek st with
@@ -142,7 +142,7 @@ and parse_items_rec st acc =
     let item = parse_item st in
     parse_items_rec st (item :: acc)
 
-and parse_item st : Syntax.Indexed.item =
+and parse_item st : Syntax.item =
   match State.next st |> Option.value_exn with
   | Token ti -> Token ti
   | Delim { ldelim; tts; rdelim } ->
@@ -158,7 +158,7 @@ and parse_alts_rec st acc =
     parse_alts_rec st (alt :: acc)
   | Some _ | None -> List.rev acc
 
-and parse_alt st : Syntax.Indexed.alt =
+and parse_alt st : Syntax.alt =
   let token = State.expect st Pipe in
   let block = parse_block st in
   { token; block }
@@ -170,7 +170,7 @@ and parse_alt st : Syntax.Indexed.alt =
    we must also always have VLBrace matched by a VRBrace, which is guaranteed by the layout calculator
    trivia must have been removed from the token trees
 *)
-let parse_tts tts : Syntax.Indexed.block =
+let parse_tts tts : Syntax.block =
   let st = State.create (Array.of_list tts) in
   parse_block st
 ;;
@@ -183,10 +183,11 @@ let parse s =
   end in
   let tokens = Lexer.lex s |> Array.of_list in
   let tts, errors = Delimit.delimit tokens in
-  let tts = Token_tree.root_to_indexed tts in
-  let tts = Token_tree.Indexed.remove_trivia_root tts in
+  let tts = Token_tree.Root.to_indexed tts in
   let tts = Layout.insert_virtual_tokens tokens tts in
-  let tts = Token_tree.root_to_indexed tts in
+  let tts_save = tts in
+  let tts = Token_tree.Root.to_indexed tts in
+  let tts = Token_tree.Indexed.Root.remove_trivia tts in
   let block = parse_tts tts in
-  block, errors
+  tts_save, block, errors
 ;;

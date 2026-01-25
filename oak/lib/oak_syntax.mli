@@ -1,4 +1,5 @@
 open Core
+module Token := Shrubbery.Token
 
 module Purity : sig
   type t = Pure | Impure [@@deriving sexp_of, compare, equal]
@@ -9,7 +10,7 @@ module Purity : sig
 end
 
 module Universe : sig
-  type t = Type | Kind | Sig [@@deriving sexp, equal, compare]
+  type t = Type | Kind | Sig [@@deriving sexp_of, equal, compare]
 
   include Base.Comparable.S with type t := t
 
@@ -21,18 +22,20 @@ module Universe : sig
 end
 
 module Var : sig
-  type t = private { id : int; name : string } [@@deriving sexp, compare, equal]
+  type t = private { id : int; name : string; token : Token.ti option }
+  [@@deriving sexp_of, compare, equal]
 
-  include Comparable.S with type t := t
+  include Comparable.S_plain with type t := t
 
-  val create : string -> t
+  val create_initial : string -> Token.ti -> t
+  val create : ?token:Token.ti -> string -> t
   val make_fresh : t -> t
 end
 
 module Record_var : sig
   type t = private int
 
-  include Comparable.S with type t := t
+  include Comparable.S_plain with type t := t
 
   val create : unit -> t
 end
@@ -41,12 +44,9 @@ module Cvar : sig
   type t =
     | Var of Var.t
     | Record_field of { var : Record_var.t; field : string }
-  [@@deriving sexp, compare, equal]
+  [@@deriving sexp_of, compare, equal]
 
-  include Comparable.S with type t := t
-
-  val create : string -> t
-  val create_field : string -> t
+  include Comparable.S_plain with type t := t
 end
 
 type core_ty = Ty_bool | Ty_unit [@@deriving sexp_of, equal, compare]

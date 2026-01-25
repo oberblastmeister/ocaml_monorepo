@@ -13,8 +13,8 @@ end
 let check ?(remove_trivia = true) s =
   let tokens = Lexer.lex s |> Array.of_list in
   let tts, errors = Delimit.delimit tokens in
-  let tts = Layout.insert_virtual_tokens tokens (Token_tree.root_to_indexed tts) in
-  let tts = if remove_trivia then Token_tree.remove_trivia_root tts else tts in
+  let tts = Layout.insert_virtual_tokens tokens (Token_tree.Root.to_indexed tts) in
+  let tts = if remove_trivia then Token_tree.Root.remove_trivia tts else tts in
   print_s [%sexp (tts : Token_tree.t list)];
   if not (List.is_empty errors) then print_s [%sexp (errors : Delimit.Error.t list)];
   ()
@@ -31,10 +31,9 @@ def first:
   ();
   [%expect
     {|
-    ((Token VLBrace) (Token VSemi) (Token (Ident def)) (Token (Ident first))
-     (Token Colon) (Token VLBrace) (Token (Ident x)) (Token VSemi)
-     (Token (Ident y)) (Token VSemi) (Token (Ident z)) (Token VRBrace)
-     (Token VRBrace))
+    ((Token _{) (Token "_;") (Token def) (Token first) (Token :) (Token _{)
+     (Token x) (Token "_;") (Token y) (Token "_;") (Token z) (Token _})
+     (Token _}))
     |}]
 ;;
 
@@ -56,21 +55,18 @@ def first:
     |};
   [%expect
     {|
-    ((Token VLBrace) (Token VSemi) (Token (Ident def)) (Token (Ident first))
-     (Token Colon) (Token VLBrace) (Token (Ident call_function))
-     (Delim (ldelim LParen)
+    ((Token _{) (Token "_;") (Token def) (Token first) (Token :) (Token _{)
+     (Token call_function)
+     (Delim (ldelim "(")
       (tts
-       ((Token (Ident do)) (Token Colon) (Token VLBrace) (Token (Ident a))
-        (Token VSemi) (Token (Ident b)) (Token Semi) (Token (Ident c))
-        (Token VSemi) (Token (Ident d)) (Token VRBrace) (Token Comma)
-        (Token (Ident do)) (Token Colon) (Token VLBrace) (Token (Ident x))
-        (Token Semi) (Token (Ident y)) (Token Semi) (Token VSemi)
-        (Token (Ident z)) (Token VRBrace) (Token Comma) (Token (Ident do))
-        (Token Colon) (Token VLBrace) (Token (Ident a)) (Token Semi)
-        (Token (Ident b)) (Token Semi) (Token (Ident c)) (Token Semi)
-        (Token (Ident d)) (Token VRBrace)))
-      (rdelim RParen))
-     (Token VRBrace) (Token VRBrace))
+       ((Token do) (Token :) (Token _{) (Token a) (Token "_;") (Token b)
+        (Token ";") (Token c) (Token "_;") (Token d) (Token _}) (Token ,)
+        (Token do) (Token :) (Token _{) (Token x) (Token ";") (Token y)
+        (Token ";") (Token "_;") (Token z) (Token _}) (Token ,) (Token do)
+        (Token :) (Token _{) (Token a) (Token ";") (Token b) (Token ";")
+        (Token c) (Token ";") (Token d) (Token _})))
+      (rdelim ")"))
+     (Token _}) (Token _}))
     |}]
 ;;
 
@@ -85,13 +81,11 @@ def another:
     |};
   [%expect
     {|
-    ((Token VLBrace) (Token VSemi) (Token (Ident def)) (Token (Ident first))
-     (Token Colon) (Token VLBrace) (Token (Ident x)) (Token Semi)
-     (Token (Ident y)) (Token Semi) (Token (Ident z)) (Token VRBrace)
-     (Token VSemi) (Token (Error ,)) (Token VSemi) (Token (Ident def))
-     (Token (Ident another)) (Token Colon) (Token VLBrace) (Token (Ident x))
-     (Token Semi) (Token (Ident y)) (Token Semi) (Token (Ident z))
-     (Token VRBrace) (Token VRBrace))
+    ((Token _{) (Token "_;") (Token def) (Token first) (Token :) (Token _{)
+     (Token x) (Token ";") (Token y) (Token ";") (Token z) (Token _})
+     (Token "_;") (Token ,) (Token "_;") (Token def) (Token another) (Token :)
+     (Token _{) (Token x) (Token ";") (Token y) (Token ";") (Token z) (Token _})
+     (Token _}))
     |}]
 ;;
 
@@ -111,14 +105,11 @@ def g:
   |};
   [%expect
     {|
-    ((Token VLBrace) (Token (Ident def)) (Token (Ident f)) (Token Colon)
-     (Token VLBrace) (Token (Ident x)) (Token Semi) (Token (Ident y))
-     (Token Semi) (Token (Ident z)) (Token VRBrace) (Token VSemi)
-     (Token (Ident def)) (Token (Ident another)) (Token Colon) (Token VLBrace)
-     (Token (Ident x)) (Token VSemi) (Token (Ident y)) (Token VRBrace)
-     (Token VSemi) (Token (Ident def)) (Token (Ident g)) (Token Colon)
-     (Token VLBrace) (Token (Ident x)) (Token Semi) (Token (Ident y))
-     (Token VRBrace) (Token VRBrace))
+    ((Token _{) (Token def) (Token f) (Token :) (Token _{) (Token x) (Token ";")
+     (Token y) (Token ";") (Token z) (Token _}) (Token "_;") (Token def)
+     (Token another) (Token :) (Token _{) (Token x) (Token "_;") (Token y)
+     (Token _}) (Token "_;") (Token def) (Token g) (Token :) (Token _{) (Token x)
+     (Token ";") (Token y) (Token _}) (Token _}))
     |}]
 ;;
 
@@ -133,11 +124,10 @@ program:
     |};
   [%expect
     {|
-    ((Token VLBrace) (Token VSemi) (Token (Ident program)) (Token Colon)
-     (Token VLBrace) (Token (Ident x)) (Token VSemi) (Token Semi)
-     (Token (Ident y)) (Token VSemi) (Token (Ident z)) (Token VSemi) (Token Semi)
-     (Token Semi) (Token Semi) (Token Semi) (Token Semi) (Token (Ident w))
-     (Token VRBrace) (Token VRBrace))
+    ((Token _{) (Token "_;") (Token program) (Token :) (Token _{) (Token x)
+     (Token "_;") (Token ";") (Token y) (Token "_;") (Token z) (Token "_;")
+     (Token ";") (Token ";") (Token ";") (Token ";") (Token ";") (Token w)
+     (Token _}) (Token _}))
     |}]
 ;;
 
@@ -151,10 +141,9 @@ let%expect_test "weird empty blocks" =
     |};
   [%expect
     {|
-    ((Token VLBrace) (Token VSemi) (Token Colon) (Token VLBrace) (Token Colon)
-     (Token VLBrace) (Token Colon) (Token VLBrace) (Token (Ident first))
-     (Token VSemi) (Token (Ident second)) (Token VSemi) (Token (Ident third))
-     (Token VRBrace) (Token VRBrace) (Token VRBrace) (Token VRBrace))
+    ((Token _{) (Token "_;") (Token :) (Token _{) (Token :) (Token _{) (Token :)
+     (Token _{) (Token first) (Token "_;") (Token second) (Token "_;")
+     (Token third) (Token _}) (Token _}) (Token _}) (Token _}))
     |}]
 ;;
 
@@ -168,10 +157,9 @@ let%expect_test "weird empty blocks find first token" =
     |};
   [%expect
     {|
-    ((Token VLBrace) (Token Colon) (Token VLBrace) (Token Colon) (Token VLBrace)
-     (Token Colon) (Token VLBrace) (Token VRBrace) (Token VSemi)
-     (Token (Ident x)) (Token VSemi) (Token (Ident y)) (Token VSemi)
-     (Token (Ident z)) (Token VRBrace) (Token VRBrace) (Token VRBrace))
+    ((Token _{) (Token :) (Token _{) (Token :) (Token _{) (Token :) (Token _{)
+     (Token _}) (Token "_;") (Token x) (Token "_;") (Token y) (Token "_;")
+     (Token z) (Token _}) (Token _}) (Token _}))
     |}];
   check
     {|
@@ -182,10 +170,9 @@ let%expect_test "weird empty blocks find first token" =
     |};
   [%expect
     {|
-    ((Token VLBrace) (Token VSemi) (Token Colon) (Token VLBrace) (Token Colon)
-     (Token VLBrace) (Token Colon) (Token VLBrace) (Token VRBrace)
-     (Token VRBrace) (Token (Ident x)) (Token (Ident y)) (Token (Ident z))
-     (Token VRBrace) (Token VRBrace))
+    ((Token _{) (Token "_;") (Token :) (Token _{) (Token :) (Token _{) (Token :)
+     (Token _{) (Token _}) (Token _}) (Token x) (Token y) (Token z) (Token _})
+     (Token _}))
     |}]
 ;;
 
@@ -201,12 +188,10 @@ def second = x; y
     |};
   [%expect
     {|
-    ((Token VLBrace) (Token VSemi) (Token (Ident def)) (Token (Ident first))
-     (Token Equal) (Token VLBrace) (Token (Ident x)) (Token VSemi)
-     (Token (Ident y)) (Token VSemi) (Token (Ident z)) (Token VRBrace)
-     (Token VSemi) (Token (Ident def)) (Token (Ident second)) (Token Equal)
-     (Token VLBrace) (Token (Ident x)) (Token Semi) (Token (Ident y))
-     (Token VRBrace) (Token VRBrace))
+    ((Token _{) (Token "_;") (Token def) (Token first) (Token =) (Token _{)
+     (Token x) (Token "_;") (Token y) (Token "_;") (Token z) (Token _})
+     (Token "_;") (Token def) (Token second) (Token =) (Token _{) (Token x)
+     (Token ";") (Token y) (Token _}) (Token _}))
     |}]
 ;;
 
@@ -220,10 +205,9 @@ def first:
     |};
   [%expect
     {|
-    ((Token VLBrace) (Token VSemi) (Token (Ident def)) (Token (Ident first))
-     (Token Colon) (Token VLBrace) (Token (Ident x)) (Token Semi) (Token VSemi)
-     (Token (Ident y)) (Token Semi) (Token VSemi) (Token (Ident z))
-     (Token VRBrace) (Token VRBrace))
+    ((Token _{) (Token "_;") (Token def) (Token first) (Token :) (Token _{)
+     (Token x) (Token ";") (Token "_;") (Token y) (Token ";") (Token "_;")
+     (Token z) (Token _}) (Token _}))
     |}]
 ;;
 
@@ -234,8 +218,8 @@ hello_world } another
 |};
   [%expect
     {|
-    ((Token VLBrace) (Token VSemi) (Token (Ident hello_world)) (Token (Error }))
-     (Token (Ident another)) (Token VRBrace))
+    ((Token _{) (Token "_;") (Token hello_world) (Token }) (Token another)
+     (Token _}))
     |}]
 ;;
 
@@ -246,12 +230,11 @@ let%expect_test "equal sign" =
       let x: 1324234
       let y: 12341324
     |};
-  [%expect {|
-    ((Token VLBrace) (Token (Ident let)) (Token (Ident first)) (Token Colon)
-     (Token VLBrace) (Token (Ident fun)) (Token Colon) (Token VLBrace)
-     (Token VRBrace) (Token VRBrace) (Token (Ident let)) (Token (Ident x))
-     (Token Colon) (Token VLBrace) (Token (Number 1324234)) (Token VRBrace)
-     (Token (Ident let)) (Token (Ident y)) (Token Colon) (Token VLBrace)
-     (Token (Number 12341324)) (Token VRBrace) (Token VRBrace))
+  [%expect
+    {|
+    ((Token _{) (Token let) (Token first) (Token :) (Token _{) (Token fun)
+     (Token :) (Token _{) (Token _}) (Token _}) (Token let) (Token x) (Token :)
+     (Token _{) (Token 1324234) (Token _}) (Token let) (Token y) (Token :)
+     (Token _{) (Token 12341324) (Token _}) (Token _}))
     |}]
-  
+;;

@@ -30,7 +30,7 @@ type t =
   | Ident of string
   | Keyword of string
   | Error of string
-[@@deriving sexp, equal, compare]
+[@@deriving equal, compare]
 
 let is_trivia = function
   | Comment _ | Whitespace _ | Newline -> true
@@ -62,8 +62,10 @@ let length = function
   | Error s -> String.length s
 ;;
 
-let to_string = function
-  | VSemi | VLBrace | VRBrace -> ""
+let to_string_gen vsemi vlbrace vrbrace = function
+  | VSemi -> vsemi
+  | VLBrace -> vlbrace
+  | VRBrace -> vrbrace
   | LParen -> "("
   | RParen -> ")"
   | LBrace -> "{"
@@ -87,12 +89,16 @@ let to_string = function
   | Error s -> s
 ;;
 
+let to_string t = to_string_gen "" "" "" t
+let sexp_of_t t = Sexp.Atom (to_string_gen "_;" "_{" "_}" t)
+
 type ti =
   { token : t
   ; index : int
   }
-[@@deriving sexp, equal, compare]
+[@@deriving equal, compare]
 
+let sexp_of_ti { token; index } = Sexp.List [ sexp_of_t token; Int.sexp_of_t index ]
 let to_indexed (ts : t list) = List.mapi ts ~f:(fun index token -> { token; index })
 
 let advance_line_col token (line_col : Line_col.t) =

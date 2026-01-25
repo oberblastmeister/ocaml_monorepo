@@ -3,7 +3,7 @@ module Syntax = Shrubbery_syntax
 module Token = Shrubbery_token
 module Fail = Utility.Fail
 
-let token env t1 t2 = if Token.equal t1 t2 then () else Fail.fail env
+let token env t1 (t2 : Token.ti) = if Token.equal t1 t2.token then () else Fail.fail env
 
 module Item = struct
   let token env (t : Syntax.item) =

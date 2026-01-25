@@ -8,9 +8,9 @@ type t =
       ; tts : t list
       ; rdelim : Token.t
       }
-[@@deriving sexp, equal, compare]
+[@@deriving sexp_of, equal, compare]
 
-type root = t list [@@deriving sexp, equal, compare]
+val remove_trivia : t -> t option
 
 module Indexed : sig
   type t =
@@ -20,21 +20,29 @@ module Indexed : sig
         ; tts : t list
         ; rdelim : Token.ti
         }
-  [@@deriving sexp, equal, compare]
+  [@@deriving sexp_of, equal, compare]
 
-  type root = t list [@@deriving sexp, equal, compare]
+  module Root : sig
+    type nonrec t = t list [@@deriving sexp_of, equal, compare]
+
+    val remove_trivia : t -> t
+  end
 
   val is_trivia_token : t -> bool
   val first_token : t -> Token.ti
-  val remove_trivia : t -> t option
-  val remove_trivia_root : t list -> t list
 end
 
 val is_trivia_token : t -> bool
 val to_indexed : t -> Indexed.t
 val of_indexed : Indexed.t -> t
 val remove_trivia : t -> t option
-val remove_trivia_root : t list -> t list
-val root_to_indexed : root -> Indexed.root
-val root_to_list : root -> Token.t list
 val to_list : t -> Token.t list
+
+module Root : sig
+  type t' := t
+  type nonrec t = t list [@@deriving sexp_of, equal, compare]
+
+  val to_indexed : t -> Indexed.Root.t
+  val to_list : t -> Token.t list
+  val remove_trivia : t -> t
+end
