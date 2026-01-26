@@ -99,6 +99,8 @@ module Mod_var = struct
   include Comparable.Make_plain (T)
   include T
 
+  let create_initial pos = { id = -1; pos = Some pos }
+
   let create ?pos () =
     let id = !stamp in
     incr stamp;
@@ -196,6 +198,7 @@ type expr =
       ; body2 : expr
       ; span : Span.t
       }
+  | Expr_hole of { span : Span.t }
 
 and expr_decl =
   { let_pos : int
@@ -556,20 +559,21 @@ end
 
 let expr_span (e : expr) : Span.t =
   match e with
-  | Expr_var { span; _ } -> span
-  | Expr_seal { span; _ } -> span
-  | Expr_app { span; _ } -> span
-  | Expr_abs { span; _ } -> span
-  | Expr_ty_fun { span; _ } -> span
-  | Expr_proj { span; _ } -> span
-  | Expr_mod { span; _ } -> span
-  | Expr_ty_mod { span; _ } -> span
-  | Expr_let { span; _ } -> span
-  | Expr_ty_sing { span; _ } -> span
-  | Expr_bool { span; _ } -> span
-  | Expr_unit { span } -> span
-  | Expr_int { span; _ } -> span
-  | Expr_core_ty { span; _ } -> span
-  | Expr_universe { span; _ } -> span
+  | Expr_var { span; _ }
+  | Expr_seal { span; _ }
+  | Expr_app { span; _ }
+  | Expr_abs { span; _ }
+  | Expr_ty_fun { span; _ }
+  | Expr_proj { span; _ }
+  | Expr_mod { span; _ }
+  | Expr_ty_mod { span; _ }
+  | Expr_let { span; _ }
+  | Expr_ty_sing { span; _ }
+  | Expr_bool { span; _ }
+  | Expr_unit { span }
+  | Expr_int { span; _ }
+  | Expr_core_ty { span; _ }
+  | Expr_universe { span; _ }
+  | Expr_hole { span; _ }
   | Expr_if { span; _ } -> span
 ;;

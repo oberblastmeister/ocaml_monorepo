@@ -1,5 +1,7 @@
 type t
 
+exception Fail
+
 val env : t
 val fail : t -> 'a
 val unwrap : t -> 'a option -> 'a
@@ -13,16 +15,18 @@ val guard : t -> bool -> unit
 val one_of : (unit -> 'a) list -> 'a
 val run : f:(t -> 'a) -> 'a option
 val run_exn : f:(t -> 'a) -> 'a
+val run_or_thunk : default:(unit -> 'a) -> f:(t -> 'a) -> 'a
 val cannot_fail : f:(unit -> 'a) -> 'a
 
 module List : sig
   type env := t
-  type 'a t = 'a list ref
+  type 'a t = 'a list ref [@@deriving sexp_of]
 
   val next : env -> 'a t -> 'a
+  val peek : env -> 'a t -> 'a
   val take : 'a t -> 'a list
   val empty : env -> 'a t -> unit
-  val create : env -> 'a list -> f:('a t -> 'b) -> 'b
+  val create : 'a list -> 'a t
   val optional : 'a t -> (unit -> 'b) -> 'b option
   val either : 'a t -> (unit -> 'b) -> (unit -> 'c) -> ('c, 'b) Base.Either.t
   val many_rev : 'a t -> (unit -> 'b) -> 'b list

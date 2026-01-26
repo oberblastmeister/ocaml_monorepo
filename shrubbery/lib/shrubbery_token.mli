@@ -47,3 +47,4 @@ val to_indexed : t list -> ti list
 val advance_line_col : t -> Line_col.t -> Line_col.t
 val calculate_offsets : t array -> int array
 val calculate_line_col : t array -> Line_col.t array
+val calculate_next_non_trivia : t array -> int array

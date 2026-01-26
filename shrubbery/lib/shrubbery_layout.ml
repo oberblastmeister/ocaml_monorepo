@@ -111,7 +111,7 @@ let insert_virtual_tokens tokens tts =
       else pop_offside st curr_lc.col ~add_semi:(not (Token.equal token.token Pipe));
       begin
         begin match token.token with
-        | Colon | Pipe | Equal -> start_block st
+        | Colon | Pipe -> start_block st
         | _ -> ()
         end;
         add_tt st (Token token.token)

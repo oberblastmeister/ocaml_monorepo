@@ -7,7 +7,7 @@ let rec take_while ~f i s =
 
 let is_operator_char c =
   match c with
-  | '$' | '&' | '*' | '+' | '-' | '/' | '=' | '>' | '<' | '@' | '^' | '|' -> true
+  | '$' | '&' | '*' | '+' | '-' | '/' | '=' | '>' | '<' | '@' | '^' | '|' | ':' -> true
   | _ -> false
 ;;
 
@@ -36,7 +36,8 @@ let lex s =
       | '{' -> lex (Token.LBrace :: acc) (i + 1)
       | '}' -> lex (Token.RBrace :: acc) (i + 1)
       | ',' -> lex (Token.Comma :: acc) (i + 1)
-      | ':' -> lex (Token.Colon :: acc) (i + 1)
+      | ':' when i + 1 >= String.length s || not (is_operator_char s.[i + 1]) ->
+        lex (Token.Colon :: acc) (i + 1)
       | ';' -> lex (Token.Semi :: acc) (i + 1)
       | '.' -> lex (Token.Dot :: acc) (i + 1)
       | '"' -> lex_string acc i (i + 1)
@@ -91,11 +92,12 @@ let lex s =
   lex [] 0
 ;;
 
+let check s =
+  let res = lex s in
+  print_s [%sexp (res : Token.t list)]
+;;
+
 let%expect_test "smoke" =
-  let check s =
-    let res = lex s in
-    print_s [%sexp (res : Token.t list)]
-  in
   check
     {|
 + / + == awefpoiu'aewf? "aewf"first.second call_function(arg1, arg2) ~first ~second ~else
@@ -105,9 +107,17 @@ let%expect_test "smoke" =
     |};
   [%expect
     {|
-    ("\n" + " " / " " + " " == " " awefpoiu'aewf? " " "\"aewf\"" first . second
-     " " call_function "(" arg1 , " " arg2 ")" " " ~first " " ~second " " ~else
-     "\n" "//  awefaewfaewfawef" "\n" 1.23__1.3_4.3 "\n" "//  another" "\n"
-     "    " _eof)
+    ("\n" (operator +) " " (operator /) " " (operator +) " " (operator ==) " "
+     awefpoiu'aewf? " " "\"aewf\"" first . second " " call_function "(" arg1 ,
+     " " arg2 ")" " " ~first " " ~second " " ~else "\n" "//  awefaewfaewfawef"
+     "\n" 1.23__1.3_4.3 "\n" "//  another" "\n" "    " _eof)
     |}]
+;;
+
+let%expect_test "operator" =
+  check
+    {|
+13242 :: Int
+    |};
+  [%expect {| ("\n" 13242 " " (operator ::) " " Int "\n" "    " _eof) |}]
 ;;

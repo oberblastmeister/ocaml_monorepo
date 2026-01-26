@@ -43,6 +43,7 @@ module Root : sig
   type nonrec t = t list [@@deriving sexp_of, equal, compare]
 
   val to_indexed : t -> Indexed.Root.t
+  val of_indexed : Indexed.Root.t -> t
   val to_list : t -> Token.t list
   val remove_trivia : t -> t
 end

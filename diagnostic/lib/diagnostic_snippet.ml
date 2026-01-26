@@ -24,7 +24,13 @@ let format_snippet files snippet =
   let source = file.File.source in
   let converter = file.File.position_converter in
   let start_lc = Position_converter.pos_to_line_col converter snippet.start in
-  let stop_lc = Position_converter.pos_to_line_col converter snippet.stop in
+  let stop_lc =
+    (* this can happen when we have positions on top of virtual tokens which have length 0 *)
+    (* we still want to show these positions so extend it to length 1 *)
+    Position_converter.pos_to_line_col
+      converter
+      (if snippet.start = snippet.stop then snippet.stop + 1 else snippet.stop)
+  in
   let line_no = start_lc.Line_col.line in
   let line_display = line_no + 1 in
   let line_str = Int.to_string line_display in

@@ -68,8 +68,8 @@ def another:
     |};
   [%expect
     {|
-    (_{ "_;" def first : _{ x ";" y ";" z _} "_;" "(Error ,)" "_;" def another :
-     _{ x ";" y ";" z _} _} _eof)
+    (_{ "_;" def first : _{ x ";" y ";" z _} "_;" (error ,) "_;" def another : _{
+     x ";" y ";" z _} _} _eof)
     |}]
 ;;
 
@@ -151,10 +151,7 @@ def first =
 def second = x; y
     |};
   [%expect
-    {|
-    (_{ "_;" def first = _{ x "_;" y "_;" z _} "_;" def second = _{ x ";" y _} _}
-     _eof)
-    |}]
+    {| (_{ "_;" def first = x y z "_;" def second = x ";" y _} _eof) |}]
 ;;
 
 let%expect_test "unnecessary semicolons" =
@@ -173,7 +170,7 @@ let%expect_test "" =
     {|
 hello_world } another
 |};
-  [%expect {| (_{ "_;" hello_world "(Error })" another _} _eof) |}]
+  [%expect {| (_{ "_;" hello_world (error }) another _} _eof) |}]
 ;;
 
 let%expect_test "equal sign" =
@@ -204,9 +201,5 @@ let third = 3234
 }
     |};
   [%expect
-    {|
-    (_{ "_;" mod :
-     ({ let first = _{ 1 _} let second = _{ 2 _} let third = _{ 3234 _} }) _}
-     _eof)
-    |}]
+    {| (_{ "_;" mod : ({ let first = 1 let second = 2 let third = 3234 }) _} _eof) |}]
 ;;

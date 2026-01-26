@@ -17,7 +17,9 @@ All libraries use `(flags (:standard -warn-error -A))` which turns off treating 
 ## Library Architecture
 
 ### staged
+
 A staged metaprogramming language with compile-time and runtime stages. Key modules:
+
 - `Staged_syntax` - AST definition with `Stage.t` (Runtime | Comptime), expression types (functions, applications, let bindings), and type system (Ty_fun with stage annotations)
 - `Staged_infer` - Type inference with bidirectional typing, tracks variable types in environment
 - `Staged_evaluate` - Multi-stage evaluator that handles both compile-time and runtime evaluation, uses fuel-based recursion limits
@@ -28,7 +30,9 @@ A staged metaprogramming language with compile-time and runtime stages. Key modu
 Dependencies: `shrubbery`, `utility`, `core`
 
 ### shrubbery
+
 A layout-sensitive parsing library using indentation and grouping. Modules:
+
 - `Shrubbery_lexer` - Tokenization
 - `Shrubbery_token` / `Shrubbery_token_tree` - Token representation
 - `Shrubbery_parser` - Stateful parser that builds syntax trees
@@ -38,7 +42,9 @@ A layout-sensitive parsing library using indentation and grouping. Modules:
 Dependencies: `core`
 
 ### functional
+
 Functional programming abstractions:
+
 - `Functional_fold` - Folding operations with builder pattern (uses `@>` operator)
 - `Functional_iter` - Iteration abstractions
 - `Functional_traverse` - Traversal operations (uses `&` operator)
@@ -47,7 +53,9 @@ Functional programming abstractions:
 Dependencies: `core`
 
 ### parsec
+
 Parser combinator library with streaming interface:
+
 - `Parsec_intf` - Core interfaces for Token, Stream, Chunk
 - `Make_stream` - Generic stream implementation over token arrays
 - `String_stream` - Specialized stream for character parsing
@@ -55,12 +63,15 @@ Parser combinator library with streaming interface:
 Dependencies: `core`
 
 ### utility
+
 Utility modules:
+
 - `Utility_acc` - Efficient accumulator type that avoids quadratic list append operations. Uses tree structure (Empty, Singleton, Cons, List, Append, Concat) with optimized `to_list` conversion
 
 Dependencies: `core`
 
 ### sexp_lang
+
 S-expression language implementation (structure unclear from inspection).
 
 ### ai libraries
@@ -80,7 +91,7 @@ module Value : sig
     | Integer of int64
     | ...
   [@@deriving sexp, compare, equal]
-  
+
   val string : string -> t
   val integer : int64 -> t
   ...
@@ -97,6 +108,7 @@ end
 ```
 
 Benefits:
+
 - Clear namespacing (e.g., `Value.t`, `Date.t`)
 - Consistent with Core and other OCaml libraries
 - Related functions are grouped with their types
@@ -136,12 +148,47 @@ let parse input =
 ```
 
 Benefits:
+
 - Cleaner internal code without threading `result` through every function
 - Better performance (exceptions for control flow in OCaml are efficient)
 - Maintains a safe, explicit error-handling API for library users
 - Easier to refactor and maintain complex parsers
 
 **Important**: Use `raise_notrace` instead of `raise` when using exceptions for control flow. This avoids the performance overhead of capturing backtraces for expected error conditions.
+
+### Commit Pattern in Parsers
+
+When a parser has matched enough of a construct to be certain about what it's parsing (e.g., a keyword prefix), it should "commit" and stop producing backtrackable `Fail` exceptions. Instead, subsequent errors should be hard errors reported to the user.
+
+The commit pattern works by forgetting the failure handle `h`:
+
+```ocaml
+and parse_fun_ty st h items : Syntax.expr =
+  let item = Items.next h items in
+  let fun_tok, purity =
+    Fail.one_of
+      [ (fun () -> Match.builtin h "Fun" item, Syntax.Purity.Pure)
+      ; (fun () -> Match.builtin h "Funct" item, Syntax.Purity.Impure)
+      ]
+  in
+  (* Commit: no more Failures after matching Fun/Funct *)
+  let h = () in
+  ignore h;
+  (* From here on, use run_or_thunk to convert Fail to hard errors *)
+  let params_item =
+    Fail.run_or_thunk
+      ~f:(fun h -> Items.next h items |> Match.Item.tree h)
+      ~default:(fun () -> error (Error.create "Expected parameter list" fun_tok.index))
+  in
+  ...
+```
+
+Key points:
+
+- After matching the distinguishing prefix (e.g., `Fun` or `Funct`), set `let h = () in ignore h`
+- This shadows the failure handle, preventing accidental use
+- Use `Fail.run_or_thunk` with `~default` to explicitly throw hard errors on failure
+- The `~f` parameter gets a fresh handle for operations that need one
 
 ### Prefer Pattern Matching Over Equality Functions
 
@@ -161,20 +208,63 @@ match State.peek st with
 ```
 
 Benefits:
+
 - More idiomatic OCaml
 - Compiler can check exhaustiveness
 - Often more concise, especially with or-patterns
 - Binds values directly without needing to extract from records
 
+### Use Or-Patterns for Common Field Extraction
+
+When multiple variants share a common field and the same operation is performed on all of them, use or-patterns to consolidate the cases:
+
+```ocaml
+(* Good: Or-pattern for common field extraction *)
+let expr_span (e : expr) : Span.t =
+  match e with
+  | Expr_var { span; _ }
+  | Expr_seal { span; _ }
+  | Expr_app { span; _ }
+  | Expr_abs { span; _ }
+  | Expr_ty_fun { span; _ }
+  | Expr_proj { span; _ }
+  | Expr_mod { span; _ }
+  | Expr_let { span; _ }
+  | Expr_bool { span; _ }
+  | Expr_unit { span }
+  | Expr_int { span; _ }
+  | Expr_hole { span; _ }
+  | Expr_if { span; _ } ->
+    span
+
+(* Less preferred: Repetitive individual cases *)
+let expr_span (e : expr) : Span.t =
+  match e with
+  | Expr_var { span; _ } -> span
+  | Expr_seal { span; _ } -> span
+  | Expr_app { span; _ } -> span
+  | Expr_abs { span; _ } -> span
+  (* ... many more repetitive lines ... *)
+```
+
+Benefits:
+
+- More concise and easier to read
+- Single point of change for the common operation
+- Compiler ensures all variants in the or-pattern bind the same names
+- Makes it obvious that all cases are handled uniformly
+
 ## Naming conventions
 
 Follow core library naming conventions:
+
 - **Modules**: Upper_snake_case (e.g., `String_stream`, `Toml_parser`)
 - **Constructors/Variants**: Upper_snake_case (e.g., `Some`, `None`, `Ok`, `Error`, `Left_bracket`, `Parse_error`)
 - **Functions/Values**: lower_snake_case (e.g., `parse_value`, `to_string`, `check_input`)
 - **File naming**: For a library named `lib` and modules `mod1` and `mod2`, name the files `lib_mod1.ml` and `lib_mod2.ml`
 
 Example:
+
 ```ocaml
 module Token = struct
   type t =
@@ -200,19 +290,19 @@ let%test_module "Parser tests" = (module struct
   let check input =
     let result = from_string input in
     print_s [%sexp (result : (Value.t, Error.t) result)]
-  
+
   let%expect_test "simple key-value" =
     check "key = \"value\"";
     [%expect {|
       (Ok (Table ((key (String value)))))
     |}]
-  
+
   let%expect_test "integer" =
     check "num = 42";
     [%expect {|
       (Ok (Table ((num (Integer 42)))))
     |}]
-  
+
   let%expect_test "boolean" =
     check "enabled = true";
     [%expect {|
@@ -237,6 +327,7 @@ let%expect_test "parse integer" =
 ```
 
 Benefits of test modules with check functions:
+
 - Reduces boilerplate by extracting common test patterns
 - Groups related tests together with clear organization
 - Check functions document the test pattern explicitly
@@ -255,8 +346,21 @@ Benefits of test modules with check functions:
 - Easy to update expected output with `dune promote`
 
 When to use other test forms:
+
 - `%test_unit` - Only for tests with side effects or when output doesn't matter
 - `%test` - Avoid in favor of `%expect_test` with `print_s`
+
+### Updating Expect Test Output
+
+When expect test output changes, use `dune promote` to accept the new output instead of manually editing the expected output in the source file:
+
+```bash
+dune runtest        # Run tests, see failures
+dune promote        # Accept the new output
+dune runtest        # Verify tests pass
+```
+
+This is faster and less error-prone than manually copying output into `[%expect]` blocks.
 
 ## Module Access Conventions
 
@@ -277,6 +381,7 @@ This pattern ensures proper dependency tracking and avoids issues with module al
 ## Recent Work
 
 Based on git history, recent changes involve:
+
 - Variable scoping fixes using fresh variables
 - Avoiding quadratic blowup with Acc.t
 - Switching to single-arity functions

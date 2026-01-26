@@ -55,6 +55,7 @@ module Mod_var : sig
 
   include Comparable.S_plain with type t := t
 
+  val create_initial : Pos.t -> t
   val create : ?pos:Pos.t -> unit -> t
 end
 
@@ -136,6 +137,7 @@ type expr =
       ; body2 : expr
       ; span : Span.t
       }
+  | Expr_hole of { span : Span.t }
 
 and expr_decl =
   { let_pos : int

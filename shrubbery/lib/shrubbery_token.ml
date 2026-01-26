@@ -83,11 +83,11 @@ let length = function
   | Error s -> String.length s
 ;;
 
-let to_string_gen ~vsemi ~vlbrace ~vrbrace ~veof ~error = function
-  | VSemi -> vsemi
-  | VLBrace -> vlbrace
-  | VRBrace -> vrbrace
-  | Veof -> veof
+let to_string = function
+  | VSemi -> ""
+  | VLBrace -> ""
+  | VRBrace -> ""
+  | Veof -> ""
   | LParen -> "("
   | RParen -> ")"
   | LBrace -> "{"
@@ -108,25 +108,36 @@ let to_string_gen ~vsemi ~vlbrace ~vrbrace ~veof ~error = function
   | Keyword s -> "~" ^ s
   | String s -> "\"" ^ s ^ "\""
   | Number s -> s
-  | Error s -> error s
+  | Error s -> s
 ;;
 
-let to_string_hide_virtual t =
-  to_string_gen ~vsemi:"" ~vlbrace:"" ~vrbrace:"" ~veof:"" ~error:Fn.id t
+let sexp_of_t = function
+  | VSemi -> Sexp.Atom "_;"
+  | VLBrace -> Sexp.Atom "_{"
+  | VRBrace -> Sexp.Atom "_}"
+  | Veof -> Sexp.Atom "_eof"
+  | LParen -> Sexp.Atom "("
+  | RParen -> Sexp.Atom ")"
+  | LBrace -> Sexp.Atom "{"
+  | RBrace -> Sexp.Atom "}"
+  | LBrack -> Sexp.Atom "["
+  | RBrack -> Sexp.Atom "]"
+  | Comma -> Sexp.Atom ","
+  | Colon -> Sexp.Atom ":"
+  | Semi -> Sexp.Atom ";"
+  | Equal -> Sexp.Atom "="
+  | Pipe -> Sexp.Atom "|"
+  | Dot -> Sexp.Atom "."
+  | Newline -> Sexp.Atom "\n"
+  | Operator s -> Sexp.List [ Atom "operator"; Atom s ]
+  | Comment s -> Sexp.Atom ("// " ^ s)
+  | Whitespace n -> Sexp.Atom (String.make n ' ')
+  | Ident s -> Sexp.Atom s
+  | Keyword s -> Sexp.Atom ("~" ^ s)
+  | String s -> Sexp.Atom ("\"" ^ s ^ "\"")
+  | Number s -> Sexp.Atom s
+  | Error s -> Sexp.List [ Atom "error"; Atom s ]
 ;;
-
-let to_string_show_show_virtual t =
-  to_string_gen
-    ~vsemi:"_;"
-    ~vlbrace:"_{"
-    ~vrbrace:"_}"
-    ~veof:"_eof"
-    ~error:(fun s -> "(Error " ^ s ^ ")")
-    t
-;;
-
-let to_string t = to_string_hide_virtual t
-let sexp_of_t t = Sexp.Atom (to_string_show_show_virtual t)
 
 type ti =
   { token : t
@@ -146,10 +157,12 @@ let advance_line_col token (line_col : Line_col.t) =
 let calculate_offsets tokens =
   let curr_offset = ref 0 in
   let offsets =
-    Array.init (Array.length tokens) ~f:(fun i ->
-      let res = !curr_offset in
-      Ref.replace curr_offset (( + ) (length tokens.(i)));
-      res)
+    Array.init
+      (Array.length tokens + 1)
+      ~f:(fun i ->
+        let res = !curr_offset in
+        if i <> Array.length tokens then curr_offset := !curr_offset + length tokens.(i);
+        res)
   in
   offsets
 ;;
@@ -157,10 +170,24 @@ let calculate_offsets tokens =
 let calculate_line_col tokens =
   let curr_line_col = ref { Line_col.line = 0; col = 0 } in
   let line_cols =
-    Array.init (Array.length tokens) ~f:(fun i ->
-      let res = !curr_line_col in
-      Ref.replace curr_line_col (advance_line_col tokens.(i));
-      res)
+    Array.init
+      (Array.length tokens + 1)
+      ~f:(fun i ->
+        let res = !curr_line_col in
+        if i <> Array.length tokens
+        then Ref.replace curr_line_col (advance_line_col tokens.(i));
+        res)
   in
   line_cols
+;;
+
+let calculate_next_non_trivia tokens =
+  let len = Array.length tokens in
+  let result = Array.create ~len len in
+  let next_non_trivia = ref len in
+  for i = len - 1 downto 0 do
+    if not (is_trivia tokens.(i)) then next_non_trivia := i;
+    result.(i) <- !next_non_trivia
+  done;
+  result
 ;;

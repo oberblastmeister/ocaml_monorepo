@@ -1,4 +1,5 @@
 open Prelude
+module Span := Location.Span
 module Token_tree := Shrubbery_token_tree
 module Token := Shrubbery_token
 
@@ -43,6 +44,7 @@ end
 module Item : sig
   type t = item
 
+  val span : t -> Span.t
   val first_token : t -> Token.ti
 end
 

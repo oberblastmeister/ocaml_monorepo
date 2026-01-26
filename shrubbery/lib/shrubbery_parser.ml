@@ -80,7 +80,7 @@ end
 let rec parse_colon_block st : Syntax.token_block =
   let token =
     State.expect_if st ~f:(function
-      | Colon | Equal -> true
+      | Colon -> true
       | _ -> false)
   in
   let block = parse_block st in
@@ -141,7 +141,7 @@ and parse_group (st : State.t) : Syntax.group option =
   let items = parse_items st in
   let block =
     match State.peek st with
-    | Some (Token { token = Colon | Equal; _ }) -> Some (parse_colon_block st)
+    | Some (Token { token = Colon; _ }) -> Some (parse_colon_block st)
     | Some _ | None -> None
   in
   let alts = parse_alts st in
@@ -152,8 +152,8 @@ and parse_items st = parse_items_rec st []
 
 and parse_items_rec st acc =
   match State.peek st with
-  | Some (Token { token = Colon | Pipe | Equal | VSemi | Semi | Comma | VRBrace; _ })
-  | None -> List.rev acc
+  | Some (Token { token = Colon | Pipe | VSemi | Semi | Comma | VRBrace; _ }) | None ->
+    List.rev acc
   | Some _ ->
     let item = parse_item st in
     parse_items_rec st (item :: acc)
@@ -203,9 +203,9 @@ let parse s =
   (* TODO: the errors should be shown immediately or else the index will be messed up *)
   let tts, errors = Delimit.delimit tokens in
   let tts = Token_tree.Root.to_indexed tts in
-  let tts = Layout.insert_virtual_tokens tokens tts in
-  let tts = Token_tree.Root.to_indexed tts in
+  let tts_save = Layout.insert_virtual_tokens tokens tts in
+  let tts = Token_tree.Root.to_indexed tts_save in
   let tts = Token_tree.Indexed.Root.remove_trivia tts in
   let block = parse_tts tts in
-  tts, block, errors
+  tts_save, block, errors
 ;;

@@ -1,9 +1,8 @@
 open Prelude
 
-open struct
-  module Token_tree = Shrubbery_token_tree
-  module Token = Shrubbery_token
-end
+module Token_tree = Shrubbery_token_tree
+module Token = Shrubbery_token
+module Span = Location.Span
 
 (* TODO: a group should have nonempty items here *)
 type group =
@@ -42,6 +41,12 @@ and alt = token_block [@@deriving sexp_of, equal, compare]
 
 module Item = struct
   type t = item
+
+  let span = function
+    | Token tok -> Span.single tok.index
+    | Delim { ldelim; groups = _; rdelim } ->
+      Span.combine (Span.single ldelim.index) (Span.single rdelim.index)
+  ;;
 
   let first_token t =
     match t with

@@ -118,7 +118,7 @@ let rec to_list_ref l t =
 let to_list t =
   let l = ref [] in
   to_list_ref l t;
-  !l
+  List.rev !l
 ;;
 
 module Root = struct
@@ -133,8 +133,9 @@ module Root = struct
   let to_list ts =
     let l = ref [] in
     to_list_ref l ts;
-    !l
+    List.rev !l
   ;;
 
   let to_indexed tts = List.fold_map tts ~init:0 ~f:(fun i tt -> to_indexed' tt i) |> snd
+  let of_indexed tts = List.map tts ~f:of_indexed
 end

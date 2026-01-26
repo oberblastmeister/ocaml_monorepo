@@ -711,6 +711,7 @@ and structure_equivalent_path st (path1 : Syntax.path) (path2 : Syntax.path) : S
 let rec infer st (e : Syntax.expr) : Effects.t * Syntax.ty =
   match e with
   | Syntax.Expr_var { var; span = _ } -> Effects.empty, var_strengthened_ty st var
+  | Syntax.Expr_hole { span = _ } -> failwith "holes are not implemented yet"
   | Syntax.Expr_universe { univ = u; span = _ } ->
     ( Effects.empty
     , Value_ty_sing
@@ -881,11 +882,14 @@ let rec infer st (e : Syntax.expr) : Effects.t * Syntax.ty =
     Effects.empty, Syntax.Value_ty_sing { e = Value_ty (Value_ty_fun ty_fun); ty = kind }
   | Syntax.Expr_ty_mod { var; ty_decls; span = _ } ->
     let st, ty_decls =
-      List.fold_map ty_decls ~init:(State.add_mod_var var st) ~f:(fun st { field; field_pos = _; ty; span = _ } ->
-        let ty = expr_to_ty st ty in
-        let ty_decl = ({ field; ty } : Syntax.value_ty_decl) in
-        let st = State.add_field var ty_decl st in
-        st, ty_decl)
+      List.fold_map
+        ty_decls
+        ~init:(State.add_mod_var var st)
+        ~f:(fun st { field; field_pos = _; ty; span = _ } ->
+          let ty = expr_to_ty st ty in
+          let ty_decl = ({ field; ty } : Syntax.value_ty_decl) in
+          let st = State.add_field var ty_decl st in
+          st, ty_decl)
     in
     let ty_decls_map =
       String.Map.of_list_with_key_exn ty_decls ~get_key:(fun decl -> decl.field)
@@ -902,7 +906,8 @@ let rec infer st (e : Syntax.expr) : Effects.t * Syntax.ty =
     let kind = ty_natural_kind st (Value_ty_sing ty_sing) in
     ( Effects.empty
     , Syntax.Value_ty_sing { e = Value_ty (Value_ty_sing ty_sing); ty = kind } )
-  | Syntax.Expr_bool { value = _; span = _ } -> Effects.empty, Syntax.Value_core_ty Ty_bool
+  | Syntax.Expr_bool { value = _; span = _ } ->
+    Effects.empty, Syntax.Value_core_ty Ty_bool
   | Syntax.Expr_unit { span = _ } -> Effects.empty, Syntax.Value_core_ty Ty_unit
   | Syntax.Expr_int { value = _; span = _ } -> Effects.empty, Syntax.Value_core_ty Ty_int
   | Syntax.Expr_core_ty { ty = core_ty; span = _ } ->

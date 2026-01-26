@@ -73,8 +73,7 @@ def another:
     {|
     (_{
      (((def first (: (_{ (((x) ";") ((y) ";") ((z))) _}))) "_;")
-      (("(Error ,)") "_;")
-      ((def another (: (_{ (((x) ";") ((y) ";") ((z))) _})))))
+      (((error ,)) "_;") ((def another (: (_{ (((x) ";") ((y) ";") ((z))) _})))))
      _})
     |}]
 ;;
@@ -142,7 +141,11 @@ def another:
         (|
          (_{
           (((fib ("(" ((n nat) ,) ((n bool)) ")")
-             (: (_{ (((fib ("(" ((n - 1)) ")") + fib ("(" ((n - 2)) ")")))) _})))))
+             (:
+              (_{
+               (((fib ("(" ((n (operator -) 1)) ")") (operator +) fib
+                  ("(" ((n (operator -) 2)) ")"))))
+               _})))))
           _})))
        "_;")
       ((def another (: (_{ (((("(" ((x) ,) ((y) ,) ((z)) ")")))) _})))))
@@ -157,7 +160,7 @@ hello_world } another { awefawe )
     |};
   [%expect
     {|
-    (_{ (((hello_world "(Error })" another ({ ((awefawe)) ")")))) _})
+    (_{ (((hello_world (error }) another ({ ((awefawe)) ")")))) _})
     ((Mismatching_delimiters (ldelim ((start 23) (stop 24)))
       (rdelim ((start 33) (stop 34)))))
     |}]
@@ -283,7 +286,7 @@ let testing:
      (((let testing
         (:
          (_{
-          (((first) "_;") ((second) "_;") (("(Error ,)") "_;") ((third) "_;")
+          (((first) "_;") ((second) "_;") (((error ,)) "_;") ((third) "_;")
            ((fourth)))
           _})))))
      _})

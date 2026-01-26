@@ -62,7 +62,7 @@ let cannot_fail ~f =
 ;;
 
 module List = struct
-  type 'a t = 'a list ref
+  type 'a t = 'a list ref [@@deriving sexp_of]
 
   let next env t =
     match !t with
@@ -70,6 +70,12 @@ module List = struct
     | x :: xs ->
       t := xs;
       x
+  ;;
+
+  let peek env t =
+    match !t with
+    | [] -> fail env
+    | x :: _ -> x
   ;;
 
   let take t =
@@ -84,12 +90,7 @@ module List = struct
     | _ :: _ -> fail env
   ;;
 
-  let create env xs ~f =
-    let r = ref xs in
-    let x = f r in
-    empty env r;
-    x
-  ;;
+  let create xs = ref xs
 
   let optional t f =
     let saved = !t in
@@ -149,6 +150,12 @@ let run ~f =
   match f Env with
   | exception Fail -> None
   | x -> Some x
+;;
+
+let run_or_thunk ~default ~f =
+  match f Env with
+  | exception Fail -> default ()
+  | x -> x
 ;;
 
 let run_exn ~f =
