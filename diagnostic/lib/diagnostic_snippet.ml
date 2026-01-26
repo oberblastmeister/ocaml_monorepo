@@ -16,6 +16,9 @@ end
 
 type files = File.t String.Map.t
 
+(* the padding to put before the snippet *)
+let default_padding = 0
+
 let format_snippet files snippet =
   let file = Map.find_exn files snippet.File_span.file in
   let source = file.File.source in
@@ -25,7 +28,7 @@ let format_snippet files snippet =
   let line_no = start_lc.Line_col.line in
   let line_display = line_no + 1 in
   let line_str = Int.to_string line_display in
-  let width = Int.max 4 (String.length line_str) in
+  let width = Int.max 0 (String.length line_str) in
   let padding = String.make width ' ' in
   let line_start_pos =
     Position_converter.line_col_to_pos converter { Line_col.line = line_no; col = 0 }
@@ -44,11 +47,11 @@ let format_snippet files snippet =
     then String.length line_content - start_lc.Line_col.col
     else snippet.stop - snippet.start
   in
-  let underline_str = String.make underline_len '~' in
+  let underline_str = String.make underline_len '^' in
   let suffix = if is_multiline then "..." else "" in
   let col_display = start_lc.Line_col.col + 1 in
   sprintf
-    "%s %s:%d:%d\n%s |\n%*d | %s\n%s | %s%s%s"
+    "%s--> %s:%d:%d\n%s |\n%*d | %s\n%s | %s%s%s"
     padding
     snippet.File_span.file
     line_display
@@ -82,10 +85,10 @@ let%test_module "format_snippet" =
       check "let x = 1" 4 5;
       [%expect
         {|
-          test.ml:1:5
+         --> test.ml:1:5
           |
         1 | let x = 1
-          |     ~
+          |     ^
         |}]
     ;;
 
@@ -93,10 +96,10 @@ let%test_module "format_snippet" =
       check "let x = 1\nlet y = 2" 4 14;
       [%expect
         {|
-          test.ml:1:5
+         --> test.ml:1:5
           |
         1 | let x = 1
-          |     ~~~~~...
+          |     ^^^^^...
         |}]
     ;;
 
@@ -108,10 +111,10 @@ let%test_module "format_snippet" =
       check source start stop;
       [%expect
         {|
-              test.ml:10001:5
+             --> test.ml:10001:5
               |
         10001 | let x = 1
-              |     ~
+              |     ^
         |}]
     ;;
   end)

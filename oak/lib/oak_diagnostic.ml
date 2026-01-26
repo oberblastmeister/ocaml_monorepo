@@ -6,7 +6,7 @@ module Text = struct
 
   let of_string s : t = fun fmt -> Format.pp_print_string fmt s
 
-  let to_string ~width ~color (t : t) =
+  let to_string ?(width = 80) ?(color = false) (t : t) =
     let buf = Buffer.create 128 in
     let fmt = Format.formatter_of_buffer buf in
     Format.pp_set_margin fmt width;
@@ -19,41 +19,34 @@ module Text = struct
   let sexp_of_t t = Sexp.Atom (to_string ~width:80 ~color:false t)
 end
 
-module Severity = struct
+module Kind = struct
   type t =
     | Warning
     | Error
     | Note
+    | Help
   [@@deriving sexp_of]
 
-  let pp ppf t =
-    let label =
-      match t with
-      | Error -> "error:"
-      | Warning -> "warning:"
-      | Note -> "note:"
-    in
-    let style =
-      match t with
-      | Error -> Fmt.(styled `Bold (styled (`Fg `Red) string))
-      | Warning | Note -> Fmt.(styled `Bold (styled (`Fg `Cyan) string))
-    in
-    style ppf label
+  let style t =
+    match t with
+    | Error -> Fmt.(styled `Bold (styled (`Fg `Red) string))
+    | Warning -> Fmt.(styled `Bold (styled (`Fg `Yellow) string))
+    | Note -> Fmt.(styled `Bold (styled (`Fg `Cyan) string))
+    | Help -> Fmt.(styled `Bold (styled (`Fg `Green) string))
   ;;
 
-  let to_string ~color t =
-    let buf = Buffer.create 32 in
-    let fmt = Format.formatter_of_buffer buf in
-    Fmt.set_style_renderer fmt (if color then `Ansi_tty else `None);
-    pp fmt t;
-    Format.pp_print_flush fmt ();
-    Buffer.contents buf
+  let to_string t =
+    match t with
+    | Error -> "error"
+    | Warning -> "warning"
+    | Note -> "note"
+    | Help -> "help"
   ;;
 end
 
 module Part = struct
   type t =
-    { severity : Severity.t
+    { kind : Kind.t
     ; message : Text.t
     ; snippet : Snippet.t option
     }
@@ -64,7 +57,7 @@ module Code = struct
   type t = Parse_error [@@deriving sexp_of]
 
   let to_string = function
-    | Parse_error -> "[E0001]"
+    | Parse_error -> "E0001"
   ;;
 
   let description = function
@@ -73,37 +66,39 @@ module Code = struct
 end
 
 type t =
-  { code : Code.t
-  ; filename : Filename.t
+  { code : Code.t option
   ; parts : Part.t list
   }
 [@@deriving sexp_of]
 
-let format_header ~width code filename =
-  let left = sprintf "---- %s %s " (Code.description code) (Code.to_string code) in
-  let right = sprintf " %s" filename in
-  let dashes_needed = width - String.length left - String.length right in
-  let dashes = if dashes_needed > 0 then String.make dashes_needed '-' else "" in
-  sprintf "%s%s%s" left dashes right
-;;
-
-let format_part ~width ~color files part =
-  let label = Severity.to_string ~color part.Part.severity in
-  let message = Text.to_string ~width ~color part.Part.message in
+let format_part ?code ~width ~color ~files (part : Part.t) =
+  let message =
+    Text.to_string ~width ~color
+    @@ fun fmt ->
+    Kind.style part.kind fmt (Kind.to_string part.kind);
+    Option.iter code ~f:(fun code ->
+      Kind.style part.kind fmt ("[" ^ Code.to_string code ^ "]"));
+    Fmt.string fmt ": ";
+    part.Part.message fmt
+  in
   match part.Part.snippet with
   | Some snippet ->
     let snippet_str = Snippet.format_snippet files snippet in
-    sprintf "%s %s\n%s" label message snippet_str
-  | None -> sprintf "%s %s" label message
+    sprintf "%s\n%s" message snippet_str
+  | None -> message
 ;;
 
 let format ?(width = 80) ?(color = true) ~files diagnostic =
-  let header = format_header ~width diagnostic.code diagnostic.filename in
-  let parts_str =
-    List.map diagnostic.parts ~f:(format_part ~width ~color files)
-    |> String.concat ~sep:"\n"
-  in
-  sprintf "%s\n%s" header parts_str
+  match diagnostic.parts with
+  | [] -> ""
+  | main_part :: parts ->
+    let main_part_str =
+      format_part ?code:diagnostic.code ~width ~color ~files main_part
+    in
+    let parts_str =
+      List.map parts ~f:(format_part ~width ~color ~files) |> String.concat ~sep:"\n"
+    in
+    sprintf "%s\n%s" main_part_str parts_str
 ;;
 
 let print ?(width = 80) ?(color = true) ~files diagnostic =
@@ -123,10 +118,9 @@ let%test_module "format" =
       let source = "let x = 1 + \"hello\"" in
       let files = setup [ "test.ml", source ] in
       let diagnostic =
-        { code = Parse_error
-        ; filename = "test.ml"
+        { code = Some Parse_error
         ; parts =
-            [ { Part.severity = Error
+            [ { kind = Error
               ; message = Text.of_string "type mismatch: expected int, got string"
               ; snippet = Some (make_snippet ~file:"test.ml" ~start:12 ~stop:19)
               }
@@ -136,12 +130,11 @@ let%test_module "format" =
       print ~width:60 ~color:false ~files diagnostic;
       [%expect
         {|
-        ---- Parse error [E0001] --------------------------- test.ml
-        error: type mismatch: expected int, got string
-             test.ml:1:13
-             |
-           1 | let x = 1 + "hello"
-             |             ~~~~~~~
+        error[E0001]: type mismatch: expected int, got string
+         --> test.ml:1:13
+          |
+        1 | let x = 1 + "hello"
+          |             ^^^^^^^
         |}]
     ;;
 
@@ -151,18 +144,17 @@ let%test_module "format" =
       in
       let files = setup [ "test.ml", source ] in
       let diagnostic =
-        { code = Parse_error
-        ; filename = "test.ml"
+        { code = Some Parse_error
         ; parts =
-            [ { Part.severity = Error
+            [ { kind = Error
               ; message = Text.of_string "undefined function"
               ; snippet = Some (make_snippet ~file:"test.ml" ~start:25 ~stop:28)
               }
-            ; { Part.severity = Note
+            ; { kind = Note
               ; message = Text.of_string "did you mean 'fib'?"
               ; snippet = Some (make_snippet ~file:"test.ml" ~start:8 ~stop:11)
               }
-            ; { Part.severity = Note
+            ; { kind = Note
               ; message = Text.of_string "functions must be defined before use"
               ; snippet = None
               }
@@ -172,17 +164,16 @@ let%test_module "format" =
       print ~width:70 ~color:false ~files diagnostic;
       [%expect
         {|
-        ---- Parse error [E0001] ------------------------------------- test.ml
-        error: undefined function
-             test.ml:2:10
-             |
-           2 |   if n <= 1 then n
-             |          ~~~
+        error[E0001]: undefined function
+         --> test.ml:2:10
+          |
+        2 |   if n <= 1 then n
+          |          ^^^
         note: did you mean 'fib'?
-             test.ml:1:9
-             |
-           1 | let rec fib n =
-             |         ~~~
+         --> test.ml:1:9
+          |
+        1 | let rec fib n =
+          |         ^^^
         note: functions must be defined before use
         |}]
     ;;
@@ -191,10 +182,9 @@ let%test_module "format" =
       let source = "let x =\n  foo\n  bar\n  baz" in
       let files = setup [ "test.ml", source ] in
       let diagnostic =
-        { code = Parse_error
-        ; filename = "test.ml"
+        { code = Some Parse_error
         ; parts =
-            [ { Part.severity = Error
+            [ { kind = Error
               ; message = Text.of_string "unexpected indentation"
               ; snippet = Some (make_snippet ~file:"test.ml" ~start:8 ~stop:24)
               }
@@ -204,12 +194,11 @@ let%test_module "format" =
       print ~width:60 ~color:false ~files diagnostic;
       [%expect
         {|
-        ---- Parse error [E0001] --------------------------- test.ml
-        error: unexpected indentation
-             test.ml:2:1
-             |
-           2 |   foo
-             | ~~~~~...
+        error[E0001]: unexpected indentation
+         --> test.ml:2:1
+          |
+        2 |   foo
+          | ^^^^^...
         |}]
     ;;
   end)

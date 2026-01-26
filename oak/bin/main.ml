@@ -18,18 +18,17 @@ let broken = 1 + "hello"|}
   let files = String.Map.of_alist_exn [ "example.ml", file ] in
   print_endline "=== Oak Diagnostic Demo ===\n";
   let diagnostic1 =
-    { Diag.code = Parse_error
-    ; filename = "example.ml"
+    { Diag.code = Some Parse_error
     ; parts =
-        [ { Diag.Part.severity = Error
+        [ { Diag.Part.kind = Error
           ; message = Diag.Text.of_string "type mismatch: expected int, got string"
           ; snippet = Some (make_snippet ~file:"example.ml" ~start:94 ~stop:101)
           }
-        ; { Diag.Part.severity = Note
+        ; { Diag.Part.kind = Note
           ; message = Diag.Text.of_string "the '+' operator expects integer operands"
           ; snippet = Some (make_snippet ~file:"example.ml" ~start:89 ~stop:90)
           }
-        ; { Diag.Part.severity = Note
+        ; { Diag.Part.kind = Note
           ; message = Diag.Text.of_string "consider using '^' for string concatenation"
           ; snippet = None
           }
@@ -39,16 +38,15 @@ let broken = 1 + "hello"|}
   Diag.print ~width:80 ~files diagnostic1;
   print_endline "";
   let diagnostic2 =
-    { Diag.code = Parse_error
-    ; filename = "example.ml"
+    { Diag.code = Some Parse_error
     ; parts =
-        [ { Diag.Part.severity = Error
+        [ { Diag.Part.kind = Error
           ; message = Diag.Text.of_string "unexpected token"
           ; snippet = Some (make_snippet ~file:"example.ml" ~start:39 ~stop:70)
           }
         ]
     }
   in
-  Diag.print ~width:80 ~files diagnostic2;
+  Diag.print ~width:180 ~files diagnostic2;
   ()
 ;;

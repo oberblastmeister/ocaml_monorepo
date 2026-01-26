@@ -5,23 +5,20 @@ module Text : sig
   type t = Format.formatter -> unit [@@deriving sexp_of]
 
   val of_string : string -> t
-  val to_string : width:int -> color:bool -> t -> string
 end
 
-module Severity : sig
+module Kind : sig
   type t =
     | Warning
     | Error
     | Note
+    | Help
   [@@deriving sexp_of]
-
-  val pp : Format.formatter -> t -> unit
-  val to_string : color:bool -> t -> string
 end
 
 module Part : sig
   type t =
-    { severity : Severity.t
+    { kind : Kind.t
     ; message : Text.t
     ; snippet : Snippet.t option
     }
@@ -36,8 +33,7 @@ module Code : sig
 end
 
 type t =
-  { code : Code.t
-  ; filename : Filename.t
+  { code : Code.t option
   ; parts : Part.t list
   }
 [@@deriving sexp_of]
