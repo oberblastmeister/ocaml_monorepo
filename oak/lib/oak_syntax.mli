@@ -70,6 +70,7 @@ end
 type core_ty =
   | Ty_bool
   | Ty_unit
+  | Ty_int
 [@@deriving sexp_of, equal, compare]
 
 type expr =
@@ -117,6 +118,10 @@ type expr =
       ; span : Span.t
       }
   | Expr_unit of { span : Span.t }
+  | Expr_int of
+      { value : int
+      ; span : Span.t
+      }
   | Expr_core_ty of
       { ty : core_ty
       ; span : Span.t
@@ -133,7 +138,8 @@ type expr =
       }
 
 and expr_decl =
-  { field : string
+  { let_pos : int
+  ; field : string
   ; field_pos : int
   ; e : expr
   ; span : Span.t

@@ -852,7 +852,7 @@ let rec infer st (e : Syntax.expr) : Effects.t * Syntax.ty =
       List.fold_map
         decls
         ~init:(State.add_mod_var var st, Effects.empty)
-        ~f:(fun (st, acc_eff) { e; field; field_pos = _; span = _ } ->
+        ~f:(fun (st, acc_eff) { e; field; let_pos = _; field_pos = _; span = _ } ->
           let eff, ty = infer st e in
           let vars, eff = Effects.get_vars eff in
           let ty_decl : Syntax.value_ty_decl = { field; ty } in
@@ -904,6 +904,7 @@ let rec infer st (e : Syntax.expr) : Effects.t * Syntax.ty =
     , Syntax.Value_ty_sing { e = Value_ty (Value_ty_sing ty_sing); ty = kind } )
   | Syntax.Expr_bool { value = _; span = _ } -> Effects.empty, Syntax.Value_core_ty Ty_bool
   | Syntax.Expr_unit { span = _ } -> Effects.empty, Syntax.Value_core_ty Ty_unit
+  | Syntax.Expr_int { value = _; span = _ } -> Effects.empty, Syntax.Value_core_ty Ty_int
   | Syntax.Expr_core_ty { ty = core_ty; span = _ } ->
     ( Effects.empty
     , Syntax.Value_ty_sing { e = Value_ty (Value_core_ty core_ty); ty = Value_univ Type }

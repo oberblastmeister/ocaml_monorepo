@@ -29,6 +29,10 @@ type t =
   | Veof
 [@@deriving sexp_of, equal, compare]
 
+val ident_val : t -> string option
+val number_val : t -> string option
+val string_val : t -> string option
+val operator_val : t -> string option
 val to_string : t -> string
 val length : t -> int
 val is_trivia : t -> bool

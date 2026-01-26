@@ -40,14 +40,22 @@ and group_sep =
 
 and alt = token_block [@@deriving sexp_of, equal, compare]
 
+module Item = struct
+  type t = item
+
+  let first_token t =
+    match t with
+    | Token tok -> tok
+    | Delim { ldelim; _ } -> ldelim
+  ;;
+end
+
 module Group = struct
   type t = group
 
   let first_token t =
     let item = Non_empty_list.hd t.items in
-    match item with
-    | Token tok -> tok
-    | Delim { ldelim; _ } -> ldelim
+    Item.first_token item
   ;;
 end
 

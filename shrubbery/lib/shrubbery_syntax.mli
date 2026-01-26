@@ -40,6 +40,12 @@ module Minimal_sexp_of : sig
   val sexp_of_block : block -> Sexp.t
 end
 
+module Item : sig
+  type t = item
+
+  val first_token : t -> Token.ti
+end
+
 module Group : sig
   type t = group
 

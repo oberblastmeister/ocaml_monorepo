@@ -33,6 +33,26 @@ type t =
   | Veof
 [@@deriving equal, compare]
 
+let ident_val = function
+  | Ident s -> Some s
+  | _ -> None
+;;
+
+let number_val = function
+  | Number s -> Some s
+  | _ -> None
+;;
+
+let string_val = function
+  | String s -> Some s
+  | _ -> None
+;;
+
+let operator_val = function
+  | Operator s -> Some s
+  | _ -> None
+;;
+
 let is_trivia = function
   | Comment _ | Whitespace _ | Newline -> true
   | _ -> false

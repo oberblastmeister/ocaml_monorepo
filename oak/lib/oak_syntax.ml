@@ -125,6 +125,7 @@ end
 type core_ty =
   | Ty_bool
   | Ty_unit
+  | Ty_int
 [@@deriving sexp_of, equal, compare]
 
 (* We don't have packing and unpacking of expressions because we only traverse over expressions once
@@ -177,6 +178,10 @@ type expr =
       ; span : Span.t
       }
   | Expr_unit of { span : Span.t }
+  | Expr_int of
+      { value : int
+      ; span : Span.t
+      }
   | Expr_core_ty of
       { ty : core_ty
       ; span : Span.t
@@ -193,7 +198,8 @@ type expr =
       }
 
 and expr_decl =
-  { field : string
+  { let_pos : int
+  ; field : string
   ; field_pos : int
   ; e : expr
   ; span : Span.t
@@ -562,6 +568,7 @@ let expr_span (e : expr) : Span.t =
   | Expr_ty_sing { span; _ } -> span
   | Expr_bool { span; _ } -> span
   | Expr_unit { span } -> span
+  | Expr_int { span; _ } -> span
   | Expr_core_ty { span; _ } -> span
   | Expr_universe { span; _ } -> span
   | Expr_if { span; _ } -> span
