@@ -40,28 +40,16 @@ and group_sep =
 
 and alt = token_block [@@deriving sexp_of, equal, compare]
 
-(* let rec remove_trivia_block (t : block) : block =
-  { t with groups = List.map t.groups ~f:remove_trivia_group_sep }
+module Group = struct
+  type t = group
 
-and remove_trivia_group (t : group) : group =
-  { items = Non_empty_list.filter_map t.items ~f:remove_trivia_item
-  ; block = Option.map t.block ~f:remove_trivia_token_block
-  ; alts = List.map t.alts ~f:remove_trivia_token_block
-  }
-
-and remove_trivia_token_block (t : token_block) : token_block =
-  { t with block = remove_trivia_block t.block }
-
-and remove_trivia_group_sep (t : group_sep) : group_sep =
-  { t with group = remove_trivia_group t.group }
-
-and remove_trivia_item (t : item) : item option =
-  match t with
-  | Token ti when Token.is_trivia ti.token -> None
-  | Token _ -> Some t
-  | Delim d ->
-    Some (Delim { d with groups = List.map d.groups ~f:remove_trivia_group_sep })
-;; *)
+  let first_token t =
+    let item = Non_empty_list.hd t.items in
+    match item with
+    | Token tok -> tok
+    | Delim { ldelim; _ } -> ldelim
+  ;;
+end
 
 module Make_sexp_of (Sexp_of_token : sig
     val sexp_of_token : Token.ti -> Sexp.t

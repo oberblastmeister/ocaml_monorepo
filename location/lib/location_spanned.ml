@@ -6,3 +6,5 @@ type 'a t =
   ; value : 'a
   }
 [@@deriving sexp_of, equal, compare]
+
+let create span value = { span; value }

@@ -145,10 +145,16 @@ module List = struct
   ;;
 end
 
-let run f =
+let run ~f =
   match f Env with
   | exception Fail -> None
   | x -> Some x
+;;
+
+let run_exn ~f =
+  match f Env with
+  | exception Fail -> failwith "Expected computation not to fail"
+  | x -> x
 ;;
 
 module Syntax = struct

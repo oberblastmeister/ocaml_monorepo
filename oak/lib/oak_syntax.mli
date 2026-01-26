@@ -1,5 +1,7 @@
 open Core
+module Span = Location.Span
 module Token = Shrubbery.Token
+module Pos = Location.Pos
 
 module Purity : sig
   type t =
@@ -33,23 +35,27 @@ module Var : sig
   type t = private
     { id : int
     ; name : string
-    ; token : Token.ti option
+    ; pos : int option
     }
   [@@deriving sexp_of, compare, equal]
 
   include Comparable.S_plain with type t := t
 
-  val create_initial : string -> Token.ti -> t
-  val create : ?token:Token.ti -> string -> t
+  val create_initial : string -> int -> t
+  val create : ?pos:int -> string -> t
   val make_fresh : t -> t
 end
 
 module Mod_var : sig
-  type t = private int
+  type t = private
+    { id : int
+    ; pos : Pos.t option
+    }
+  [@@deriving sexp_of, compare, equal]
 
   include Comparable.S_plain with type t := t
 
-  val create : unit -> t
+  val create : ?pos:Pos.t -> unit -> t
 end
 
 module Cvar : sig
@@ -67,75 +73,102 @@ type core_ty =
 [@@deriving sexp_of, equal, compare]
 
 type expr =
-  | Expr_var of Cvar.t
+  | Expr_var of
+      { var : Cvar.t
+      ; span : Span.t
+      }
   | Expr_seal of
       { e : expr
       ; ty : expr
+      ; span : Span.t
       }
   | Expr_app of
       { func : expr
       ; args : expr list
+      ; span : Span.t
       }
   | Expr_abs of
       { params : expr_param list
       ; body : expr
       ; purity : Purity.t
+      ; span : Span.t
       }
   | Expr_ty_fun of expr_ty_fun
   | Expr_proj of
       { mod_e : expr
       ; field : string
+      ; span : Span.t
       }
   | Expr_mod of
       { var : Mod_var.t
       ; decls : expr_decl list
+      ; span : Span.t
       }
   | Expr_ty_mod of expr_ty_mod
   | Expr_let of
       { var : Var.t
       ; rhs : expr
       ; body : expr
+      ; span : Span.t
       }
   | Expr_ty_sing of expr_ty_sing
-  | Expr_bool of bool
-  | Expr_unit
-  | Expr_core_ty of core_ty
-  | Expr_universe of Universe.t
+  | Expr_bool of
+      { value : bool
+      ; span : Span.t
+      }
+  | Expr_unit of { span : Span.t }
+  | Expr_core_ty of
+      { ty : core_ty
+      ; span : Span.t
+      }
+  | Expr_universe of
+      { univ : Universe.t
+      ; span : Span.t
+      }
   | Expr_if of
       { cond : expr
       ; body1 : expr
       ; body2 : expr
+      ; span : Span.t
       }
 
 and expr_decl =
   { field : string
+  ; field_pos : int
   ; e : expr
+  ; span : Span.t
   }
 
 and expr_ty_sing =
   { e : expr
   ; ty : expr
+  ; span : Span.t
   }
 
 and expr_ty_mod =
   { var : Mod_var.t
   ; ty_decls : expr_ty_decl list
+  ; span : Span.t
   }
 
 and expr_ty_fun =
   { params : expr_param list
   ; body_ty : expr
   ; purity : Purity.t
+  ; span : Span.t
   }
 
 and expr_ty_decl =
   { field : string
+  ; field_pos : int
   ; ty : expr
+  ; span : Span.t
   }
 
 and expr_param =
   { var : Var.t
   ; ty : expr
+  ; span : Span.t
   }
 
 and value =
@@ -287,3 +320,5 @@ module Ty : sig
 
   val eval : subst -> t -> value
 end
+
+val expr_span : expr -> Span.t

@@ -710,19 +710,19 @@ and structure_equivalent_path st (path1 : Syntax.path) (path2 : Syntax.path) : S
 
 let rec infer st (e : Syntax.expr) : Effects.t * Syntax.ty =
   match e with
-  | Syntax.Expr_var var -> Effects.empty, var_strengthened_ty st var
-  | Syntax.Expr_universe u ->
+  | Syntax.Expr_var { var; span = _ } -> Effects.empty, var_strengthened_ty st var
+  | Syntax.Expr_universe { univ = u; span = _ } ->
     ( Effects.empty
     , Value_ty_sing
         { e = Value_ty (Value_univ u); ty = Value_univ (Syntax.Universe.incr_exn u) } )
-  | Syntax.Expr_seal { e; ty = ty2 } ->
+  | Syntax.Expr_seal { e; ty = ty2; span = _ } ->
     let eff, ty1 = infer st e in
     let vars, eff = Effects.get_vars eff in
     let ty2 = expr_to_ty st ty2 in
     let st = State.add_list vars st in
     subtype st ty1 ty2;
     Effects.of_purity eff.purity, ty2
-  | Syntax.Expr_app { func; args } ->
+  | Syntax.Expr_app { func; args; span = _ } ->
     let func_ty =
       infer_force_transparent st func |> force st |> Syntax.Value.get_ty_fun_exn
     in
@@ -747,7 +747,7 @@ let rec infer st (e : Syntax.expr) : Effects.t * Syntax.ty =
       let res_eff = Effects.of_purity func_ty.purity in
       let res_ty = Syntax.Ty.eval subst body_ty |> Syntax.Value.get_ty_exn in
       res_eff, res_ty)
-  | Syntax.Expr_abs { params; body; purity } ->
+  | Syntax.Expr_abs { params; body; purity; span = _ } ->
     let st', params =
       List.fold_map
         ~init:st
@@ -814,7 +814,7 @@ let rec infer st (e : Syntax.expr) : Effects.t * Syntax.ty =
       let res_eff = { Effects.vars = Acc.of_list eff_vars; purity = Pure } in
       res_eff, res_ty
     end
-  | Syntax.Expr_let { var; rhs; body } ->
+  | Syntax.Expr_let { var; rhs; body; span = _ } ->
     let rhs_eff, rhs_ty = infer st rhs in
     let vars, rhs_eff = Effects.get_vars rhs_eff in
     let st = State.add_list vars st in
@@ -827,7 +827,7 @@ let rec infer st (e : Syntax.expr) : Effects.t * Syntax.ty =
       rhs_eff ++ body_eff, res_ty
     end
     else rhs_eff ++ Effects.of_var (var, rhs_ty) ++ body_eff, body_ty
-  | Syntax.Expr_proj { mod_e; field } ->
+  | Syntax.Expr_proj { mod_e; field; span = _ } ->
     let e_ty = infer_force_transparent st mod_e in
     let ({ binder } : Syntax.value_ty_mod) =
       Syntax.Value.get_ty_mod_exn (force st e_ty)
@@ -843,7 +843,7 @@ let rec infer st (e : Syntax.expr) : Effects.t * Syntax.ty =
                 (field : string)])
       in
       Effects.empty, decl.ty)
-  | Syntax.Expr_mod { var; decls } ->
+  | Syntax.Expr_mod { var; decls; span = _ } ->
     begin match String.Map.of_list_with_key decls ~get_key:(fun decl -> decl.field) with
     | `Ok _ -> ()
     | `Duplicate_key field -> fail_s [%message "Duplicate field" (field : string)]
@@ -852,7 +852,7 @@ let rec infer st (e : Syntax.expr) : Effects.t * Syntax.ty =
       List.fold_map
         decls
         ~init:(State.add_mod_var var st, Effects.empty)
-        ~f:(fun (st, acc_eff) { e; field } ->
+        ~f:(fun (st, acc_eff) { e; field; field_pos = _; span = _ } ->
           let eff, ty = infer st e in
           let vars, eff = Effects.get_vars eff in
           let ty_decl : Syntax.value_ty_decl = { field; ty } in
@@ -867,7 +867,7 @@ let rec infer st (e : Syntax.expr) : Effects.t * Syntax.ty =
     ( eff
     , Syntax.Value_ty_mod
         { binder = Syntax.Value_ty_mod_binder.pack { var; ty_decls; ty_decls_map } } )
-  | Syntax.Expr_ty_fun { params; body_ty; purity } ->
+  | Syntax.Expr_ty_fun { params; body_ty; purity; span = _ } ->
     let st, params =
       List.fold_map params ~init:st ~f:(fun st param ->
         let param = infer_param st param in
@@ -879,9 +879,9 @@ let rec infer st (e : Syntax.expr) : Effects.t * Syntax.ty =
     in
     let kind = ty_natural_kind st (Value_ty_fun ty_fun) in
     Effects.empty, Syntax.Value_ty_sing { e = Value_ty (Value_ty_fun ty_fun); ty = kind }
-  | Syntax.Expr_ty_mod { var; ty_decls } ->
+  | Syntax.Expr_ty_mod { var; ty_decls; span = _ } ->
     let st, ty_decls =
-      List.fold_map ty_decls ~init:(State.add_mod_var var st) ~f:(fun st { field; ty } ->
+      List.fold_map ty_decls ~init:(State.add_mod_var var st) ~f:(fun st { field; field_pos = _; ty; span = _ } ->
         let ty = expr_to_ty st ty in
         let ty_decl = ({ field; ty } : Syntax.value_ty_decl) in
         let st = State.add_field var ty_decl st in
@@ -895,20 +895,20 @@ let rec infer st (e : Syntax.expr) : Effects.t * Syntax.ty =
     in
     let kind = ty_natural_kind st (Value_ty_mod ty_mod) in
     Effects.empty, Syntax.Value_ty_sing { e = Value_ty (Value_ty_mod ty_mod); ty = kind }
-  | Syntax.Expr_ty_sing { e; ty } ->
+  | Syntax.Expr_ty_sing { e; ty; span = _ } ->
     let e_ty = infer_force_transparent st e in
     let ty = expr_to_ty st ty in
     let ty_sing : Syntax.value_ty_sing = { e = synthesize_value st e_ty; ty } in
     let kind = ty_natural_kind st (Value_ty_sing ty_sing) in
     ( Effects.empty
     , Syntax.Value_ty_sing { e = Value_ty (Value_ty_sing ty_sing); ty = kind } )
-  | Syntax.Expr_bool _ -> Effects.empty, Syntax.Value_core_ty Ty_bool
-  | Syntax.Expr_unit -> Effects.empty, Syntax.Value_core_ty Ty_unit
-  | Syntax.Expr_core_ty core_ty ->
+  | Syntax.Expr_bool { value = _; span = _ } -> Effects.empty, Syntax.Value_core_ty Ty_bool
+  | Syntax.Expr_unit { span = _ } -> Effects.empty, Syntax.Value_core_ty Ty_unit
+  | Syntax.Expr_core_ty { ty = core_ty; span = _ } ->
     ( Effects.empty
     , Syntax.Value_ty_sing { e = Value_ty (Value_core_ty core_ty); ty = Value_univ Type }
     )
-  | Syntax.Expr_if { cond; body1; body2 } ->
+  | Syntax.Expr_if { cond; body1; body2; span = _ } ->
     let eff1, cond_ty = infer st cond in
     subtype st cond_ty (Value_core_ty Ty_bool);
     let eff2, ty2 = infer st body1 in

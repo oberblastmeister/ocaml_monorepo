@@ -39,3 +39,9 @@ and alt = token_block [@@deriving sexp_of, equal, compare]
 module Minimal_sexp_of : sig
   val sexp_of_block : block -> Sexp.t
 end
+
+module Group : sig
+  type t = group
+
+  val first_token : t -> Token.ti
+end

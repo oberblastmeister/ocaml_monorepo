@@ -11,7 +11,8 @@ val some_rev : (unit -> 'a) -> 'a list
 val some : (unit -> 'a) -> 'a list
 val guard : t -> bool -> unit
 val one_of : (unit -> 'a) list -> 'a
-val run : (t -> 'a) -> 'a option
+val run : f:(t -> 'a) -> 'a option
+val run_exn : f:(t -> 'a) -> 'a
 val cannot_fail : f:(unit -> 'a) -> 'a
 
 module List : sig

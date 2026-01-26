@@ -1,5 +1,7 @@
 open Core
+module Span = Location.Span
 module Token = Shrubbery.Token
+module Pos = Location.Pos
 
 module Purity = struct
   module T = struct
@@ -58,8 +60,8 @@ module Var = struct
   module T = struct
     type t =
       { id : int
-      ; name : string
-      ; token : Token.ti option
+      ; name : string [@equal.ignore] [@compare.ignore]
+      ; pos : int option [@equal.ignore] [@compare.ignore]
       }
     [@@deriving sexp_of, compare, equal]
   end
@@ -67,12 +69,12 @@ module Var = struct
   include Comparable.Make_plain (T)
   include T
 
-  let create_initial name token = { name; id = -1; token = Some token }
+  let create_initial name pos = { name; id = -1; pos = Some pos }
 
-  let create ?token name =
+  let create ?pos name =
     let id = !stamp in
     incr stamp;
-    { name; id; token }
+    { name; id; pos }
   ;;
 
   let make_fresh var =
@@ -86,12 +88,21 @@ end
 module Mod_var = struct
   let stamp = ref 0
 
-  include Int
+  module T = struct
+    type t =
+      { id : int
+      ; pos : Pos.t option [@equal.ignore] [@compare.ignore]
+      }
+    [@@deriving sexp_of, compare, equal]
+  end
 
-  let create () =
+  include Comparable.Make_plain (T)
+  include T
+
+  let create ?pos () =
     let id = !stamp in
     incr stamp;
-    id
+    { id; pos }
   ;;
 end
 
@@ -118,77 +129,106 @@ type core_ty =
 
 (* We don't have packing and unpacking of expressions because we only traverse over expressions once
    we should have the precondition that every binder is unique.
+   
+   All of these spans are token spans, not byte position spans.
 *)
 type expr =
-  | Expr_var of Cvar.t
+  | Expr_var of
+      { var : Cvar.t
+      ; span : Span.t
+      }
   | Expr_seal of
       { e : expr
       ; ty : expr
+      ; span : Span.t
       }
   | Expr_app of
       { func : expr
       ; args : expr list
+      ; span : Span.t
       }
   | Expr_abs of
       { params : expr_param list
       ; body : expr
       ; purity : Purity.t
+      ; span : Span.t
       }
   | Expr_ty_fun of expr_ty_fun
   | Expr_proj of
       { mod_e : expr
       ; field : string
+      ; span : Span.t
       }
   | Expr_mod of
       { var : Mod_var.t
       ; decls : expr_decl list
+      ; span : Span.t
       }
   | Expr_ty_mod of expr_ty_mod
   | Expr_let of
       { var : Var.t
       ; rhs : expr
       ; body : expr
+      ; span : Span.t
       }
   | Expr_ty_sing of expr_ty_sing
-  | Expr_bool of bool
-  | Expr_unit
-  | Expr_core_ty of core_ty
-  | Expr_universe of Universe.t
+  | Expr_bool of
+      { value : bool
+      ; span : Span.t
+      }
+  | Expr_unit of { span : Span.t }
+  | Expr_core_ty of
+      { ty : core_ty
+      ; span : Span.t
+      }
+  | Expr_universe of
+      { univ : Universe.t
+      ; span : Span.t
+      }
   | Expr_if of
       { cond : expr
       ; body1 : expr
       ; body2 : expr
+      ; span : Span.t
       }
 
 and expr_decl =
   { field : string
+  ; field_pos : int
   ; e : expr
+  ; span : Span.t
   }
 
 and expr_ty_sing =
   { e : expr
   ; ty : expr
+  ; span : Span.t
   }
 
 and expr_ty_mod =
   { var : Mod_var.t
   ; ty_decls : expr_ty_decl list
+  ; span : Span.t
   }
 
 and expr_ty_fun =
   { params : expr_param list
   ; body_ty : expr
   ; purity : Purity.t
+  ; span : Span.t
   }
 
 and expr_ty_decl =
   { field : string
+  ; field_pos : int
   ; ty : expr
+  ; span : Span.t
   }
 
 and expr_param =
   { var : Var.t
   ; ty : expr
+  ; span : Span.t
   }
 
 and value =
@@ -507,3 +547,22 @@ module Ty = struct
 
   let eval = eval_ty
 end
+
+let expr_span (e : expr) : Span.t =
+  match e with
+  | Expr_var { span; _ } -> span
+  | Expr_seal { span; _ } -> span
+  | Expr_app { span; _ } -> span
+  | Expr_abs { span; _ } -> span
+  | Expr_ty_fun { span; _ } -> span
+  | Expr_proj { span; _ } -> span
+  | Expr_mod { span; _ } -> span
+  | Expr_ty_mod { span; _ } -> span
+  | Expr_let { span; _ } -> span
+  | Expr_ty_sing { span; _ } -> span
+  | Expr_bool { span; _ } -> span
+  | Expr_unit { span } -> span
+  | Expr_core_ty { span; _ } -> span
+  | Expr_universe { span; _ } -> span
+  | Expr_if { span; _ } -> span
+;;
