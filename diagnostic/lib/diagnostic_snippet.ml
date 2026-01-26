@@ -1,7 +1,7 @@
 open Core
 module File_span = Diagnostic_file_span
-module Position_converter = Diagnostic_position_converter
-module Line_col = Diagnostic_line_col
+module Position_converter = Location.Position_converter
+module Line_col = Location.Line_col
 
 type t = File_span.t [@@deriving sexp_of]
 

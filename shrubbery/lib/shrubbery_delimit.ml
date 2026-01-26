@@ -51,9 +51,16 @@ end = struct
     { tokens : Token.t array
     ; mutable pos : int
     ; mutable errors : Error.t list
+    ; token_positions : int array Lazy.t
     }
 
-  let create tokens = { tokens; pos = 0; errors = [] }
+  let create tokens =
+    { tokens
+    ; pos = 0
+    ; errors = []
+    ; token_positions = lazy (Token.calculate_offsets tokens)
+    }
+  ;;
 
   let get t i =
     let end_i = Array.length t.tokens - 1 in

@@ -1,5 +1,5 @@
 open Core
-module Span = Diagnostic_span
+module Span = Location.Span
 
 type t =
   { start : int
