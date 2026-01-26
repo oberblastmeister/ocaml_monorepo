@@ -186,7 +186,7 @@ let%test_module "format" =
         ; parts =
             [ { kind = Error
               ; message = Text.of_string "unexpected indentation"
-              ; snippet = Some (make_snippet ~file:"test.ml" ~start:8 ~stop:24)
+              ; snippet = Some (make_snippet ~file:"test.ml" ~start:10 ~stop:24)
               }
             ]
         }
@@ -195,10 +195,58 @@ let%test_module "format" =
       [%expect
         {|
         error[E0001]: unexpected indentation
-         --> test.ml:2:1
+         --> test.ml:2:3
           |
         2 |   foo
-          | ^^^^^...
+          |   ^^^...
+        |}]
+    ;;
+
+    let%expect_test "right on the end" =
+      let source = "xyz\n" in
+      let files = setup [ "test.ml", source ] in
+      let diagnostic =
+        { code = Some Parse_error
+        ; parts =
+            [ { kind = Error
+              ; message = Text.of_string "testing"
+              ; snippet = Some (make_snippet ~file:"test.ml" ~start:3 ~stop:4)
+              }
+            ]
+        }
+      in
+      print ~width:60 ~color:false ~files diagnostic;
+      [%expect
+        {|
+        error[E0001]: testing
+         --> test.ml:1:4
+          |
+        1 | xyz
+          |    ...
+        |}]
+    ;;
+
+    let%expect_test "length 0 span" =
+      let source = "xyz\n" in
+      let files = setup [ "test.ml", source ] in
+      let diagnostic =
+        { code = Some Parse_error
+        ; parts =
+            [ { kind = Error
+              ; message = Text.of_string "testing"
+              ; snippet = Some (make_snippet ~file:"test.ml" ~start:0 ~stop:0)
+              }
+            ]
+        }
+      in
+      print ~width:60 ~color:false ~files diagnostic;
+      [%expect
+        {|
+        error[E0001]: testing
+         --> test.ml:1:1
+          |
+        1 | xyz
+          | ^
         |}]
     ;;
   end)

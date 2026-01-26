@@ -1,5 +1,4 @@
 open Prelude
-
 module Token_tree = Shrubbery_token_tree
 module Token = Shrubbery_token
 module Span = Location.Span
@@ -61,6 +60,14 @@ module Group = struct
   let first_token t =
     let item = Non_empty_list.hd t.items in
     Item.first_token item
+  ;;
+end
+
+module Block = struct
+  type t = block
+
+  let span { lbrace; groups = _; rbrace } =
+    Span.combine (Span.single lbrace.index) (Span.single rbrace.index)
   ;;
 end
 

@@ -8,10 +8,11 @@ let check s =
   let _tts, diagnostics, expr = Parse.parse ~file s in
   let files = String.Map.of_alist_exn [ file, Diagnostic.Snippet.File.create s ] in
   if not (List.is_empty diagnostics)
-  then
+  then begin
     List.iter diagnostics ~f:(fun diagnostic ->
       Diagnostic.print ~color:false ~files diagnostic;
       print_endline "")
+  end
   else print_s [%sexp (expr : Syntax.expr)]
 ;;
 
@@ -24,12 +25,12 @@ let%expect_test "error" =
         |};
   [%expect
     {|
-        error[E0001]: Expected variable after let
-         --> <input>:3:9
-          |
-        3 |         let: 1234234
-          |         ^^^
-        |}]
+    error[E0001]: Expected variable after let
+     --> <input>:3:9
+      |
+    3 |         let: 1234234
+      |         ^^^
+    |}]
 ;;
 
 let%expect_test "mismatching" =
@@ -39,23 +40,23 @@ let%expect_test "mismatching" =
       |};
   [%expect
     {|
-        error[E0001]: mismatching delimiters
-         --> <input>:2:21
-          |
-        2 |       let first : ( }
-          |                     ^
-        note: opening delimiter here
-         --> <input>:2:19
-          |
-        2 |       let first : ( }
-          |                   ^
+    error[E0001]: mismatching delimiters
+     --> <input>:2:21
+      |
+    2 |       let first : ( }
+      |                     ^
+    note: opening delimiter here
+     --> <input>:2:19
+      |
+    2 |       let first : ( }
+      |                   ^
 
-        error[E0001]: Expression should not have block
-         --> <input>:2:17
-          |
-        2 |       let first : ( }
-          |                 ^
-        |}]
+    error[E0001]: Expression should not have block
+     --> <input>:2:17
+      |
+    2 |       let first : ( }
+      |                 ^
+    |}]
 ;;
 
 let%expect_test "mod with let declarations" =
@@ -156,7 +157,14 @@ Fun(Int, Bool) -
 
 let%expect_test "function expressions" =
   check
+    {|// hello world
+// this is more stuff hello world |};
+  [%expect
     {|
-// aweaewf
-    |}
+    error[E0001]: Root should have exactly one group
+     --> <input>:1:1
+      |
+    1 | // hello world
+      | ^^^^^^^^^^^^^^...
+    |}]
 ;;

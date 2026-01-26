@@ -53,3 +53,9 @@ module Group : sig
 
   val first_token : t -> Token.ti
 end
+
+module Block : sig
+  type t = block
+
+  val span : t -> Span.t
+end

@@ -8,13 +8,9 @@ module Spanned = Location.Spanned
 module Diagnostic = Oak_diagnostic
 
 module Error = struct
-  type t =
-    { error : string
-    ; token : int
-    }
-  [@@deriving sexp_of]
+  type t = string Spanned.t [@@deriving sexp_of]
 
-  let create error token = { error; token }
+  let create error token = { Spanned.value = error; span = Span.single token }
 end
 
 module State = struct
@@ -123,7 +119,8 @@ let rec parse_root st (block : Shrub.block) : Syntax.expr =
   let group, groups =
     match block.groups with
     | group :: groups -> group, groups
-    | [] -> error (Error.create "Root should have exactly one group" block.lbrace.index)
+    | [] ->
+      error (Spanned.create "Root should have exactly one group" (Shrub.Block.span block))
   in
   List.hd groups
   |> Option.iter ~f:(fun group ->
@@ -356,12 +353,12 @@ let parse_block st root_block =
 ;;
 
 let error_to_diagnostic ~file ~offsets (e : Error.t) : Diagnostic.t =
-  let start = offsets.(e.token) in
-  let stop = offsets.(e.token + 1) in
+  let start = offsets.(e.span.start) in
+  let stop = offsets.(e.span.stop) in
   { code = Some Parse_error
   ; parts =
       [ { kind = Error
-        ; message = Diagnostic.Text.of_string e.error
+        ; message = Diagnostic.Text.of_string e.value
         ; snippet = Some { file; start; stop }
         }
       ]
