@@ -193,9 +193,8 @@ let parse s =
   let tts, errors = Delimit.delimit tokens in
   let tts = Token_tree.Root.to_indexed tts in
   let tts = Layout.insert_virtual_tokens tokens tts in
-  let tts_save = tts in
   let tts = Token_tree.Root.to_indexed tts in
   let tts = Token_tree.Indexed.Root.remove_trivia tts in
   let block = parse_tts tts in
-  tts_save, block, errors
+  tts, block, errors
 ;;

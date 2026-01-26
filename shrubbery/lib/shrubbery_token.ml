@@ -1,7 +1,7 @@
 open Prelude
 
 open struct
-  module Line_col = Shrubbery_line_col
+  module Line_col = Location.Line_col
 end
 
 type t =
@@ -63,7 +63,7 @@ let length = function
   | Error s -> String.length s
 ;;
 
-let to_string_gen ~vsemi ~vlbrace ~vrbrace ~veof = function
+let to_string_gen ~vsemi ~vlbrace ~vrbrace ~veof ~error = function
   | VSemi -> vsemi
   | VLBrace -> vlbrace
   | VRBrace -> vrbrace
@@ -88,13 +88,21 @@ let to_string_gen ~vsemi ~vlbrace ~vrbrace ~veof = function
   | Keyword s -> "~" ^ s
   | String s -> "\"" ^ s ^ "\""
   | Number s -> s
-  | Error s -> s
+  | Error s -> error s
 ;;
 
-let to_string_hide_virtual t = to_string_gen ~vsemi:"" ~vlbrace:"" ~vrbrace:"" ~veof:"" t
+let to_string_hide_virtual t =
+  to_string_gen ~vsemi:"" ~vlbrace:"" ~vrbrace:"" ~veof:"" ~error:Fn.id t
+;;
 
 let to_string_show_show_virtual t =
-  to_string_gen ~vsemi:"_;" ~vlbrace:"_{" ~vrbrace:"_}" ~veof:"_eof" t
+  to_string_gen
+    ~vsemi:"_;"
+    ~vlbrace:"_{"
+    ~vrbrace:"_}"
+    ~veof:"_eof"
+    ~error:(fun s -> "(Error " ^ s ^ ")")
+    t
 ;;
 
 let to_string t = to_string_hide_virtual t

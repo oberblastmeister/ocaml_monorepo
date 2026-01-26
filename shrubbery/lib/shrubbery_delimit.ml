@@ -1,6 +1,7 @@
 open Prelude
 
 open struct
+  module Span = Location.Span
   module Token = Shrubbery_token
   module Token_tree = Shrubbery_token_tree
   module Lexer = Shrubbery_lexer
@@ -26,10 +27,10 @@ let is_right_delim = function
 module Error = struct
   type t =
     | Mismatching_delimiters of
-        { ldelim : Token.ti
-        ; rdelim : Token.ti
+        { ldelim : Span.t
+        ; rdelim : Span.t
         }
-    | Expecting_delimiter of Token.ti
+    | Expecting_delimiter of Span.t
   [@@deriving sexp_of]
 end
 
@@ -46,6 +47,7 @@ module State : sig
   val add_error : t -> Error.t -> unit
   val finish : t -> Error.t list
   val last_token : t -> Token.ti
+  val get_span : t -> Token.ti -> Span.t
 end = struct
   type t =
     { tokens : Token.t array
@@ -85,6 +87,13 @@ end = struct
   let peek t = get t t.pos
   let add_error t e = t.errors <- e :: t.errors
   let finish t = t.errors
+  let get_pos t i = (Lazy.force t.token_positions).(min (Array.length t.tokens - 1) i)
+
+  let get_span t (token : Token.ti) =
+    let start = get_pos t token.index in
+    let stop = get_pos t (token.index + 1) in
+    { Span.start; stop }
+  ;;
 end
 
 (* precondition, st.tokens must not be empty *)
@@ -98,11 +107,14 @@ let rec single st : Token_tree.t =
       match State.next st with
       | { token = Veof; _ } ->
         let last_token = State.last_token st in
-        State.add_error st (Error.Expecting_delimiter last_token);
+        State.add_error st (Error.Expecting_delimiter (State.get_span st last_token));
         last_token
       | t when Token.equal (to_close ldelim.token) t.Token.token -> t
       | rdelim ->
-        State.add_error st (Error.Mismatching_delimiters { ldelim; rdelim });
+        State.add_error
+          st
+          (Error.Mismatching_delimiters
+             { ldelim = State.get_span st ldelim; rdelim = State.get_span st rdelim });
         rdelim
     in
     Token_tree.Delim { ldelim = ldelim.token; tts; rdelim = rdelim.token }

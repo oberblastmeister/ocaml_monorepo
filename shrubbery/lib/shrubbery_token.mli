@@ -1,5 +1,5 @@
 open Prelude
-module Line_col := Shrubbery_line_col
+module Line_col := Location.Line_col
 
 type t =
   | LParen

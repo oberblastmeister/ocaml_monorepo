@@ -74,7 +74,8 @@ def another:
     {|
     (_{
      ((() "_;") ((def first (: (_{ (((x) ";") ((y) ";") ((z))) _}))) "_;")
-      ((,) "_;") ((def another (: (_{ (((x) ";") ((y) ";") ((z))) _})))))
+      (("(Error ,)") "_;")
+      ((def another (: (_{ (((x) ";") ((y) ";") ((z))) _})))))
      _})
     |}]
 ;;
@@ -158,8 +159,9 @@ hello_world } another { awefawe )
     |};
   [%expect
     {|
-    (_{ ((() "_;") ((hello_world } another ({ ((awefawe)) ")")))) _})
-    ((Mismatching_delimiters (ldelim ({ 7)) (rdelim (")" 11))))
+    (_{ ((() "_;") ((hello_world "(Error })" another ({ ((awefawe)) ")")))) _})
+    ((Mismatching_delimiters (ldelim ((start 23) (stop 24)))
+      (rdelim ((start 33) (stop 34)))))
     |}]
 ;;
 
@@ -288,7 +290,8 @@ let testing:
       ((let testing
         (:
          (_{
-          (((first) "_;") ((second) "_;") ((,) "_;") ((third) "_;") ((fourth)))
+          (((first) "_;") ((second) "_;") (("(Error ,)") "_;") ((third) "_;")
+           ((fourth)))
           _})))))
      _})
     |}]

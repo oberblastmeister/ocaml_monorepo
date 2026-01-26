@@ -68,8 +68,8 @@ def another:
     |};
   [%expect
     {|
-    (_{ "_;" def first : _{ x ";" y ";" z _} "_;" , "_;" def another : _{ x ";" y
-     ";" z _} _} _eof)
+    (_{ "_;" def first : _{ x ";" y ";" z _} "_;" "(Error ,)" "_;" def another :
+     _{ x ";" y ";" z _} _} _eof)
     |}]
 ;;
 
@@ -173,7 +173,7 @@ let%expect_test "" =
     {|
 hello_world } another
 |};
-  [%expect {| (_{ "_;" hello_world } another _} _eof) |}]
+  [%expect {| (_{ "_;" hello_world "(Error })" another _} _eof) |}]
 ;;
 
 let%expect_test "equal sign" =
