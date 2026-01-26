@@ -1,64 +1,23 @@
-let std = import("std")
+mod {
 
-let bruh = 1234234
+let first = import("first second third")
+let another = import("this is another one")
+let final = import("this is the final one")
 
-let first { fun x y z {
-  x + y = z
-  }
-}
+let first = 1234134
 
-let another = {
-  import("another")
-}
+let second = 12341234324
 
-rec {
-  record Testing {
-    first : int
-    second : Another
-  }
-}
+let third = 134123423
 
-data Another
-| First {
-    first : int
-    third : int
-  }
-| Second {
-    second: int
-    third: int
-  }
+let fourth = 12341324
 
-data First {
-  first : int
-  second : int
-  third : int
-}
+let fifth = 234234
 
-let another = .First { first = 1234; second = 23423 }
-
-let another = .{ bruh = 1234324 }
-
-let hello = First {
-  first = 1234
-  second = 23423
-  third = 123423
-}
-
-fun testing(x : fun(Int, Int, Bool) -> Int, y, z) {
-  13241234
-}
-
-fun testing (x : Int) (y : fun (x : Type) (y : Type) Type) (w : Int) (z : Int) (l : Int) (y : option.T Int) : Int {
-  fun another (x : Int) : Int {
-    x + y + z + w
-  }
+fun first(x Int, y Int, z Int):
+  x + y + z
   
-  match y
-  | None {
-      let z = x
-      let w = y
-    }
-  | None { int }
+func first(x Int, y Int, z Fun(Int) Int):
+  x + z(y)
+  
 }
-
-let hello_world = fun {

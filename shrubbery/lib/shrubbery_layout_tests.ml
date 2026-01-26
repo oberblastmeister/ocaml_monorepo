@@ -29,8 +29,7 @@ def first:
   z
     |};
   ();
-  [%expect
-    {| (_{ "_;" def first : _{ x "_;" y "_;" z _} _} _eof) |}]
+  [%expect {| (_{ "_;" def first : _{ x "_;" y "_;" z _} _} _eof) |}]
 ;;
 
 let%expect_test "more" =
@@ -119,8 +118,7 @@ let%expect_test "weird empty blocks" =
                  second
                  third
     |};
-  [%expect
-    {| (_{ "_;" : _{ : _{ : _{ first "_;" second "_;" third _} _} _} _} _eof) |}]
+  [%expect {| (_{ "_;" : _{ : _{ : _{ first "_;" second "_;" third _} _} _} _} _eof) |}]
 ;;
 
 let%expect_test "weird empty blocks find first token" =
@@ -131,8 +129,7 @@ let%expect_test "weird empty blocks find first token" =
         y
         z
     |};
-  [%expect
-    {| (_{ : _{ : _{ : _{ _} "_;" x "_;" y "_;" z _} _} _} _eof) |}];
+  [%expect {| (_{ : _{ : _{ : _{ _} "_;" x "_;" y "_;" z _} _} _} _eof) |}];
   check
     {|
 : :    :
@@ -140,8 +137,7 @@ let%expect_test "weird empty blocks find first token" =
       y
       z
     |};
-  [%expect
-    {| (_{ "_;" : _{ : _{ : _{ _} _} x y z _} _} _eof) |}]
+  [%expect {| (_{ "_;" : _{ : _{ : _{ _} _} x y z _} _} _eof) |}]
 ;;
 
 let%expect_test "start block with equal" =
@@ -169,8 +165,7 @@ def first:
   y;
   z
     |};
-  [%expect
-    {| (_{ "_;" def first : _{ x ";" "_;" y ";" "_;" z _} _} _eof) |}]
+  [%expect {| (_{ "_;" def first : _{ x ";" "_;" y ";" "_;" z _} _} _eof) |}]
 ;;
 
 let%expect_test "" =
@@ -178,8 +173,7 @@ let%expect_test "" =
     {|
 hello_world } another
 |};
-  [%expect
-    {| (_{ "_;" hello_world } another _} _eof) |}]
+  [%expect {| (_{ "_;" hello_world } another _} _eof) |}]
 ;;
 
 let%expect_test "equal sign" =
@@ -193,5 +187,26 @@ let%expect_test "equal sign" =
     {|
     (_{ let first : _{ fun : _{ _} _} let x : _{ 1324234 _} let y : _{ 12341324
      _} _} _eof)
+    |}]
+;;
+
+let%expect_test "top level mod" =
+  check
+    {|
+mod: {
+
+let first = 1
+
+let second = 2
+
+let third = 3234
+
+}
+    |};
+  [%expect
+    {|
+    (_{ "_;" mod :
+     ({ let first = _{ 1 _} let second = _{ 2 _} let third = _{ 3234 _} }) _}
+     _eof)
     |}]
 ;;
