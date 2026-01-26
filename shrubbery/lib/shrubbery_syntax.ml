@@ -5,8 +5,9 @@ open struct
   module Token = Shrubbery_token
 end
 
+(* TODO: a group should have nonempty items here *)
 type group =
-  { items : item list
+  { items : item Non_empty_list.t
   ; block : token_block option
   ; alts : alt list
   }
@@ -39,11 +40,11 @@ and group_sep =
 
 and alt = token_block [@@deriving sexp_of, equal, compare]
 
-let rec remove_trivia_block (t : block) : block =
+(* let rec remove_trivia_block (t : block) : block =
   { t with groups = List.map t.groups ~f:remove_trivia_group_sep }
 
 and remove_trivia_group (t : group) : group =
-  { items = List.filter_map t.items ~f:remove_trivia_item
+  { items = Non_empty_list.filter_map t.items ~f:remove_trivia_item
   ; block = Option.map t.block ~f:remove_trivia_token_block
   ; alts = List.map t.alts ~f:remove_trivia_token_block
   }
@@ -60,7 +61,7 @@ and remove_trivia_item (t : item) : item option =
   | Token _ -> Some t
   | Delim d ->
     Some (Delim { d with groups = List.map d.groups ~f:remove_trivia_group_sep })
-;;
+;; *)
 
 module Make_sexp_of (Sexp_of_token : sig
     val sexp_of_token : Token.ti -> Sexp.t
@@ -69,7 +70,7 @@ struct
   open Sexp_of_token
 
   let rec sexp_of_group { items; block; alts } =
-    let group = List.map items ~f:sexp_of_item in
+    let group = Non_empty_list.to_list items |> List.map ~f:sexp_of_item in
     let block = Option.to_list block |> List.map ~f:sexp_of_token_block in
     let alts = List.map alts ~f:sexp_of_alt in
     Sexp.List (group @ block @ alts)

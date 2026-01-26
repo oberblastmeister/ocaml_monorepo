@@ -107,12 +107,17 @@ and parse_virtual_block_rec (st : State.t) lbrace (acc : Syntax.group_sep list) 
     { lbrace; groups = List.rev acc; rbrace }
   | Some _ ->
     let group = parse_group st in
-    let sep =
+    let sep_tok =
       State.next_if st ~f:(function
         | VSemi | Semi -> true
         | _ -> false)
     in
-    parse_virtual_block_rec st lbrace ({ group; sep } :: acc)
+    let acc =
+      match group with
+      | Some group -> ({ group; sep = sep_tok } : Syntax.group_sep) :: acc
+      | None -> acc
+    in
+    parse_virtual_block_rec st lbrace acc
   | None -> failwith "precondition: VLBrace should always have matching VRBrace"
 
 and parse_delimited_groups ~sep tts =
@@ -125,9 +130,14 @@ and parse_delimited_groups_rec ~sep st (acc : Syntax.group_sep list) =
   | Some _ ->
     let group = parse_group st in
     let sep_tok = State.next_if st ~f:(Token.equal sep) in
-    parse_delimited_groups_rec ~sep st ({ group; sep = sep_tok } :: acc)
+    let acc =
+      match group with
+      | Some group -> ({ group; sep = sep_tok } : Syntax.group_sep) :: acc
+      | None -> acc
+    in
+    parse_delimited_groups_rec ~sep st acc
 
-and parse_group (st : State.t) : Syntax.group =
+and parse_group (st : State.t) : Syntax.group option =
   let items = parse_items st in
   let block =
     match State.peek st with
@@ -135,7 +145,8 @@ and parse_group (st : State.t) : Syntax.group =
     | Some _ | None -> None
   in
   let alts = parse_alts st in
-  { items; block; alts }
+  Non_empty_list.of_list items
+  |> Option.map ~f:(fun items -> ({ items; block; alts } : Syntax.group))
 
 and parse_items st = parse_items_rec st []
 

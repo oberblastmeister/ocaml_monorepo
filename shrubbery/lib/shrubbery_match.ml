@@ -1,9 +1,18 @@
 open Prelude
 module Syntax = Shrubbery_syntax
-module Token = Shrubbery_token
 module Fail = Utility.Fail
 
-let token env t1 (t2 : Token.ti) = if Token.equal t1 t2.token then () else Fail.fail env
+module Token = struct
+  let equals env t1 (t2 : Shrubbery_token.ti) =
+    if Shrubbery_token.equal t1 t2.token then () else Fail.fail env
+  ;;
+
+  let ident env (t : Shrubbery_token.ti) =
+    match t.token with
+    | Shrubbery_token.Ident s -> s
+    | _ -> Fail.fail env
+  ;;
+end
 
 module Item = struct
   let token env (t : Syntax.item) =

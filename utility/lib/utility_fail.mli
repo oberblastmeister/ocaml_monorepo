@@ -21,7 +21,7 @@ module List : sig
   val next : env -> 'a t -> 'a
   val take : 'a t -> 'a list
   val empty : env -> 'a t -> unit
-  val create : env -> 'a list -> f:('a t -> unit) -> unit
+  val create : env -> 'a list -> f:('a t -> 'b) -> 'b
   val optional : 'a t -> (unit -> 'b) -> 'b option
   val either : 'a t -> (unit -> 'b) -> (unit -> 'c) -> ('c, 'b) Base.Either.t
   val many_rev : 'a t -> (unit -> 'b) -> 'b list

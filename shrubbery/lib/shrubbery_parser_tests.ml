@@ -26,7 +26,7 @@ def first:
   z
     |};
   [%expect
-    {| (_{ ((() "_;") ((def first (: (_{ (((x) "_;") ((y) "_;") ((z))) _}))))) _}) |}]
+    {| (_{ (((def first (: (_{ (((x) "_;") ((y) "_;") ((z))) _}))))) _}) |}]
 ;;
 
 let%expect_test "more" =
@@ -48,13 +48,12 @@ def first:
   [%expect
     {|
     (_{
-     ((() "_;")
-      ((def first
+     (((def first
         (:
          (_{
           (((call_function
              ("(" ((do (: (_{ (((a) "_;") ((b) ";") ((c) "_;") ((d))) _}))) ,)
-              ((do (: (_{ (((x) ";") ((y) ";") (() "_;") ((z))) _}))) ,)
+              ((do (: (_{ (((x) ";") ((y) ";") ((z))) _}))) ,)
               ((do (: (_{ (((a) ";") ((b) ";") ((c) ";") ((d))) _})))) ")"))))
           _})))))
      _})
@@ -73,7 +72,7 @@ def another:
   [%expect
     {|
     (_{
-     ((() "_;") ((def first (: (_{ (((x) ";") ((y) ";") ((z))) _}))) "_;")
+     (((def first (: (_{ (((x) ";") ((y) ";") ((z))) _}))) "_;")
       (("(Error ,)") "_;")
       ((def another (: (_{ (((x) ";") ((y) ";") ((z))) _})))))
      _})
@@ -138,8 +137,7 @@ def another:
   [%expect
     {|
     (_{
-     ((() "_;")
-      ((def fib pos_int (| (_{ (((fib ("(" ((0)) ")") (: (_{ (((1))) _}))))) _}))
+     (((def fib pos_int (| (_{ (((fib ("(" ((0)) ")") (: (_{ (((1))) _}))))) _}))
         (| (_{ (((fib ("(" ((1)) ")") (: (_{ (((1))) _}))))) _}))
         (|
          (_{
@@ -159,7 +157,7 @@ hello_world } another { awefawe )
     |};
   [%expect
     {|
-    (_{ ((() "_;") ((hello_world "(Error })" another ({ ((awefawe)) ")")))) _})
+    (_{ (((hello_world "(Error })" another ({ ((awefawe)) ")")))) _})
     ((Mismatching_delimiters (ldelim ((start 23) (stop 24)))
       (rdelim ((start 33) (stop 34)))))
     |}]
@@ -177,8 +175,7 @@ def first: {
   [%expect
     {|
     (_{
-     ((() "_;")
-      ((def first
+     (((def first
         (: ({ (((first) ";") ((second) ";") ((third) ";") ((fourth))) })))))
      _})
     |}]
@@ -204,11 +201,9 @@ record Pair(a, b):
   [%expect
     {|
     (_{
-     ((() "_;")
-      ((data Option ("(" ((a)) ")") (: (_{ () _}))
+     (((data Option ("(" ((a)) ")") (: (_{ () _}))
         (| (_{ (((Some ("(" ((a)) ")")))) _})) (| (_{ (((None))) _})))
        "_;")
-      (() ";") (() "_;")
       ((data Either ("(" ((a) ,) ((b)) ")")
         (| (_{ (((Left ("(" ((a)) ")")))) _}))
         (| (_{ (((Right ("(" ((b)) ")")))) _})))
@@ -235,8 +230,7 @@ def nested_match(x, y):
   [%expect
     {|
     (_{
-     ((() "_;")
-      ((def nested_match ("(" ((x) ,) ((y)) ")")
+     (((def nested_match ("(" ((x) ,) ((y)) ")")
         (:
          (_{
           (((match x (: (_{ () _}))
@@ -286,8 +280,7 @@ let testing:
   [%expect
     {|
     (_{
-     ((() "_;")
-      ((let testing
+     (((let testing
         (:
          (_{
           (((first) "_;") ((second) "_;") (("(Error ,)") "_;") ((third) "_;")

@@ -3,7 +3,7 @@ module Token_tree := Shrubbery_token_tree
 module Token := Shrubbery_token
 
 type group =
-  { items : item list
+  { items : item Non_empty_list.t
   ; block : token_block option
   ; alts : alt list
   }
@@ -35,9 +35,6 @@ and group_sep =
   }
 
 and alt = token_block [@@deriving sexp_of, equal, compare]
-
-val remove_trivia_block : block -> block
-val remove_trivia_group : group -> group
 
 module Minimal_sexp_of : sig
   val sexp_of_block : block -> Sexp.t

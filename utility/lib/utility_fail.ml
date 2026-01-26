@@ -86,8 +86,9 @@ module List = struct
 
   let create env xs ~f =
     let r = ref xs in
-    f r;
-    empty env r
+    let x = f r in
+    empty env r;
+    x
   ;;
 
   let optional t f =
