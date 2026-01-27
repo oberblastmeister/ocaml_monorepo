@@ -156,6 +156,26 @@ Benefits:
 
 **Important**: Use `raise_notrace` instead of `raise` when using exceptions for control flow. This avoids the performance overhead of capturing backtraces for expected error conditions.
 
+### Check for Unconsumed Items After Parsing
+
+When using `Items.create` to parse a sub-structure (e.g., function parameters), always check that all items have been consumed after parsing. Unconsumed items indicate a syntax error:
+
+```ocaml
+let param_items = Items.create param_group.group.items in
+let var = ... in
+let ty = parse_atom_expr st param_items in
+(* Check for unconsumed items *)
+Items.take param_items
+|> List.hd
+|> Option.iter ~f:(fun item ->
+  error
+    (Error.create
+       "Unconsumed tokens in parameter"
+       (Shrub.Item.first_token item).index));
+```
+
+This pattern ensures that extra tokens in a construct are reported as errors rather than silently ignored.
+
 ### Commit Pattern in Parsers
 
 When a parser has matched enough of a construct to be certain about what it's parsing (e.g., a keyword prefix), it should "commit" and stop producing backtrackable `Fail` exceptions. Instead, subsequent errors should be hard errors reported to the user.

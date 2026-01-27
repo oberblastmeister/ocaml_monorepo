@@ -23,11 +23,6 @@ let format_snippet files snippet =
   let file = Map.find_exn files snippet.File_span.file in
   let source = file.File.source in
   let converter = file.File.position_converter in
-  let snippet =
-    if snippet.start = snippet.stop
-    then { snippet with stop = snippet.start + 1 }
-    else snippet
-  in
   let start_lc = Position_converter.pos_to_line_col converter snippet.start in
   let stop_lc =
     (* this can happen when we have positions on top of virtual tokens which have length 0 *)
@@ -52,6 +47,9 @@ let format_snippet files snippet =
   in
   let is_multiline = start_lc.Line_col.line < stop_lc.Line_col.line in
   let underline_len =
+    (* the underline can be of length 0 for some virtual tokens, so force it to be length 1 *)
+    max 1
+    @@
     if is_multiline
     then String.length line_content - start_lc.Line_col.col
     else snippet.stop - snippet.start
@@ -98,6 +96,60 @@ let%test_module "format_snippet" =
           |
         1 | let x = 1
           |     ^
+        |}]
+    ;;
+
+    let%expect_test "another" =
+      check "xyz\n" 3 4;
+      [%expect
+        {|
+         --> test.ml:1:4
+          |
+        1 | xyz
+          |    ^...
+        |}];
+      check "xyz\n" 3 3;
+      [%expect
+        {|
+         --> test.ml:1:4
+          |
+        1 | xyz
+          |    ^
+        |}];
+      check "xyz" 2 3;
+      [%expect
+        {|
+         --> test.ml:1:3
+          |
+        1 | xyz
+          |   ^
+        |}];
+      check "xyz" 2 2;
+      [%expect
+        {|
+         --> test.ml:1:3
+          |
+        1 | xyz
+          |   ^
+        |}];
+      check "xyz" 3 3;
+      [%expect
+        {|
+         --> test.ml:1:4
+          |
+        1 | xyz
+          |    ^
+        |}]
+    ;;
+
+    let%expect_test "indexing past newline" =
+      check "xyz\n" 4 4;
+      [%expect
+        {|
+         --> test.ml:2:1
+          |
+        2 |
+          | ^
         |}]
     ;;
 

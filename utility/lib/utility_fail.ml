@@ -144,6 +144,33 @@ module List = struct
          one_of t rest
        | x -> x)
   ;;
+
+  let run t ~f =
+    let saved = !t in
+    match f Env with
+    | exception Fail ->
+      t := saved;
+      None
+    | x -> Some x
+  ;;
+
+  let run_or_thunk t ~default ~f =
+    let saved = !t in
+    match f Env with
+    | exception Fail ->
+      t := saved;
+      default ()
+    | x -> x
+  ;;
+
+  let run_exn t ~f =
+    let saved = !t in
+    match f Env with
+    | exception Fail ->
+      t := saved;
+      failwith "Expected computation not to fail"
+    | x -> x
+  ;;
 end
 
 let run ~f =

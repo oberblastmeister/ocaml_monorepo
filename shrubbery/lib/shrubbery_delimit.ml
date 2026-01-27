@@ -24,6 +24,7 @@ let is_right_delim = function
   | _ -> false
 ;;
 
+(* these spans are byte positions *)
 module Error = struct
   type t =
     | Mismatching_delimiters of
@@ -105,10 +106,9 @@ let rec single st : Token_tree.t =
     let tts = many st false in
     let rdelim =
       match State.next st with
-      | { token = Veof; _ } ->
-        let last_token = State.last_token st in
-        State.add_error st (Error.Expecting_delimiter (State.get_span st last_token));
-        last_token
+      | { token = Veof; _ } as tok ->
+        State.add_error st (Error.Expecting_delimiter (State.get_span st tok));
+        tok
       | t when Token.equal (to_close ldelim.token) t.Token.token -> t
       | rdelim ->
         State.add_error
@@ -124,7 +124,7 @@ and many st is_top_level = many_rec [] st is_top_level
 
 and many_rec acc st is_top_level =
   match State.peek st with
-  | { token = Veof; _ } -> List.rev (Token_tree.Token Veof :: acc)
+  | { token = Veof; _ } -> List.rev acc
   | t when is_right_delim t.Token.token ->
     if is_top_level
     then begin
@@ -144,17 +144,19 @@ and many_rec acc st is_top_level =
 let delimit (tokens : Token.t array) : Token_tree.t list * Error.t list =
   let st = State.create tokens in
   let tts = many st true in
+  let tts = tts @ [ Token Veof ] in
   let errors = State.finish st in
   tts, errors
 ;;
 
+let check s =
+  let tokens = Lexer.lex s |> Array.of_list in
+  let tts, errors = delimit tokens in
+  print_s [%sexp (tts : Token_tree.t list)];
+  print_s [%sexp (errors : Error.t list)]
+;;
+
 let%expect_test "smoke" =
-  let check s =
-    let tokens = Lexer.lex s |> Array.of_list in
-    let tts, errors = delimit tokens in
-    print_s [%sexp (tts : Token_tree.t list)];
-    print_s [%sexp (errors : Error.t list)]
-  in
   check
     {|
     awef call_function(fiaefw, waef, (aewf, [aewf {awef}] awef))
@@ -167,5 +169,14 @@ let%expect_test "smoke" =
       ("(" aewf , " " ([ aewf " " ({ awef }) ]) " " awef ")") ")")
      "\n" "    " ([ another " " one , " " another " " one ]) "\n" "    " _eof)
     ()
+    |}]
+;;
+
+let%expect_test "unclosed paren" =
+  check "f(x, y";
+  [%expect
+    {|
+    (f ("(" x , " " y _eof) _eof)
+    ((Expecting_delimiter ((start 6) (stop 6))))
     |}]
 ;;

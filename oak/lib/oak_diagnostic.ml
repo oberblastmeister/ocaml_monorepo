@@ -222,7 +222,7 @@ let%test_module "format" =
          --> test.ml:1:4
           |
         1 | xyz
-          |    ...
+          |    ^...
         |}]
     ;;
 

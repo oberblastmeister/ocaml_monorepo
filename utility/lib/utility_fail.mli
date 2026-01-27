@@ -35,6 +35,9 @@ module List : sig
   val some : 'a t -> (unit -> 'b) -> 'b list
   val guard : env -> 'a t -> bool -> unit
   val one_of : 'a t -> (unit -> 'b) list -> 'b
+  val run : 'a t -> f:(env -> 'b) -> 'b option
+  val run_or_thunk : 'a t -> default:(unit -> 'b) -> f:(env -> 'b) -> 'b
+  val run_exn : 'a t -> f:(env -> 'b) -> 'b
 end
 
 module Syntax : sig
