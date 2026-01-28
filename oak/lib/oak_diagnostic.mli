@@ -1,7 +1,7 @@
 open Core
 module Pp := Utility.Pp
 module Doc = Pp.Doc
-module Snippet = Diagnostic.Snippet
+module Snippet = Utility.Diagnostic.Snippet
 
 module Kind : sig
   type t =
@@ -34,5 +34,5 @@ type t =
   }
 [@@deriving sexp_of]
 
-val format : ?width:int -> ?color:bool -> files:Snippet.files -> t -> string
+val pp : files:Snippet.files -> t -> Doc.t
 val print : ?width:int -> ?color:bool -> files:Snippet.files -> t -> unit

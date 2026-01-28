@@ -1,5 +1,5 @@
 open Core
-module Span = Utility.Span
+module Span = Utility_span
 
 type t =
   { start : int

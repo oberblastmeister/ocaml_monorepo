@@ -7,6 +7,8 @@ open struct
   module Var = Syntax.Var
   module Cvar = Syntax.Cvar
   module Diagnostic = Oak_diagnostic
+  module Pp = Utility.Pp
+  module Doc = Pp.Doc
 end
 
 module State = struct
@@ -982,11 +984,7 @@ let infer expr =
     let diagnostic =
       { Diagnostic.code = None
       ; parts =
-          [ { Diagnostic.Part.kind = Error
-            ; message = Diagnostic.Doc.string e
-            ; snippet = None
-            }
-          ]
+          [ { Diagnostic.Part.kind = Error; message = Doc.string e; snippet = None } ]
       }
     in
     [ diagnostic ], None

@@ -5,6 +5,7 @@ module Fail = Utility.Fail
 module Syntax = Oak_syntax
 module Span = Utility.Span
 module Spanned = Utility.Spanned
+module File_span = Utility.File_span
 module Diagnostic = Oak_diagnostic
 
 module Error = struct
@@ -568,7 +569,7 @@ let error_to_diagnostic ~file ~offsets (e : Error.t) : Diagnostic.t =
   { code = Some Parse_error
   ; parts =
       [ { kind = Error
-        ; message = Diagnostic.Doc.string e.value
+        ; message = Doc.string e.value
         ; snippet = Some { file; start; stop }
         }
       ]
@@ -577,19 +578,17 @@ let error_to_diagnostic ~file ~offsets (e : Error.t) : Diagnostic.t =
 
 let shrub_error_to_diagnostic ~file (e : Shrubbery.Delimit.Error.t) : Diagnostic.t =
   (* shrub errors are byte positions *)
-  let to_snippet ({ start; stop } : Span.t) : Diagnostic.Snippet.t =
-    { file; start; stop }
-  in
+  let to_snippet ({ start; stop } : Span.t) : File_span.t = { file; start; stop } in
   match e with
   | Mismatching_delimiters { ldelim; rdelim } ->
     { code = Some Parse_error
     ; parts =
         [ { kind = Error
-          ; message = Diagnostic.Doc.string "mismatching delimiters"
+          ; message = Doc.string "mismatching delimiters"
           ; snippet = Some (to_snippet rdelim)
           }
         ; { kind = Note
-          ; message = Diagnostic.Doc.string "opening delimiter here"
+          ; message = Doc.string "opening delimiter here"
           ; snippet = Some (to_snippet ldelim)
           }
         ]
@@ -598,7 +597,7 @@ let shrub_error_to_diagnostic ~file (e : Shrubbery.Delimit.Error.t) : Diagnostic
     { code = Some Parse_error
     ; parts =
         [ { kind = Error
-          ; message = Diagnostic.Doc.string "expecting delimiter"
+          ; message = Doc.string "expecting delimiter"
           ; snippet = Some (to_snippet span)
           }
         ]

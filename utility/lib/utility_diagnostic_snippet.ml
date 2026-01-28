@@ -1,7 +1,9 @@
 open Core
-module File_span = Diagnostic_file_span
-module Position_converter = Utility.Position_converter
-module Line_col = Utility.Line_col
+module File_span = Utility_file_span
+module Position_converter = Utility_position_converter
+module Line_col = Utility_line_col
+module Pp = Utility_pp
+module Doc = Pp.Doc
 
 type t = File_span.t [@@deriving sexp_of]
 
@@ -16,7 +18,8 @@ end
 
 type files = File.t String.Map.t
 
-let format_snippet files snippet =
+let pp files snippet =
+  let open Doc.Syntax in
   let file = Map.find_exn files snippet.File_span.file in
   let source = file.File.source in
   let converter = file.File.position_converter in
@@ -26,22 +29,20 @@ let format_snippet files snippet =
     (* we still want to show these positions so extend it to length 1 *)
     Position_converter.pos_to_line_col converter snippet.stop
   in
-  let line_no = start_lc.Line_col.line in
-  let line_display = line_no + 1 in
-  let line_str = Int.to_string line_display in
-  let width = Int.max 0 (String.length line_str) in
-  let padding = String.make width ' ' in
+  let line_num = start_lc.Line_col.line in
+  let line_num_display = line_num + 1 in
+  let line_num_str = Int.to_string line_num_display in
+  let line_num_width = String.length line_num_str in
   let line_start_pos =
-    Position_converter.line_col_to_pos converter { Line_col.line = line_no; col = 0 }
+    Position_converter.line_col_to_pos converter { Line_col.line = line_num; col = 0 }
   in
+  (* TODO: remove the O(n) check *)
   let line_end_pos =
     match String.index_from source line_start_pos '\n' with
     | Some i -> i
     | None -> String.length source
   in
-  let line_content =
-    String.sub source ~pos:line_start_pos ~len:(line_end_pos - line_start_pos)
-  in
+  let line_content = String.slice source line_start_pos line_end_pos in
   let is_multiline = start_lc.Line_col.line < stop_lc.Line_col.line in
   let underline_len =
     (* the underline can be of length 0 for some virtual tokens, so force it to be length 1 *)
@@ -54,21 +55,41 @@ let format_snippet files snippet =
   let underline_str = String.make underline_len '^' in
   let suffix = if is_multiline then "..." else "" in
   let col_display = start_lc.Line_col.col + 1 in
-  sprintf
-    "%s--> %s:%d:%d\n%s |\n%*d | %s\n%s | %s%s%s"
-    padding
-    snippet.File_span.file
-    line_display
-    col_display
-    padding
-    width
-    line_display
-    line_content
-    padding
-    (String.make start_lc.Line_col.col ' ')
-    underline_str
-    suffix
+  Doc.blank line_num_width
+  ^^ Doc.string "--> "
+  ^^ Doc.string snippet.File_span.file
+  ^^ Doc.string ":"
+  ^^ Doc.string (sprintf "%d" line_num_display)
+  ^^ Doc.string ":"
+  ^^ Doc.string (sprintf "%d" col_display)
+  ^^ Doc.newline
+  ^^ Doc.blank line_num_width
+  ^^ Doc.string (sprintf " |\n%*d | " line_num_width line_num_display)
+  ^^ Doc.string line_content
+  ^^ Doc.newline
+  ^^ Doc.blank line_num_width
+  ^^ Doc.string " | "
+  ^^ Doc.blank start_lc.Line_col.col
+  ^^ Doc.string underline_str
+  ^^ Doc.string suffix
 ;;
+
+(* suffix
+       " | "
+       sprintf
+       "%s--> %s:%d:%d\n%s |\n%*d | %s\n%s | %s%s%s"
+       padding
+       snippet.File_span.file
+       line_num_display
+       col_display
+       padding
+       line_num_width
+       line_num_display
+       line_content
+       padding
+       (String.make start_lc.Line_col.col ' ')
+       underline_str
+       suffix *)
 
 let%test_module "format_snippet" =
   (module struct
@@ -81,8 +102,7 @@ let%test_module "format_snippet" =
     let check source start stop =
       let files = setup source in
       let snippet = { File_span.file = "test.ml"; start; stop } in
-      let formatted = format_snippet files snippet in
-      print_endline formatted
+      Pp.render_to_stdout ~width:0 (pp files snippet)
     ;;
 
     let%expect_test "simple" =

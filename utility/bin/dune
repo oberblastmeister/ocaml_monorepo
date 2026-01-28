@@ -1,8 +1,8 @@
 (executable
- (name main)
+ (name diagnostic_demo)
  (public_name diagnostic_demo)
  (preprocess
   (pps ppx_jane))
  (flags
   (:standard -warn-error -A))
- (libraries diagnostic core))
+ (libraries core utility))

@@ -1,4 +1,6 @@
-module Term_color : sig
+open Core
+
+module Basic_color : sig
   type t =
     | Black
     | Blue
@@ -14,7 +16,7 @@ end
 module Color : sig
   type t [@@deriving sexp_of]
 
-  val term : ?bright:bool -> Term_color.t -> t
+  val basic : ?bright:bool -> Basic_color.t -> t
   val rgb : r:int -> g:int -> b:int -> t
 end
 

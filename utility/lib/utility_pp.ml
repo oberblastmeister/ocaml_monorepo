@@ -3,7 +3,7 @@
 *)
 open Core
 
-module Term_color = struct
+module Basic_color = struct
   type t =
     | Black
     | Blue
@@ -18,8 +18,8 @@ end
 
 module Color = struct
   type t =
-    | Term_color of
-        { color : Term_color.t
+    | Basic of
+        { color : Basic_color.t
         ; bright : bool
         }
     | Rgb of
@@ -29,7 +29,7 @@ module Color = struct
         }
   [@@deriving sexp_of]
 
-  let term ?(bright = false) color = Term_color { color; bright }
+  let basic ?(bright = false) color = Basic { color; bright }
   let rgb ~r ~g ~b = Rgb { r; g; b }
 end
 
@@ -248,7 +248,7 @@ end
 
 let color_code ~base (color : Color.t) =
   match color with
-  | Term_color { color; bright } ->
+  | Basic { color; bright } ->
     let offset =
       match color with
       | Black -> 0

@@ -1,7 +1,8 @@
 open Core
 module Pp = Utility.Pp
 module Doc = Pp.Doc
-module Snippet = Diagnostic.Snippet
+open Doc.Syntax
+module Snippet = Utility.Diagnostic.Snippet
 
 module Kind = struct
   type t =
@@ -12,13 +13,13 @@ module Kind = struct
   [@@deriving sexp_of]
 
   let color = function
-    | Error -> Pp.Term_color.Red
+    | Error -> Pp.Basic_color.Red
     | Warning -> Yellow
     | Note -> Cyan
     | Help -> Green
   ;;
 
-  let style t = Pp.Style.append (Pp.Style.fg (Pp.Color.term (color t))) Pp.Style.bold
+  let style t = Pp.Style.append (Pp.Style.fg (Pp.Color.basic (color t))) Pp.Style.bold
 
   let to_string t =
     match t with
@@ -56,41 +57,36 @@ type t =
   }
 [@@deriving sexp_of]
 
-let format_part ?code ~width ~color ~files (part : Part.t) =
-  let open Doc.Syntax in
-  let message_doc =
+let format_part ?code ~files (part : Part.t) =
+  let message =
     let kind = Doc.string (Kind.to_string part.kind) in
     let code =
       Option.map code ~f:(fun code -> Doc.string ("[" ^ Code.to_string code ^ "]"))
       |> Option.value ~default:Doc.empty
     in
-    Doc.style (Kind.style part.kind) (kind ^^ code)
-    ^^ Doc.string ": "
-    ^^ part.Part.message
+    Doc.group
+      (Doc.style (Kind.style part.kind) (kind ^^ code)
+       ^^ Doc.string ": "
+       ^^ part.Part.message)
   in
-  let message = Pp.render_to_string ~width ~color message_doc in
   match part.Part.snippet with
   | Some snippet ->
-    let snippet_str = Snippet.format_snippet files snippet in
-    sprintf "%s\n%s" message snippet_str
+    let snippet = Snippet.pp files snippet in
+    message ^^ Doc.newline ^^ snippet
   | None -> message
 ;;
 
-let format ?(width = 100) ?(color = true) ~files diagnostic =
+let pp ~files diagnostic =
   match diagnostic.parts with
-  | [] -> ""
+  | [] -> Doc.empty
   | main_part :: parts ->
-    let main_part_str =
-      format_part ?code:diagnostic.code ~width ~color ~files main_part
-    in
-    let parts_str =
-      List.map parts ~f:(format_part ~width ~color ~files) |> String.concat ~sep:"\n"
-    in
-    sprintf "%s\n%s" main_part_str parts_str
+    let main_part = format_part ?code:diagnostic.code ~files main_part in
+    let parts = main_part :: List.map parts ~f:(format_part ~files) in
+    Doc.concat ~sep:Doc.newline parts
 ;;
 
-let print ?width ?(color = true) ~files diagnostic =
-  print_endline (format ?width ~color ~files diagnostic)
+let print ?(width = 100) ?(color = true) ~files diagnostic =
+  Pp.render_to_stdout ~color ~width (pp ~files diagnostic)
 ;;
 
 let%test_module "format" =

@@ -1,4 +1,0 @@
-- use the zig style error messages
-- for each part of the error message, print the file, then range, then part type (note, context, error, etc), then print the message, then print the source. If the source range is longer than one line, only print the first line and put a ... indicator to indicate that there are more lines (like what haskell does)
-- instead of single line message for zig style, use multiple bullet points like ghc style.
-- 

@@ -1,4 +1,5 @@
 open Core
+module Diagnostic = Utility.Diagnostic
 module Snippet = Diagnostic.Snippet
 module Diag = Oak.Oak_diagnostic
 

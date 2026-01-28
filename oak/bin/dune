@@ -1,8 +1,8 @@
 (executable
  (name main)
- (public_name oak_demo)
+ (public_name oak)
  (preprocess
   (pps ppx_jane))
  (flags
   (:standard -warn-error -A))
- (libraries oak diagnostic core))
+ (libraries oak core utility))

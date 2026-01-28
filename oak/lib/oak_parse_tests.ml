@@ -11,7 +11,7 @@ let check s =
   then begin
     List.iter diagnostics ~f:(fun diagnostic ->
       Diagnostic.print ~color:false ~files diagnostic;
-      print_endline "")
+      print_string "\n\n")
   end
   else print_s [%sexp (expr : Syntax.expr)]
 ;;

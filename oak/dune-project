@@ -30,7 +30,6 @@
    (= v0.17.0))
   shrubbery
   utility
-  diagnostic
  )
  (tags
   ("add topics" "to describe" your project)))
