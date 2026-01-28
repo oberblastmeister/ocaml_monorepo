@@ -1,4 +1,4 @@
-open Core
+open Prelude
 module Span = Utility.Span
 module Token = Shrubbery.Token
 module Pos = Utility.Pos
@@ -52,10 +52,16 @@ module Universe = struct
 
   let lub u v = of_int_exn (Int.max (to_int u) (to_int v))
   let incr_exn u = of_int_exn (to_int u + 1)
+
+  let to_string = function
+    | Type -> "Type"
+    | Kind -> "Kind"
+    | Sig -> "Sig"
+  ;;
 end
 
 module Var = struct
-  let stamp = ref 0
+  let stamp = ref 1
 
   module T = struct
     type t =
@@ -69,7 +75,8 @@ module Var = struct
   include Comparable.Make_plain (T)
   include T
 
-  let create_initial name pos = { name; id = -1; pos = Some pos }
+  let to_string t = sprintf "%s_%d" t.name t.id
+  let create_initial name pos = { name; id = 0; pos = Some pos }
 
   let create ?pos name =
     let id = !stamp in
@@ -86,7 +93,7 @@ end
 
 (* invariant: module variables are always projected immediately *)
 module Mod_var = struct
-  let stamp = ref 0
+  let stamp = ref 1
 
   module T = struct
     type t =
@@ -99,7 +106,8 @@ module Mod_var = struct
   include Comparable.Make_plain (T)
   include T
 
-  let create_initial pos = { id = -1; pos = Some pos }
+  let to_string t = sprintf "m_%d" t.id
+  let create_initial pos = { id = 0; pos = Some pos }
 
   let create ?pos () =
     let id = !stamp in
@@ -119,6 +127,11 @@ module Cvar = struct
 
   include Comparable.Make_plain (T)
   include T
+
+  let to_string = function
+    | Var v -> Var.to_string v
+    | Mod_var v -> Mod_var.to_string v
+  ;;
 
   let create_var name = Var (Var.create name)
   let create_mod_var () = Mod_var (Mod_var.create ())
@@ -244,7 +257,7 @@ and value =
   | Value_irrelevant
   | Value_mod of value_mod
   | Value_abs of value_abs
-  | Value_ty of ty (* TODO: remove this *)
+  | Value_ty of ty
 
 and ty =
   | Value_core_ty of core_ty
@@ -529,15 +542,113 @@ module Subst = struct
   ;;
 end
 
+module Pretty = struct
+  let parens doc =
+    Doc.group
+      (Doc.char '(' ^^ Doc.indent 2 (Doc.break0 ^^ doc) ^^ Doc.break0 ^^ Doc.char ')')
+  ;;
+
+  let parens_list docs = parens (Doc.concat ~sep:(Doc.char ',' ^^ Doc.break1) docs)
+
+  let block docs =
+    Doc.group
+      (Doc.string ":"
+       ^^ Doc.when_flat (Doc.string " { ")
+       ^^ Doc.indent
+            2
+            (Doc.break0
+             ^^ Doc.concat ~sep:(Doc.when_flat (Doc.char ';') ^^ Doc.break1) docs)
+       ^^ Doc.when_flat (Doc.string " }"))
+  ;;
+
+  let rec pp_path (path : path) =
+    match path with
+    | Path_var var -> Doc.string (Cvar.to_string var)
+    | Path_app { func; args } -> pp_path func ^^ parens_list (List.map args ~f:pp_value)
+    | Path_proj { mod_e; field } -> pp_path mod_e ^^ Doc.char '.' ^^ Doc.string field
+
+  and pp_value (value : value) =
+    match value with
+    | Value_irrelevant -> Doc.string "_"
+    | Value_mod { decls } -> Doc.string "mod" ^^ block (List.map decls ~f:pp_decl)
+    | Value_abs { binder = { params; body }; purity } ->
+      let keyword =
+        match purity with
+        | Pure -> "funct"
+        | Impure -> "fun"
+      in
+      Doc.group
+        (Doc.string keyword
+         ^^ parens_list (List.map params ~f:pp_param)
+         ^^ Doc.string ":"
+         ^^ Doc.indent 2 (Doc.break1 ^^ pp_value body))
+    | Value_ty ty -> pp_ty ty
+
+  and pp_ty (ty : ty) =
+    match ty with
+    | Value_core_ty core_ty -> Doc.string (core_ty_to_string core_ty)
+    | Value_path path -> pp_path path
+    | Value_univ univ -> Doc.string (Universe.to_string univ)
+    | Value_ty_sing { e; ty } -> Doc.string "Is" ^^ parens_list [ pp_value e; pp_ty ty ]
+    | Value_ty_mod { binder = { var; ty_decls; ty_decls_map = _ } } ->
+      Doc.string "sig"
+      ^^ Doc.blank1
+      ^^ pp_mod_var var
+      ^^ block (List.map ty_decls ~f:pp_ty_decl)
+    | Value_ty_fun { binder = { params; body_ty }; purity } ->
+      let keyword =
+        match purity with
+        | Pure -> "Funct"
+        | Impure -> "Fun"
+      in
+      Doc.string keyword
+      ^^ parens_list (List.map params ~f:pp_param)
+      ^^ Doc.blank1
+      ^^ pp_ty body_ty
+
+  and pp_param (param : value_param) =
+    if String.equal param.var.name "_"
+    then pp_ty param.ty
+    else
+      Doc.string param.var.name
+      ^^ Doc.string "_"
+      ^^ Doc.string (Int.to_string param.var.id)
+      ^^ Doc.blank1
+      ^^ pp_ty param.ty
+
+  and pp_mod_var var = Doc.string (Mod_var.to_string var)
+
+  and pp_decl (decl : value_decl) =
+    Doc.group
+      (Doc.string "let "
+       ^^ Doc.string decl.field
+       ^^ Doc.string " ="
+       ^^ Doc.indent 2 (Doc.break1 ^^ pp_value decl.e))
+
+  and pp_ty_decl (ty_decl : value_ty_decl) =
+    Doc.group
+      (Doc.string "let "
+       ^^ Doc.string ty_decl.field
+       ^^ Doc.indent 2 (Doc.break1 ^^ pp_ty ty_decl.ty))
+
+  and core_ty_to_string = function
+    | Ty_bool -> "Bool"
+    | Ty_int -> "Int"
+    | Ty_unit -> "Unit"
+  ;;
+end
+
 module Path = struct
   type t = path
 
+  let pp = Pretty.pp_path
   let eval = eval_path
 end
 
 module Value = struct
   type t = value
 
+  let pp = Pretty.pp_value
   let eval = eval_value
   let ty_var = value_ty_var
   let ty_mod_var = value_ty_mod_var
@@ -554,6 +665,7 @@ end
 module Ty = struct
   type t = ty
 
+  let pp = Pretty.pp_ty
   let eval = eval_ty
 end
 

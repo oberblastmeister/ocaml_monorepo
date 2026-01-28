@@ -48,6 +48,8 @@ let my_another = {
 let Reader = sig:
   let Inner :: Type
     
+  let some_functor funct(Int) sig: { first; int; second; int; third; int; fourth; int; }
+
   let T struct:
     buffer bytes
     mut position int
@@ -145,3 +147,19 @@ let z: |x type, 'x type, 'y type, type z, z : int|:
     
 let w: ||x, z, w||:
     x + y + z
+    
+first.second.third.fourth(
+  first,
+  second,
+  third
+).first.second.third.fourth.fifth.seventh.eith(
+  ninth,
+  tenth,
+  eleventh
+).first(fifth, sixth)(
+  another,
+  another
+)(
+  another,
+  another
+)

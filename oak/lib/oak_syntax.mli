@@ -1,4 +1,4 @@
-open Core
+open Prelude
 module Span = Utility.Span
 module Token = Shrubbery.Token
 module Pos = Utility.Pos
@@ -301,12 +301,14 @@ end
 module Path : sig
   type t = path
 
+  val pp : t -> Doc.t
   val eval : subst -> t -> value
 end
 
 module Value : sig
   type t = value
 
+  val pp : t -> Doc.t
   val eval : subst -> t -> value
   val ty_var : Var.t -> ty
   val ty_mod_var : Mod_var.t -> ty
@@ -326,6 +328,7 @@ val app_value_exn : value -> value list -> value
 module Ty : sig
   type t = ty
 
+  val pp : t -> Doc.t
   val eval : subst -> t -> value
 end
 

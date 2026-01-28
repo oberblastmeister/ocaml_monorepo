@@ -74,22 +74,22 @@ let third: 1323243
         |};
   [%expect
     {|
-        (Expr_mod (var ((id -1) (pos (3))))
-         (decls
-          (((let_pos 9) (field first) (field_pos 11)
-            (e
-             (Expr_seal (e (Expr_int (value 12341342) (span ((start 16) (stop 17)))))
-              (ty (Expr_core_ty (ty Ty_int) (span ((start 20) (stop 21)))))
-              (span ((start 16) (stop 21)))))
-            (span ((start 9) (stop 21))))
-           ((let_pos 25) (field second) (field_pos 27)
-            (e (Expr_int (value 13432) (span ((start 31) (stop 32)))))
-            (span ((start 25) (stop 32))))
-           ((let_pos 35) (field third) (field_pos 37)
-            (e (Expr_int (value 1323243) (span ((start 41) (stop 42)))))
-            (span ((start 35) (stop 42))))))
-         (span ((start 3) (stop 42))))
-        |}]
+    (Expr_mod (var ((id 0) (pos (3))))
+     (decls
+      (((let_pos 9) (field first) (field_pos 11)
+        (e
+         (Expr_seal (e (Expr_int (value 12341342) (span ((start 16) (stop 17)))))
+          (ty (Expr_core_ty (ty Ty_int) (span ((start 20) (stop 21)))))
+          (span ((start 16) (stop 21)))))
+        (span ((start 9) (stop 21))))
+       ((let_pos 25) (field second) (field_pos 27)
+        (e (Expr_int (value 13432) (span ((start 31) (stop 32)))))
+        (span ((start 25) (stop 32))))
+       ((let_pos 35) (field third) (field_pos 37)
+        (e (Expr_int (value 1323243) (span ((start 41) (stop 42)))))
+        (span ((start 35) (stop 42))))))
+     (span ((start 3) (stop 42))))
+    |}]
 ;;
 
 let%expect_test "function types taking variables" =
@@ -101,14 +101,14 @@ Fun(x Int, A Type) A
     {|
     (Expr_ty_fun
      ((params
-       (((var ((id -1) (name x) (pos (5))))
+       (((var ((id 0) (name x) (pos (5))))
          (ty (Expr_core_ty (ty Ty_int) (span ((start 7) (stop 8)))))
          (span ((start 5) (stop 8))))
-        ((var ((id -1) (name A) (pos (10))))
+        ((var ((id 0) (name A) (pos (10))))
          (ty (Expr_universe (univ Type) (span ((start 12) (stop 13)))))
          (span ((start 10) (stop 13))))))
       (body_ty
-       (Expr_var (var (Var ((id -1) (name A) (pos (15)))))
+       (Expr_var (var (Var ((id 0) (name A) (pos (15)))))
         (span ((start 15) (stop 16)))))
       (purity Pure) (span ((start 3) (stop 16)))))
     |}]
@@ -121,10 +121,10 @@ let%expect_test "function type with mixed params" =
     {|
     (Expr_ty_fun
      ((params
-       (((var ((id -1) (name x) (pos (4))))
+       (((var ((id 0) (name x) (pos (4))))
          (ty (Expr_core_ty (ty Ty_int) (span ((start 6) (stop 7)))))
          (span ((start 4) (stop 7))))
-        ((var ((id -1) (name _) (pos (9))))
+        ((var ((id 0) (name _) (pos (9))))
          (ty (Expr_core_ty (ty Ty_bool) (span ((start 9) (stop 10)))))
          (span ((start 9) (stop 10))))))
       (body_ty (Expr_core_ty (ty Ty_int) (span ((start 12) (stop 13)))))
@@ -168,44 +168,44 @@ Funct(Int, Int, Bool) Funct(Int) Int
         |};
   [%expect
     {|
-        (Expr_ty_fun
-         ((params
-           (((var ((id -1) (name _) (pos (5))))
-             (ty (Expr_core_ty (ty Ty_int) (span ((start 5) (stop 6)))))
-             (span ((start 5) (stop 6))))
-            ((var ((id -1) (name _) (pos (8))))
-             (ty (Expr_core_ty (ty Ty_bool) (span ((start 8) (stop 9)))))
-             (span ((start 8) (stop 9))))))
-          (body_ty
-           (Expr_ty_fun
-            ((params
-              (((var ((id -1) (name _) (pos (13))))
-                (ty (Expr_core_ty (ty Ty_int) (span ((start 13) (stop 14)))))
-                (span ((start 13) (stop 14))))))
-             (body_ty (Expr_core_ty (ty Ty_int) (span ((start 16) (stop 17)))))
-             (purity Pure) (span ((start 11) (stop 17))))))
-          (purity Pure) (span ((start 3) (stop 17)))))
-        (Expr_ty_fun
-         ((params
-           (((var ((id -1) (name _) (pos (5))))
-             (ty (Expr_core_ty (ty Ty_int) (span ((start 5) (stop 6)))))
-             (span ((start 5) (stop 6))))
-            ((var ((id -1) (name _) (pos (8))))
-             (ty (Expr_core_ty (ty Ty_int) (span ((start 8) (stop 9)))))
-             (span ((start 8) (stop 9))))
-            ((var ((id -1) (name _) (pos (11))))
-             (ty (Expr_core_ty (ty Ty_bool) (span ((start 11) (stop 12)))))
-             (span ((start 11) (stop 12))))))
-          (body_ty
-           (Expr_ty_fun
-            ((params
-              (((var ((id -1) (name _) (pos (16))))
-                (ty (Expr_core_ty (ty Ty_int) (span ((start 16) (stop 17)))))
-                (span ((start 16) (stop 17))))))
-             (body_ty (Expr_core_ty (ty Ty_int) (span ((start 19) (stop 20)))))
-             (purity Impure) (span ((start 14) (stop 20))))))
-          (purity Impure) (span ((start 3) (stop 20)))))
-        |}];
+    (Expr_ty_fun
+     ((params
+       (((var ((id 0) (name _) (pos (5))))
+         (ty (Expr_core_ty (ty Ty_int) (span ((start 5) (stop 6)))))
+         (span ((start 5) (stop 6))))
+        ((var ((id 0) (name _) (pos (8))))
+         (ty (Expr_core_ty (ty Ty_bool) (span ((start 8) (stop 9)))))
+         (span ((start 8) (stop 9))))))
+      (body_ty
+       (Expr_ty_fun
+        ((params
+          (((var ((id 0) (name _) (pos (13))))
+            (ty (Expr_core_ty (ty Ty_int) (span ((start 13) (stop 14)))))
+            (span ((start 13) (stop 14))))))
+         (body_ty (Expr_core_ty (ty Ty_int) (span ((start 16) (stop 17)))))
+         (purity Pure) (span ((start 11) (stop 17))))))
+      (purity Pure) (span ((start 3) (stop 17)))))
+    (Expr_ty_fun
+     ((params
+       (((var ((id 0) (name _) (pos (5))))
+         (ty (Expr_core_ty (ty Ty_int) (span ((start 5) (stop 6)))))
+         (span ((start 5) (stop 6))))
+        ((var ((id 0) (name _) (pos (8))))
+         (ty (Expr_core_ty (ty Ty_int) (span ((start 8) (stop 9)))))
+         (span ((start 8) (stop 9))))
+        ((var ((id 0) (name _) (pos (11))))
+         (ty (Expr_core_ty (ty Ty_bool) (span ((start 11) (stop 12)))))
+         (span ((start 11) (stop 12))))))
+      (body_ty
+       (Expr_ty_fun
+        ((params
+          (((var ((id 0) (name _) (pos (16))))
+            (ty (Expr_core_ty (ty Ty_int) (span ((start 16) (stop 17)))))
+            (span ((start 16) (stop 17))))))
+         (body_ty (Expr_core_ty (ty Ty_int) (span ((start 19) (stop 20)))))
+         (purity Impure) (span ((start 14) (stop 20))))))
+      (purity Impure) (span ((start 3) (stop 20)))))
+    |}];
   check
     {|
 Fun(Int, Bool) -
@@ -230,17 +230,17 @@ fun(x Int, y Int, z Int):
     {|
     (Expr_abs
      (params
-      (((var ((id -1) (name x) (pos (5))))
+      (((var ((id 0) (name x) (pos (5))))
         (ty (Expr_core_ty (ty Ty_int) (span ((start 7) (stop 8)))))
         (span ((start 5) (stop 8))))
-       ((var ((id -1) (name y) (pos (10))))
+       ((var ((id 0) (name y) (pos (10))))
         (ty (Expr_core_ty (ty Ty_int) (span ((start 12) (stop 13)))))
         (span ((start 10) (stop 13))))
-       ((var ((id -1) (name z) (pos (15))))
+       ((var ((id 0) (name z) (pos (15))))
         (ty (Expr_core_ty (ty Ty_int) (span ((start 17) (stop 18)))))
         (span ((start 15) (stop 18))))))
      (body
-      (Expr_var (var (Var ((id -1) (name x) (pos (23)))))
+      (Expr_var (var (Var ((id 0) (name x) (pos (23)))))
        (span ((start 23) (stop 24)))))
      (purity Pure) (span ((start 3) (stop 24))))
     |}]
@@ -256,13 +256,13 @@ fun(x Int) Int:
     {|
     (Expr_abs
      (params
-      (((var ((id -1) (name x) (pos (5))))
+      (((var ((id 0) (name x) (pos (5))))
         (ty (Expr_core_ty (ty Ty_int) (span ((start 7) (stop 8)))))
         (span ((start 5) (stop 8))))))
      (body
       (Expr_seal
        (e
-        (Expr_var (var (Var ((id -1) (name x) (pos (15)))))
+        (Expr_var (var (Var ((id 0) (name x) (pos (15)))))
          (span ((start 15) (stop 16)))))
        (ty (Expr_core_ty (ty Ty_int) (span ((start 10) (stop 11)))))
        (span ((start 15) (stop 16)))))
@@ -280,11 +280,11 @@ funct(x Int):
     {|
     (Expr_abs
      (params
-      (((var ((id -1) (name x) (pos (5))))
+      (((var ((id 0) (name x) (pos (5))))
         (ty (Expr_core_ty (ty Ty_int) (span ((start 7) (stop 8)))))
         (span ((start 5) (stop 8))))))
      (body
-      (Expr_var (var (Var ((id -1) (name x) (pos (13)))))
+      (Expr_var (var (Var ((id 0) (name x) (pos (13)))))
        (span ((start 13) (stop 14)))))
      (purity Impure) (span ((start 3) (stop 14))))
     |}]
@@ -301,20 +301,20 @@ mod: {
 |};
   [%expect
     {|
-    (Expr_mod (var ((id -1) (pos (3))))
+    (Expr_mod (var ((id 0) (pos (3))))
      (decls
       (((let_pos 9) (field add) (field_pos 11)
         (e
          (Expr_abs
           (params
-           (((var ((id -1) (name x) (pos (18))))
+           (((var ((id 0) (name x) (pos (18))))
              (ty (Expr_core_ty (ty Ty_int) (span ((start 20) (stop 21)))))
              (span ((start 18) (stop 21))))
-            ((var ((id -1) (name y) (pos (23))))
+            ((var ((id 0) (name y) (pos (23))))
              (ty (Expr_core_ty (ty Ty_int) (span ((start 25) (stop 26)))))
              (span ((start 23) (stop 26))))))
           (body
-           (Expr_var (var (Var ((id -1) (name x) (pos (31)))))
+           (Expr_var (var (Var ((id 0) (name x) (pos (31)))))
             (span ((start 31) (stop 32)))))
           (purity Pure) (span ((start 16) (stop 32)))))
         (span ((start 9) (stop 32))))))
@@ -326,13 +326,13 @@ let%expect_test "variable expressions" =
   check {| foo |};
   [%expect
     {|
-    (Expr_var (var (Var ((id -1) (name foo) (pos (2)))))
+    (Expr_var (var (Var ((id 0) (name foo) (pos (2)))))
      (span ((start 2) (stop 3))))
     |}];
   check {| (foo) |};
   [%expect
     {|
-    (Expr_var (var (Var ((id -1) (name foo) (pos (3)))))
+    (Expr_var (var (Var ((id 0) (name foo) (pos (3)))))
      (span ((start 3) (stop 4))))
     |}]
 ;;
@@ -427,7 +427,7 @@ sig:
   [%expect
     {|
     (Expr_ty_mod
-     ((var ((id -1) (pos (3))))
+     ((var ((id 0) (pos (3))))
       (ty_decls
        (((field hello) (field_pos 10)
          (ty (Expr_core_ty (ty Ty_int) (span ((start 12) (stop 13)))))
@@ -520,7 +520,7 @@ sig: {
   [%expect
     {|
     (Expr_ty_mod
-     ((var ((id -1) (pos (3)))) (ty_decls ()) (span ((start 3) (stop 5)))))
+     ((var ((id 0) (pos (3)))) (ty_decls ()) (span ((start 3) (stop 5)))))
     |}]
 ;;
 
@@ -533,14 +533,14 @@ hello(1234, 1234, hello(1234, 1233, 4))
     {|
     (Expr_app
      (func
-      (Expr_var (var (Var ((id -1) (name hello) (pos (3)))))
+      (Expr_var (var (Var ((id 0) (name hello) (pos (3)))))
        (span ((start 3) (stop 4)))))
      (args
       ((Expr_int (value 1234) (span ((start 5) (stop 6))))
        (Expr_int (value 1234) (span ((start 8) (stop 9))))
        (Expr_app
         (func
-         (Expr_var (var (Var ((id -1) (name hello) (pos (11)))))
+         (Expr_var (var (Var ((id 0) (name hello) (pos (11)))))
           (span ((start 11) (stop 12)))))
         (args
          ((Expr_int (value 1234) (span ((start 13) (stop 14))))
@@ -557,10 +557,10 @@ let%expect_test "function application with single argument" =
     {|
     (Expr_app
      (func
-      (Expr_var (var (Var ((id -1) (name f) (pos (2)))))
+      (Expr_var (var (Var ((id 0) (name f) (pos (2)))))
        (span ((start 2) (stop 3)))))
      (args
-      ((Expr_var (var (Var ((id -1) (name x) (pos (4)))))
+      ((Expr_var (var (Var ((id 0) (name x) (pos (4)))))
         (span ((start 4) (stop 5))))))
      (span ((start 2) (stop 6))))
     |}]
@@ -572,7 +572,7 @@ let%expect_test "function application with no arguments" =
     {|
     (Expr_app
      (func
-      (Expr_var (var (Var ((id -1) (name f) (pos (2)))))
+      (Expr_var (var (Var ((id 0) (name f) (pos (2)))))
        (span ((start 2) (stop 3)))))
      (args ()) (span ((start 2) (stop 5))))
     |}]
@@ -588,18 +588,18 @@ let%expect_test "chained function applications" =
        (func
         (Expr_app
          (func
-          (Expr_var (var (Var ((id -1) (name f) (pos (2)))))
+          (Expr_var (var (Var ((id 0) (name f) (pos (2)))))
            (span ((start 2) (stop 3)))))
          (args
-          ((Expr_var (var (Var ((id -1) (name x) (pos (4)))))
+          ((Expr_var (var (Var ((id 0) (name x) (pos (4)))))
             (span ((start 4) (stop 5))))))
          (span ((start 2) (stop 6)))))
        (args
-        ((Expr_var (var (Var ((id -1) (name y) (pos (7)))))
+        ((Expr_var (var (Var ((id 0) (name y) (pos (7)))))
           (span ((start 7) (stop 8))))))
        (span ((start 2) (stop 9)))))
      (args
-      ((Expr_var (var (Var ((id -1) (name z) (pos (10)))))
+      ((Expr_var (var (Var ((id 0) (name z) (pos (10)))))
         (span ((start 10) (stop 11))))))
      (span ((start 2) (stop 12))))
     |}]
@@ -613,13 +613,13 @@ mod:
 |};
   [%expect
     {|
-    (Expr_mod (var ((id -1) (pos (3))))
+    (Expr_mod (var ((id 0) (pos (3))))
      (decls
       (((let_pos 8) (field x) (field_pos 10)
         (e
          (Expr_app
           (func
-           (Expr_var (var (Var ((id -1) (name Option) (pos (14)))))
+           (Expr_var (var (Var ((id 0) (name Option) (pos (14)))))
             (span ((start 14) (stop 15)))))
           (args ((Expr_core_ty (ty Ty_int) (span ((start 16) (stop 17))))))
           (span ((start 14) (stop 18)))))
@@ -637,13 +637,13 @@ Fun(Int) List(Bool)
     {|
     (Expr_ty_fun
      ((params
-       (((var ((id -1) (name _) (pos (5))))
+       (((var ((id 0) (name _) (pos (5))))
          (ty (Expr_core_ty (ty Ty_int) (span ((start 5) (stop 6)))))
          (span ((start 5) (stop 6))))))
       (body_ty
        (Expr_app
         (func
-         (Expr_var (var (Var ((id -1) (name List) (pos (8)))))
+         (Expr_var (var (Var ((id 0) (name List) (pos (8)))))
           (span ((start 8) (stop 9)))))
         (args ((Expr_core_ty (ty Ty_bool) (span ((start 10) (stop 11))))))
         (span ((start 8) (stop 12)))))
@@ -660,11 +660,11 @@ Fun(Option(List(Int))) Result(Option(Bool), String)
     {|
     (Expr_ty_fun
      ((params
-       (((var ((id -1) (name Option) (pos (5))))
+       (((var ((id 0) (name Option) (pos (5))))
          (ty
           (Expr_app
            (func
-            (Expr_var (var (Var ((id -1) (name List) (pos (7)))))
+            (Expr_var (var (Var ((id 0) (name List) (pos (7)))))
              (span ((start 7) (stop 8)))))
            (args ((Expr_core_ty (ty Ty_int) (span ((start 9) (stop 10))))))
            (span ((start 7) (stop 11)))))
@@ -672,16 +672,16 @@ Fun(Option(List(Int))) Result(Option(Bool), String)
       (body_ty
        (Expr_app
         (func
-         (Expr_var (var (Var ((id -1) (name Result) (pos (14)))))
+         (Expr_var (var (Var ((id 0) (name Result) (pos (14)))))
           (span ((start 14) (stop 15)))))
         (args
          ((Expr_app
            (func
-            (Expr_var (var (Var ((id -1) (name Option) (pos (16)))))
+            (Expr_var (var (Var ((id 0) (name Option) (pos (16)))))
              (span ((start 16) (stop 17)))))
            (args ((Expr_core_ty (ty Ty_bool) (span ((start 18) (stop 19))))))
            (span ((start 16) (stop 20))))
-          (Expr_var (var (Var ((id -1) (name String) (pos (22)))))
+          (Expr_var (var (Var ((id 0) (name String) (pos (22)))))
            (span ((start 22) (stop 23))))))
         (span ((start 14) (stop 24)))))
       (purity Pure) (span ((start 3) (stop 24)))))
@@ -697,27 +697,27 @@ f(fun(x Int): x, g(y), z)
     {|
     (Expr_app
      (func
-      (Expr_var (var (Var ((id -1) (name f) (pos (3)))))
+      (Expr_var (var (Var ((id 0) (name f) (pos (3)))))
        (span ((start 3) (stop 4)))))
      (args
       ((Expr_abs
         (params
-         (((var ((id -1) (name x) (pos (7))))
+         (((var ((id 0) (name x) (pos (7))))
            (ty (Expr_core_ty (ty Ty_int) (span ((start 9) (stop 10)))))
            (span ((start 7) (stop 10))))))
         (body
-         (Expr_var (var (Var ((id -1) (name x) (pos (14)))))
+         (Expr_var (var (Var ((id 0) (name x) (pos (14)))))
           (span ((start 14) (stop 15)))))
         (purity Pure) (span ((start 5) (stop 15))))
        (Expr_app
         (func
-         (Expr_var (var (Var ((id -1) (name g) (pos (18)))))
+         (Expr_var (var (Var ((id 0) (name g) (pos (18)))))
           (span ((start 18) (stop 19)))))
         (args
-         ((Expr_var (var (Var ((id -1) (name y) (pos (20)))))
+         ((Expr_var (var (Var ((id 0) (name y) (pos (20)))))
            (span ((start 20) (stop 21))))))
         (span ((start 18) (stop 22))))
-       (Expr_var (var (Var ((id -1) (name z) (pos (24)))))
+       (Expr_var (var (Var ((id 0) (name z) (pos (24)))))
         (span ((start 24) (stop 25))))))
      (span ((start 3) (stop 26))))
     |}]
@@ -732,13 +732,13 @@ sig:
   [%expect
     {|
     (Expr_ty_mod
-     ((var ((id -1) (pos (3))))
+     ((var ((id 0) (pos (3))))
       (ty_decls
        (((field x) (field_pos 10)
          (ty
           (Expr_app
            (func
-            (Expr_var (var (Var ((id -1) (name List) (pos (12)))))
+            (Expr_var (var (Var ((id 0) (name List) (pos (12)))))
              (span ((start 12) (stop 13)))))
            (args ((Expr_core_ty (ty Ty_int) (span ((start 14) (stop 15))))))
            (span ((start 12) (stop 16)))))

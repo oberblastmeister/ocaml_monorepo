@@ -37,6 +37,7 @@ module Doc : sig
   val empty : t
   val newline : t
   val blank : int -> t
+  val blank1 : t
   val space : t
   val break0 : t
   val break1 : t

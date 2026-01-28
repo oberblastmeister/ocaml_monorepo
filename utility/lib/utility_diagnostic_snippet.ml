@@ -74,23 +74,6 @@ let pp files snippet =
   ^^ Doc.string suffix
 ;;
 
-(* suffix
-       " | "
-       sprintf
-       "%s--> %s:%d:%d\n%s |\n%*d | %s\n%s | %s%s%s"
-       padding
-       snippet.File_span.file
-       line_num_display
-       col_display
-       padding
-       line_num_width
-       line_num_display
-       line_content
-       padding
-       (String.make start_lc.Line_col.col ' ')
-       underline_str
-       suffix *)
-
 let%test_module "format_snippet" =
   (module struct
     let setup source =

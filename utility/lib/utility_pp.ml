@@ -150,6 +150,7 @@ module Doc = struct
 
   let empty = Empty
   let newline = Newline
+  let blank1 = Blank 1
 
   let blank = function
     | 0 -> empty
