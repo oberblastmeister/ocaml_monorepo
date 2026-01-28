@@ -28,7 +28,6 @@
    (= v0.17.1))
   (ppx_jane
    (= v0.17.0))
-  fmt
   shrubbery
   utility
   diagnostic

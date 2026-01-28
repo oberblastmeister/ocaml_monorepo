@@ -568,7 +568,7 @@ let error_to_diagnostic ~file ~offsets (e : Error.t) : Diagnostic.t =
   { code = Some Parse_error
   ; parts =
       [ { kind = Error
-        ; message = Diagnostic.Text.of_string e.value
+        ; message = Diagnostic.Doc.string e.value
         ; snippet = Some { file; start; stop }
         }
       ]
@@ -585,11 +585,11 @@ let shrub_error_to_diagnostic ~file (e : Shrubbery.Delimit.Error.t) : Diagnostic
     { code = Some Parse_error
     ; parts =
         [ { kind = Error
-          ; message = Diagnostic.Text.of_string "mismatching delimiters"
+          ; message = Diagnostic.Doc.string "mismatching delimiters"
           ; snippet = Some (to_snippet rdelim)
           }
         ; { kind = Note
-          ; message = Diagnostic.Text.of_string "opening delimiter here"
+          ; message = Diagnostic.Doc.string "opening delimiter here"
           ; snippet = Some (to_snippet ldelim)
           }
         ]
@@ -598,7 +598,7 @@ let shrub_error_to_diagnostic ~file (e : Shrubbery.Delimit.Error.t) : Diagnostic
     { code = Some Parse_error
     ; parts =
         [ { kind = Error
-          ; message = Diagnostic.Text.of_string "expecting delimiter"
+          ; message = Diagnostic.Doc.string "expecting delimiter"
           ; snippet = Some (to_snippet span)
           }
         ]

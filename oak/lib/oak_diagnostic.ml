@@ -1,23 +1,7 @@
 open Core
+module Pp = Utility.Pp
+module Doc = Pp.Doc
 module Snippet = Diagnostic.Snippet
-
-module Text = struct
-  type t = Format.formatter -> unit
-
-  let of_string s : t = fun fmt -> Format.pp_print_string fmt s
-
-  let to_string ?(width = 80) ?(color = false) (t : t) =
-    let buf = Buffer.create 128 in
-    let fmt = Format.formatter_of_buffer buf in
-    Format.pp_set_margin fmt width;
-    Fmt.set_style_renderer fmt (if color then `Ansi_tty else `None);
-    t fmt;
-    Format.pp_print_flush fmt ();
-    Buffer.contents buf
-  ;;
-
-  let sexp_of_t t = Sexp.Atom (to_string ~width:80 ~color:false t)
-end
 
 module Kind = struct
   type t =
@@ -27,13 +11,14 @@ module Kind = struct
     | Help
   [@@deriving sexp_of]
 
-  let style t =
-    match t with
-    | Error -> Fmt.(styled `Bold (styled (`Fg `Red) string))
-    | Warning -> Fmt.(styled `Bold (styled (`Fg `Yellow) string))
-    | Note -> Fmt.(styled `Bold (styled (`Fg `Cyan) string))
-    | Help -> Fmt.(styled `Bold (styled (`Fg `Green) string))
+  let color = function
+    | Error -> Pp.Term_color.Red
+    | Warning -> Yellow
+    | Note -> Cyan
+    | Help -> Green
   ;;
+
+  let style t = Pp.Style.append (Pp.Style.fg (Pp.Color.term (color t))) Pp.Style.bold
 
   let to_string t =
     match t with
@@ -47,7 +32,7 @@ end
 module Part = struct
   type t =
     { kind : Kind.t
-    ; message : Text.t
+    ; message : Doc.t
     ; snippet : Snippet.t option
     }
   [@@deriving sexp_of]
@@ -72,15 +57,18 @@ type t =
 [@@deriving sexp_of]
 
 let format_part ?code ~width ~color ~files (part : Part.t) =
-  let message =
-    Text.to_string ~width ~color
-    @@ fun fmt ->
-    Kind.style part.kind fmt (Kind.to_string part.kind);
-    Option.iter code ~f:(fun code ->
-      Kind.style part.kind fmt ("[" ^ Code.to_string code ^ "]"));
-    Fmt.string fmt ": ";
-    part.Part.message fmt
+  let open Doc.Syntax in
+  let message_doc =
+    let kind = Doc.string (Kind.to_string part.kind) in
+    let code =
+      Option.map code ~f:(fun code -> Doc.string ("[" ^ Code.to_string code ^ "]"))
+      |> Option.value ~default:Doc.empty
+    in
+    Doc.style (Kind.style part.kind) (kind ^^ code)
+    ^^ Doc.string ": "
+    ^^ part.Part.message
   in
+  let message = Pp.render_to_string ~width ~color message_doc in
   match part.Part.snippet with
   | Some snippet ->
     let snippet_str = Snippet.format_snippet files snippet in
@@ -88,7 +76,7 @@ let format_part ?code ~width ~color ~files (part : Part.t) =
   | None -> message
 ;;
 
-let format ?(width = 80) ?(color = true) ~files diagnostic =
+let format ?(width = 100) ?(color = true) ~files diagnostic =
   match diagnostic.parts with
   | [] -> ""
   | main_part :: parts ->
@@ -101,8 +89,8 @@ let format ?(width = 80) ?(color = true) ~files diagnostic =
     sprintf "%s\n%s" main_part_str parts_str
 ;;
 
-let print ?(width = 80) ?(color = true) ~files diagnostic =
-  print_endline (format ~width ~color ~files diagnostic)
+let print ?width ?(color = true) ~files diagnostic =
+  print_endline (format ?width ~color ~files diagnostic)
 ;;
 
 let%test_module "format" =
@@ -121,7 +109,7 @@ let%test_module "format" =
         { code = Some Parse_error
         ; parts =
             [ { kind = Error
-              ; message = Text.of_string "type mismatch: expected int, got string"
+              ; message = Doc.string "type mismatch: expected int, got string"
               ; snippet = Some (make_snippet ~file:"test.ml" ~start:12 ~stop:19)
               }
             ]
@@ -147,15 +135,15 @@ let%test_module "format" =
         { code = Some Parse_error
         ; parts =
             [ { kind = Error
-              ; message = Text.of_string "undefined function"
+              ; message = Doc.string "undefined function"
               ; snippet = Some (make_snippet ~file:"test.ml" ~start:25 ~stop:28)
               }
             ; { kind = Note
-              ; message = Text.of_string "did you mean 'fib'?"
+              ; message = Doc.string "did you mean 'fib'?"
               ; snippet = Some (make_snippet ~file:"test.ml" ~start:8 ~stop:11)
               }
             ; { kind = Note
-              ; message = Text.of_string "functions must be defined before use"
+              ; message = Doc.string "functions must be defined before use"
               ; snippet = None
               }
             ]
@@ -185,7 +173,7 @@ let%test_module "format" =
         { code = Some Parse_error
         ; parts =
             [ { kind = Error
-              ; message = Text.of_string "unexpected indentation"
+              ; message = Doc.string "unexpected indentation"
               ; snippet = Some (make_snippet ~file:"test.ml" ~start:10 ~stop:24)
               }
             ]
@@ -209,7 +197,7 @@ let%test_module "format" =
         { code = Some Parse_error
         ; parts =
             [ { kind = Error
-              ; message = Text.of_string "testing"
+              ; message = Doc.string "testing"
               ; snippet = Some (make_snippet ~file:"test.ml" ~start:3 ~stop:4)
               }
             ]
@@ -233,7 +221,7 @@ let%test_module "format" =
         { code = Some Parse_error
         ; parts =
             [ { kind = Error
-              ; message = Text.of_string "testing"
+              ; message = Doc.string "testing"
               ; snippet = Some (make_snippet ~file:"test.ml" ~start:0 ~stop:0)
               }
             ]

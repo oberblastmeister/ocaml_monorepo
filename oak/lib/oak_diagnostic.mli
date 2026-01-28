@@ -1,11 +1,7 @@
 open Core
+module Pp := Utility.Pp
+module Doc = Pp.Doc
 module Snippet = Diagnostic.Snippet
-
-module Text : sig
-  type t = Format.formatter -> unit [@@deriving sexp_of]
-
-  val of_string : string -> t
-end
 
 module Kind : sig
   type t =
@@ -19,7 +15,7 @@ end
 module Part : sig
   type t =
     { kind : Kind.t
-    ; message : Text.t
+    ; message : Doc.t
     ; snippet : Snippet.t option
     }
   [@@deriving sexp_of]

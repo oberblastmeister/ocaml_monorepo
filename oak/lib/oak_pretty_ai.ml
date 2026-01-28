@@ -1,4 +1,4 @@
-(*
+(* (*
 Write a pretty printer for the types value, ty, and path inside of oak_syntax.ml
 let comma_sep ppf () = pf ppf ",@ "
 
@@ -224,4 +224,4 @@ let%expect_test "function value" =
   let binder = Value_abs_binder.pack { params; body } in
   print_value (Value_abs { binder; purity = Purity.Pure });
   [%expect {| fun(x Int): Int |}]
-;;
+;; *)

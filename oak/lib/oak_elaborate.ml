@@ -983,7 +983,7 @@ let infer expr =
       { Diagnostic.code = None
       ; parts =
           [ { Diagnostic.Part.kind = Error
-            ; message = Diagnostic.Text.of_string e
+            ; message = Diagnostic.Doc.string e
             ; snippet = None
             }
           ]

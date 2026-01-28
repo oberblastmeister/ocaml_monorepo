@@ -21,15 +21,15 @@ let broken = 1 + "hello"|}
     { Diag.code = Some Parse_error
     ; parts =
         [ { Diag.Part.kind = Error
-          ; message = Diag.Text.of_string "type mismatch: expected int, got string"
+          ; message = Diag.Doc.string "type mismatch: expected int, got string"
           ; snippet = Some (make_snippet ~file:"example.ml" ~start:94 ~stop:101)
           }
         ; { Diag.Part.kind = Note
-          ; message = Diag.Text.of_string "the '+' operator expects integer operands"
+          ; message = Diag.Doc.string "the '+' operator expects integer operands"
           ; snippet = Some (make_snippet ~file:"example.ml" ~start:89 ~stop:90)
           }
         ; { Diag.Part.kind = Note
-          ; message = Diag.Text.of_string "consider using '^' for string concatenation"
+          ; message = Diag.Doc.string "consider using '^' for string concatenation"
           ; snippet = None
           }
         ]
@@ -41,7 +41,7 @@ let broken = 1 + "hello"|}
     { Diag.code = Some Parse_error
     ; parts =
         [ { Diag.Part.kind = Error
-          ; message = Diag.Text.of_string "unexpected token"
+          ; message = Diag.Doc.string "unexpected token"
           ; snippet = Some (make_snippet ~file:"example.ml" ~start:39 ~stop:70)
           }
         ]
