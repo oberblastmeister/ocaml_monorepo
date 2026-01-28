@@ -3,8 +3,8 @@ module Shrub = Shrubbery.Syntax
 module Token = Shrubbery.Token
 module Fail = Utility.Fail
 module Syntax = Oak_syntax
-module Span = Location.Span
-module Spanned = Location.Spanned
+module Span = Utility.Span
+module Spanned = Utility.Spanned
 module Diagnostic = Oak_diagnostic
 
 module Error = struct

@@ -1,5 +1,5 @@
 open Prelude
-module Span := Location.Span
+module Span := Utility.Span
 module Token_tree := Shrubbery_token_tree
 module Token := Shrubbery_token
 

@@ -1,7 +1,7 @@
 open Core
-module Span = Location.Span
+module Span = Utility.Span
 module Token = Shrubbery.Token
-module Pos = Location.Pos
+module Pos = Utility.Pos
 
 module Purity : sig
   type t =

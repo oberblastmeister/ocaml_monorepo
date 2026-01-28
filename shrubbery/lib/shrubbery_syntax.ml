@@ -1,7 +1,7 @@
 open Prelude
 module Token_tree = Shrubbery_token_tree
 module Token = Shrubbery_token
-module Span = Location.Span
+module Span = Utility.Span
 
 (* TODO: a group should have nonempty items here *)
 type group =

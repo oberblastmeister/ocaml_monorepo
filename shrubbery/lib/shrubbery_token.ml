@@ -1,7 +1,7 @@
 open Prelude
 
 open struct
-  module Line_col = Location.Line_col
+  module Line_col = Utility.Line_col
 end
 
 type t =

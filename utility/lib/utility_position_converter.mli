@@ -1,4 +1,4 @@
-module Line_col := Location_line_col
+module Line_col := Utility_line_col
 
 type t [@@deriving sexp_of]
 

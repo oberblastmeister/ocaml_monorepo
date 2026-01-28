@@ -1,7 +1,7 @@
 open Prelude
 
 open struct
-  module Span = Location.Span
+  module Span = Utility.Span
   module Token = Shrubbery_token
   module Token_tree = Shrubbery_token_tree
   module Lexer = Shrubbery_lexer

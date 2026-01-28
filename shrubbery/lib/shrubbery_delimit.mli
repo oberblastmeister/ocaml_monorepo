@@ -1,7 +1,7 @@
 open Prelude
 module Token := Shrubbery_token
 module Token_tree := Shrubbery_token_tree
-module Span := Location.Span
+module Span := Utility.Span
 
 module Error : sig
   type t =

@@ -1,5 +1,5 @@
 open Core
-module Span = Location.Span
+module Span = Utility.Span
 
 type t =
   { start : int

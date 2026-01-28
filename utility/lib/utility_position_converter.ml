@@ -1,5 +1,5 @@
 open Core
-module Line_col = Location_line_col
+module Line_col = Utility_line_col
 
 type t =
   { num_newlines_sum : int array (* prefix sum of number of newlines from [0, p) *)
@@ -46,7 +46,7 @@ let pos_to_line_col t pos =
 
 let line_col_to_pos t { Line_col.line; col } = t.line_to_pos.(line) + col
 
-let%test_module "Location_pos_to_line_col" =
+let%test_module "Utility_pos_to_line_col" =
   (module struct
     let check input pos =
       let t = create input in

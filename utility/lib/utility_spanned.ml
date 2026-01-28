@@ -1,5 +1,5 @@
 open Core
-module Span = Location_span
+module Span = Utility_span
 
 type 'a t =
   { span : Span.t

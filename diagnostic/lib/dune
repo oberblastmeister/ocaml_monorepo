@@ -6,4 +6,4 @@
   (pps ppx_inline_test ppx_jane))
  (flags
   (:standard -warn-error -A -w -23))
- (libraries core location))
+ (libraries core utility))

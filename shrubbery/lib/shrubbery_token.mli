@@ -1,5 +1,5 @@
 open Prelude
-module Line_col := Location.Line_col
+module Line_col := Utility.Line_col
 
 type t =
   | LParen

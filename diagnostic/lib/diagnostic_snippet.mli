@@ -1,6 +1,6 @@
 open Core
 module File_span := Diagnostic_file_span
-module Position_converter := Location.Position_converter
+module Position_converter := Utility.Position_converter
 
 type t = File_span.t [@@deriving sexp_of]
 
