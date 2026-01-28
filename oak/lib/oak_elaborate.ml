@@ -6,6 +6,7 @@ open struct
   module Purity = Syntax.Purity
   module Var = Syntax.Var
   module Cvar = Syntax.Cvar
+  module Diagnostic = Oak_diagnostic
 end
 
 module State = struct
@@ -16,6 +17,8 @@ module State = struct
     }
 
   type t = { context : elem Cvar.Map.t }
+
+  let create () = { context = Cvar.Map.empty }
 
   let add var ty t =
     { context =
@@ -104,6 +107,7 @@ module Effects = struct
     { vars : (Var.t * Syntax.ty) Acc.t
     ; purity : Purity.t
     }
+  [@@deriving sexp_of]
 
   let empty = { vars = Acc.empty; purity = Pure }
   let impure = { vars = Acc.empty; purity = Impure }
@@ -968,4 +972,23 @@ and expr_to_ty st (ty : Syntax.expr) : Syntax.ty =
   end;
   let v = synthesize_value st kind in
   Syntax.Value.get_ty_exn v
+;;
+
+let infer expr =
+  let st = State.create () in
+  match infer st expr with
+  | exception Exn e ->
+    let e = Error.sexp_of_t e |> Sexp.to_string in
+    let diagnostic =
+      { Diagnostic.code = None
+      ; parts =
+          [ { Diagnostic.Part.kind = Error
+            ; message = Diagnostic.Text.of_string e
+            ; snippet = None
+            }
+          ]
+      }
+    in
+    [ diagnostic ], None
+  | res -> [], Some res
 ;;

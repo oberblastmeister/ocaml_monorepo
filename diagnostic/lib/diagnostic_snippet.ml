@@ -16,9 +16,6 @@ end
 
 type files = File.t String.Map.t
 
-(* the padding to put before the snippet *)
-let default_padding = 0
-
 let format_snippet files snippet =
   let file = Map.find_exn files snippet.File_span.file in
   let source = file.File.source in

@@ -1,7 +1,7 @@
 (** Appendable lists: concatenation takes O(1) time, conversion to a list takes
     O(n). *)
 
-type 'a t
+type 'a t [@@deriving sexp_of]
 
 val empty : 'a t
 val singleton : 'a -> 'a t
@@ -14,4 +14,3 @@ val concat : 'a t list -> 'a t
 
 (** The current implementation is slow, don't use it on a hot path. *)
 val is_empty : _ t -> bool
-

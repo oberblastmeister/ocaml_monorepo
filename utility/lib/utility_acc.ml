@@ -40,6 +40,7 @@ let to_list_rev =
 ;;
 
 let to_list xs = List.rev (to_list_rev xs)
+let sexp_of_t f t = sexp_of_list f (to_list t)
 
 let rec is_empty = function
   | List (_ :: _) | Singleton _ | Cons _ -> false
