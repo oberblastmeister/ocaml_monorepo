@@ -1,0 +1,125 @@
+let first (x : int) (y : int) (z : int) = {
+  x + y + z
+}
+
+fun draw_face (dc : draw.DC) (config : Map) = {
+  let (draw.Size w h) = dc.size
+  let s = math.max 10 ((math.min w h) - 20)
+  
+  let scale = config.get "scale" / 50
+  let w = w / scale
+  let h = h / scale
+  
+  let x = (w - s) / 2
+  let y = (h - s) / 2
+  let pi = math.pi
+  
+  dc.save_and_restore (fun () {
+    dc.scale scale
+    
+    let background = {
+      match config.get "mood" {
+        "Happy" => {
+          let center = [w / 2, h / 2]
+        }
+        "Sad" => {
+          draw.LinearGradient(
+            [0, 0],
+            [0, h],
+          )
+        }
+      }
+    }
+  })
+}
+
+fun draw_face('A : Type, x : A) : A = x
+
+fun draw_face[M : Comparable, T : Type](dc: draw.DC, config: Map) = {
+  let draw.Size(w, h) = dc.size
+  let s = math.max(10, math.min(w, h) - 20)
+  
+  let scale = config.get("scale") / 50
+  let w = w / scale
+  let h = h / scale
+  
+  let x = (w - s) / 2
+  let y = (h - s) / 2
+  let pi = math.pi
+  
+  dc.save_and_restore(fun() {
+    dc.scale(scale)
+    let background = {
+      match config.get("mood") {
+        "Happy" => {
+          let center = [w / 2, h / 2]
+        }
+        "Sad" => {
+          draw.LinearGradient();
+        }
+      }
+    }
+  })
+}
+
+let my_type(a, b, c) = int
+
+if e is {
+  Lit(value) and Map.find_opt(value) is Some(result) -> Some(result)
+  Lit(value) | Add(0, value) | Add(value, 0) -> {
+    print_int(value); Some(value)
+  }
+}
+
+
+if x == {
+  0 -> "zero"
+  1 -> "unit"
+}
+
+if x { == 0 -> "null"; > 0 -> "positive"; < 0 -> "negative" }
+
+fun zip_with(f, xs, ys) =
+  if {
+    xs is x :: xs
+      and ys is y :: ys
+      and zip_with(f, xs, ys) is Some(tail)
+      -> Some(f(x, y) :: tail)
+    ~else
+      -> None
+  }
+
+
+if {
+  name.starts_with("_")
+    and name.tail is T.Some(name_postfix)
+    and Some(name_postfix) = name.tail
+    and name_postfix.forall(isDigit)
+    and name_postfix.to_int is Some(index)
+    and index <= arity and index > 0
+    then Right of (index, name)
+  else Left(name)
+}
+
+let testing = list.T.cons(x, ys)
+
+let testing = #Cons(x, ys)
+
+let another = My_type.{
+  x = 1234
+  y = 32423
+}
+
+if first == second {
+  print("afeawefaewf")
+} else {
+  print("another one")
+}
+
+mod {
+
+let first = 123434
+
+let another = 1334
+
+}
