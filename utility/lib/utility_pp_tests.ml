@@ -3,8 +3,6 @@ module Pp = Utility_pp
 module Doc = Pp.Doc
 open Doc.Syntax
 
-let render ?(width = 40) doc = Utility_pp.render_to_string ~width doc
-
 module Lam = struct
   type t =
     | Var of string
@@ -63,7 +61,7 @@ and pp1 (e : Lam.t) : Doc.t =
   | Var _ -> pp e
 ;;
 
-let check ?(width = 40) e = print_endline (render ~width (pp e))
+let check ?(width = 40) e = print_endline (Utility_pp.render_to_string ~width (pp e))
 
 let check_widths expr widths =
   List.iter widths ~f:(fun w ->

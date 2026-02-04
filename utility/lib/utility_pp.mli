@@ -79,6 +79,8 @@ end
 
 module Make (Output : Output) : Renderer with type output = Output.t
 
+val default_width : int
+
 val render_to_string
   :  ?buf_size:int
   -> ?ribbon:float
@@ -91,8 +93,18 @@ val render_to_channel
   :  ?ribbon:float
   -> ?color:bool
   -> width:int
-  -> out:out_channel
+  -> out:Out_channel.t
   -> Doc.t
   -> unit
 
-val render_to_stdout : ?ribbon:float -> ?color:bool -> width:int -> Doc.t -> unit
+val render_to_channel_detect
+  :  ?ribbon:float
+  -> ?color:bool
+  -> ?width:int
+  -> out:Out_channel.t
+  -> Doc.t
+  -> unit
+
+val detect_color_width : ?color:bool -> ?width:int -> Out_channel.t -> bool * int
+val render_to_stdout : ?ribbon:float -> ?color:bool -> ?width:int -> Doc.t -> unit
+val render_to_stderr : ?ribbon:float -> ?color:bool -> ?width:int -> Doc.t -> unit

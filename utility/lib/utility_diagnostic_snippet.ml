@@ -70,7 +70,9 @@ let pp files snippet =
   ^^ Doc.blank line_num_width
   ^^ Doc.string " | "
   ^^ Doc.blank start_lc.Line_col.col
-  ^^ Doc.string underline_str
+  ^^ Doc.style
+       (Pp.Style.fg (Pp.Color.basic Pp.Basic_color.Green))
+       (Doc.string underline_str)
   ^^ Doc.string suffix
 ;;
 

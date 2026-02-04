@@ -13,7 +13,9 @@ depends: [
   "dune" {>= "3.20"}
   "ocaml" {= "5.4.0"}
   "core" {= "v0.17.1"}
+  "core_unix" {= "v0.17.1"}
   "ppx_jane" {= "v0.17.0"}
+  "notty-community" {= "0.2.4"}
   "odoc" {with-doc}
 ]
 build: [

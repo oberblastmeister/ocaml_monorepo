@@ -24,8 +24,12 @@
    (= 5.4.0))
   (core
    (= v0.17.1))
+  (core_unix
+   (= v0.17.1))
   (ppx_jane
    (= v0.17.0))
+  (notty-community
+   (= 0.2.4))
  )
  (tags
   ("add topics" "to describe" your project)))

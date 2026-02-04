@@ -485,15 +485,38 @@ end
 module String_renderer = Make (String_output)
 module Channel_renderer = Make (Channel_output)
 
+let default_width = 100
+
 let render_to_string ?(buf_size = 128) ?ribbon ?(color = false) ~width doc =
   let out = String_output.create buf_size color in
   String_renderer.render ?ribbon ~width ~out doc;
   Buffer.contents out.buf
 ;;
 
-let render_to_channel ?ribbon ?(color = true) ~width ~out doc =
+let render_to_channel ?ribbon ?(color = false) ~width ~out doc =
   let out = Channel_output.create color out in
   Channel_renderer.render ?ribbon ~width ~out doc
 ;;
 
-let render_to_stdout = render_to_channel ~out:stdout
+let detect_color_width ?color ?width out =
+  let fd = Core_unix.descr_of_out_channel out in
+  let color =
+    match color with
+    | Some color -> color
+    | None -> if Core_unix.isatty fd then true else false
+  in
+  let width =
+    match width with
+    | Some width -> width
+    | None -> Notty_unix.winsize fd |> Option.map ~f:fst |> Option.value ~default:100
+  in
+  color, width
+;;
+
+let render_to_channel_detect ?ribbon ?color ?width ~out doc =
+  let color, width = detect_color_width ?color ?width out in
+  render_to_channel ?ribbon ~color ~width ~out:stdout doc
+;;
+
+let render_to_stdout = render_to_channel_detect ~out:stdout
+let render_to_stderr = render_to_channel_detect ~out:stderr
