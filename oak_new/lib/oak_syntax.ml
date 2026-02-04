@@ -32,6 +32,7 @@ module Universe = struct
 
   let lub u v = of_int_exn (Int.max (to_int u) (to_int v))
   let incr_exn u = of_int_exn (to_int u + 1)
+  let decr_exn u = of_int_exn (to_int u - 1)
 
   let to_string = function
     | Type -> "Type"
@@ -72,36 +73,6 @@ module Var_info = struct
   [@@deriving sexp_of]
 
   let generated = { name = "<generated>"; pos = 0 }
-end
-
-module Level_var = struct
-  type t =
-    { info : Var_info.t
-    ; level : Level.t
-    }
-  [@@deriving sexp_of]
-
-  let create info level = { info; level }
-end
-
-module Index_var = struct
-  type t =
-    { info : Var_info.t
-    ; index : Index.t
-    }
-  [@@deriving sexp_of]
-
-  (* let to_level context_size t =
-    { in[Index.of_int (context_size - index.index.index) *)
-  let create info index = { info; index }
-
-  let to_level context_size t =
-    Level_var.create t.info (Index.to_level context_size t.index)
-  ;;
-
-  let of_level context_size (level_var : Level_var.t) =
-    create level_var.info (Index.of_level context_size level_var.level)
-  ;;
 end
 
 type core_ty = Ty_bool [@@deriving sexp_of, equal, compare]
@@ -198,7 +169,7 @@ end
 (* raw syntax *)
 type expr =
   | Expr_var of
-      { var : Index_var.t
+      { var : Index.t
       ; span : Span.t
       }
   | Expr_ann of
@@ -294,7 +265,7 @@ and expr_ty_decl =
 
 (* internal syntax *)
 and term =
-  | Term_var of Index_var.t
+  | Term_var of Index.t
   | Term_app of
       { func : term
       ; arg : term
@@ -392,7 +363,7 @@ type value =
 and ty = value
 
 and neutral =
-  | Neutral_var of Level_var.t
+  | Neutral_var of Level.t
   | Neutral_app of
       { func : neutral
       ; arg : value
@@ -488,7 +459,7 @@ type uvalue =
 
 (* It's neutral without sing_unwrap *)
 and uneutral =
-  | Uneutral_var of Level_var.t
+  | Uneutral_var of Level.t
   | Uneutral_app of
       { func : uneutral
       ; arg : value
@@ -531,7 +502,7 @@ module Env = struct
   ;;
 
   let find_exn env index = find_exn_list env.list index
-  let next_var t var = Value.var (Level_var.create var (Level.of_int t.size))
+  let next_var t = Value.var (Level.of_int t.size)
 end
 
 module Neutral = struct

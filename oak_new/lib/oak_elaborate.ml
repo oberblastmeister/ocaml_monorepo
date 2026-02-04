@@ -14,7 +14,7 @@ let fail_s s = fail (Error.t_of_sexp s)
 *)
 let rec eval (env : Env.t) (term : term) : value =
   match term with
-  | Term_var var -> Env.find_exn env var.index
+  | Term_var var -> Env.find_exn env var
   | Term_app { func; arg } ->
     let func = eval env func in
     let arg = eval env arg in
@@ -144,8 +144,8 @@ and proj_uvalue mod_e field field_index =
   end
 ;;
 
-let next_var_of_size var size = Value.var (Level_var.create var (Level.of_int size))
-let next_var_of_env var env = next_var_of_size var (Env.size env)
+let next_var_of_size size = Value.var (Level.of_int size)
+let next_var_of_env env = next_var_of_size (Env.size env)
 
 let rec quote context_size (e : value) : term =
   match e with
@@ -159,7 +159,7 @@ let rec quote context_size (e : value) : term =
     Term_mod { fields }
   | Value_abs { var; body } ->
     let body =
-      quote (context_size + 1) (eval_closure1 body (next_var_of_size var context_size))
+      quote (context_size + 1) (eval_closure1 body (next_var_of_size context_size))
     in
     Term_abs { var; body }
   | Value_sing_wrap { identity; e } ->
@@ -176,7 +176,7 @@ let rec quote context_size (e : value) : term =
   | Value_ty_fun { var; param_ty; body_ty } ->
     let param_ty = quote context_size param_ty in
     let body_ty =
-      quote (context_size + 1) (eval_closure1 body_ty (next_var_of_size var context_size))
+      quote (context_size + 1) (eval_closure1 body_ty (next_var_of_size context_size))
     in
     Term_ty_fun { var; param_ty; body_ty }
   | Value_ty_mod ty ->
@@ -186,7 +186,7 @@ let rec quote context_size (e : value) : term =
         ~init:(context_size, ty.env)
         ~f:(fun (context_size, closure_env) { var; ty } ->
           let ty = quote context_size (eval closure_env ty) in
-          ( (context_size + 1, Env.push (next_var_of_size var context_size) closure_env)
+          ( (context_size + 1, Env.push (next_var_of_size context_size) closure_env)
           , ({ var; ty } : term_ty_decl) ))
     in
     Term_ty_mod { ty_decls }
@@ -196,7 +196,7 @@ let rec quote context_size (e : value) : term =
 
 and quote_neutral context_size (e : neutral) : term =
   match e with
-  | Neutral_var var -> Term_var (Index_var.of_level context_size var)
+  | Neutral_var var -> Term_var (Index.of_level context_size var)
   | Neutral_app { func; arg } ->
     let func = quote_neutral context_size func in
     let arg = quote context_size arg in
@@ -214,29 +214,30 @@ module Context = struct
   type t =
     { value_env : Env.t (* These are all just bound variables *)
     ; ty_env : Env.t
+    ; var_info : Var_info.t list
     }
 
-  let empty = { value_env = Env.empty; ty_env = Env.empty }
+  let empty = { value_env = Env.empty; ty_env = Env.empty; var_info = [] }
 
   let bind var ty cx =
     { cx with
       value_env =
         Env.push
-          (Value_neutral
-             (Neutral_var (Level_var.create var (Level.of_int (Env.size cx.value_env)))))
+          (Value_neutral (Neutral_var (Level.of_int (Env.size cx.value_env))))
           cx.value_env
     ; ty_env = Env.push ty cx.ty_env
+    ; var_info = var :: cx.var_info
     }
   ;;
 
   let size (cx : t) = Env.size cx.ty_env
-  let next_var cx var = Value.var (Level_var.create var (Level.of_int (size cx)))
+  let next_var cx = Value.var (Level.of_int (size cx))
   let eval cx e = eval cx.value_env e
   let quote (cx : t) e = quote (Env.size cx.ty_env) e
-  let var_ty cx (var : Index_var.t) = Env.find_exn cx.ty_env var.index
+  let var_ty cx (var : Index.t) = Env.find_exn cx.ty_env var
 
-  let level_var_ty cx (var : Level_var.t) =
-    Env.find_exn cx.ty_env (Index.of_level (Env.size cx.ty_env) var.level)
+  let level_var_ty cx (var : Level.t) =
+    Env.find_exn cx.ty_env (Index.of_level (size cx) var)
   ;;
 end
 
@@ -244,7 +245,7 @@ end
 let rec infer_neutral (ty_env : Env.t) (e : neutral) : value =
   match e with
   | Neutral_var var ->
-    let index = Index.of_level (Env.size ty_env) var.level in
+    let index = Index.of_level (Env.size ty_env) var in
     let ty = Env.find_exn ty_env index in
     ty
   | Neutral_app { func; arg } ->
@@ -292,7 +293,7 @@ let rec conv ty_env (e1 : value) (e2 : value) (ty : value) : unit =
       ()
     end
   | Uvalue_ty_fun ty ->
-    let var_value = Env.next_var ty_env ty.var in
+    let var_value = Env.next_var ty_env in
     conv
       (Env.push ty.param_ty ty_env)
       (app_value e1 var_value)
@@ -325,8 +326,8 @@ and conv_ty (ty_env : Env.t) (ty1 : ty) (ty2 : ty) : unit =
     conv_ty ty_env ty1.param_ty ty2.param_ty;
     conv_ty
       (Env.push ty1.param_ty ty_env)
-      (eval_closure1 ty1.body_ty (Env.next_var ty_env ty1.var))
-      (eval_closure1 ty2.body_ty (Env.next_var ty_env ty2.var))
+      (eval_closure1 ty1.body_ty (Env.next_var ty_env))
+      (eval_closure1 ty2.body_ty (Env.next_var ty_env))
   | Uvalue_ty_pack ty1, Uvalue_ty_pack ty2 -> conv_ty ty_env ty1 ty2
   | Uvalue_ty_mod ty1, Uvalue_ty_mod ty2 ->
     let zipped_ty_decls =
@@ -353,7 +354,7 @@ and conv_ty (ty_env : Env.t) (ty1 : ty) (ty2 : ty) : unit =
           let ty1 = eval closure_env1 ty_decl1.ty in
           let ty2 = eval closure_env2 ty_decl2.ty in
           conv_ty cx ty1 ty2;
-          let var_value = Env.next_var ty_env ty_decl1.var in
+          let var_value = Env.next_var ty_env in
           ( Env.push var_value closure_env1
           , Env.push var_value closure_env2
           , Env.push ty1 cx ))
@@ -373,10 +374,9 @@ and conv_ty (ty_env : Env.t) (ty1 : ty) (ty2 : ty) : unit =
 and conv_neutral (ty_env : Env.t) (ty1 : uneutral) (ty2 : uneutral) : value =
   match ty1, ty2 with
   | Uneutral_var ty1, Uneutral_var ty2 ->
-    if not (Level.equal ty1.level ty2.level)
-    then
-      fail_s [%message "Variables were not equal" (ty1 : Level_var.t) (ty2 : Level_var.t)];
-    Env.find_exn ty_env (Index.of_level (Env.size ty_env) ty1.level)
+    if not (Level.equal ty1 ty2)
+    then fail_s [%message "Variables were not equal" (ty1 : Level.t) (ty2 : Level.t)];
+    Env.find_exn ty_env (Index.of_level (Env.size ty_env) ty1)
   | Uneutral_app ty1, Uneutral_app ty2 ->
     (*
       This case is why we return the kind that the two neutrals are equivalent at,
@@ -454,9 +454,9 @@ let rec sub cx (e : term) (ty1 : ty) (ty2 : ty) : term option =
     Some (Term_sing_wrap { identity = Context.quote cx ty2.identity; e })
   | Uvalue_ty_fun ty1, Uvalue_ty_fun ty2 ->
     let var = ty2.var in
-    let arg_var_value = Context.next_var cx var in
+    let arg_var_value = Context.next_var cx in
     let cx = Context.bind var arg_var_value cx in
-    let arg_var_term = Term_var (Index_var.create var (Index.of_int 0)) in
+    let arg_var_term = Term_var (Index.of_int 0) in
     let arg = sub cx arg_var_term ty2.param_ty ty1.param_ty in
     begin match arg with
     | None ->
@@ -536,13 +536,15 @@ let rec infer_value_universe (ty_env : Env.t) (e : value) : Universe.t =
   | Value_neutral neutral ->
     infer_neutral ty_env neutral |> unfold |> Uvalue.universe_val_exn
   | Value_universe u -> Universe.incr_exn u
-  | Value_ty_sing { identity = _; ty } -> infer_value_universe ty_env ty
-  | Value_ty_fun { var; param_ty; body_ty } ->
+  | Value_ty_sing { identity = _; ty } ->
+    (* We have the invariant that the universe of ty must be at least Kind *)
+    Universe.decr_exn (infer_value_universe ty_env ty)
+  | Value_ty_fun { var = _; param_ty; body_ty } ->
     let universe1 = infer_value_universe ty_env param_ty in
     let universe2 =
       infer_value_universe
         (Env.push param_ty ty_env)
-        (eval_closure1 body_ty (next_var_of_env var ty_env))
+        (eval_closure1 body_ty (next_var_of_env ty_env))
     in
     Universe.max universe1 universe2
   | Value_ty_mod { env = closure_env; ty_decls } ->
@@ -557,7 +559,7 @@ let rec infer_value_universe (ty_env : Env.t) (e : value) : Universe.t =
           let closure_env, ty_env =
             ( Env.push
                 (* Important: make sure to use the size of ty_env instead of env *)
-                (next_var_of_env ty_decl.var ty_env)
+                (next_var_of_env ty_env)
                 closure_env
             , Env.push ty ty_env )
           in
@@ -615,9 +617,7 @@ let rec infer (cx : Context.t) (e : expr) : term * ty =
     let decls_length = List.length decls in
     let tuple =
       List.mapi decls ~f:(fun i decl ->
-        ({ name = decl.var.name
-         ; e = Term_var (Index_var.create decl.var (Index.of_int (decls_length - i - 1)))
-         }
+        ({ name = decl.var.name; e = Term_var (Index.of_int (decls_length - i - 1)) }
          : term_field))
     in
     let mod_term = Term_mod { fields = tuple } in
@@ -663,7 +663,8 @@ let rec infer (cx : Context.t) (e : expr) : term * ty =
     let universe = infer_value_universe cx.ty_env ty in
     if Universe.equal universe Type
     then fail_s [%message "Cannot form singletons with runtime terms"];
-    Term_ty_sing { identity = e; ty = Context.quote cx ty }, Value_universe universe
+    ( Term_ty_sing { identity = e; ty = Context.quote cx ty }
+    , Value_universe (Universe.decr_exn universe) )
   | Expr_bool { value; span = _ } -> Term_bool { value }, Value_core_ty Ty_bool
   | Expr_core_ty { ty; span = _ } -> Term_core_ty ty, Value_universe Type
   | Expr_universe { universe; span = _ } ->
