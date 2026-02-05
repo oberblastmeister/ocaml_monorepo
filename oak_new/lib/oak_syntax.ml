@@ -314,6 +314,11 @@ and term =
       }
   | Term_universe of Universe.t
   | Term_core_ty of core_ty
+    (*
+      This is not present in the surface language.
+      We would need to use some quantitative type theory to handle this properly
+      so we can ensure that it stays irrelevant.
+    *)
   | Term_ignore
     (* Cannot be written in the source syntax for now, can only be used in an irrelevant way *)
   | Term_bool of { value : bool }

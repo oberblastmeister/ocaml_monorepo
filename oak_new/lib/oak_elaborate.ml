@@ -44,7 +44,6 @@ let rec eval (env : Env.t) (term : term) : value =
     Value_ty_pack ty
   | Term_universe universe -> Value_universe universe
   | Term_core_ty ty -> Value_core_ty ty
-  | Term_pack _ | Term_bind _ | Term_ignore | Term_if _ | Term_bool _ -> Value_ignore
   | Term_sing_wrap { identity; e } ->
     let identity = eval env identity in
     let e = eval env e in
@@ -54,9 +53,11 @@ let rec eval (env : Env.t) (term : term) : value =
     let e = eval env e in
     unwrap_value identity e
   | Term_weaken term -> eval (Env.pop_exn env) term
+  | Term_pack _ | Term_bind _ | Term_ignore | Term_if _ | Term_bool _ -> Value_ignore
 
 and unwrap_value identity e =
   begin match e with
+  | Value_ignore -> identity
   | Value_sing_wrap { identity = _; e = e' } -> e'
   | Value_neutral e -> Value_neutral (Neutral_sing_unwrap { identity; e })
   | _ -> assert false
@@ -64,6 +65,7 @@ and unwrap_value identity e =
 
 and app_value func arg =
   begin match func with
+  | Value_ignore -> Value_ignore
   | Value_abs func -> app_abs func arg
   | Value_neutral func -> Value_neutral (Neutral_app { func; arg })
   | _ -> assert false
@@ -71,6 +73,7 @@ and app_value func arg =
 
 and proj_value mod_e field field_index =
   begin match mod_e with
+  | Value_ignore -> Value_ignore
   | Value_mod mod_e -> proj_mod mod_e field_index
   | Value_neutral mod_e -> Value_neutral (Neutral_proj { mod_e; field; field_index })
   | _ -> assert false
@@ -92,15 +95,6 @@ and eval_ty_mod_closure e (ty : value_ty_mod_closure) field_index =
       Env.push (proj_value e ty_decl.var.name field_index) env)
   in
   eval env ty_decl.ty
-
-and eval_iter_mod_ty_closure e (ty : value_ty_mod_closure) ~f =
-  let _ =
-    List.foldi ty.ty_decls ~init:ty.env ~f:(fun field_index env ty_decl ->
-      let ty = eval env ty_decl.ty in
-      f ty_decl.var ty;
-      Env.push (proj_mod e field_index) env)
-  in
-  ()
 ;;
 
 (* Apply singleton extension rule to remove Neutral_sing_unwrap.*)
@@ -388,6 +382,13 @@ and conv_neutral (ty_env : Env.t) (ty1 : uneutral) (ty2 : uneutral) : value =
     conv ty_env ty1.arg ty2.arg func_kind.param_ty;
     eval_closure1 func_kind.body_ty ty1.arg
   | Uneutral_proj ty1, Uneutral_proj ty2 ->
+    let kind =
+      conv_neutral ty_env ty1.mod_e ty2.mod_e |> unfold |> Uvalue.ty_mod_val_exn
+    in
+    (*
+      Must do this check after we check that the modules are equivalent.
+      Otherwise it would not make sense to compare the indices.
+    *)
     if not (ty1.field_index = ty2.field_index)
     then
       fail_s
@@ -395,9 +396,6 @@ and conv_neutral (ty_env : Env.t) (ty1 : uneutral) (ty2 : uneutral) : value =
           "Fields were not equal in a projection"
             (ty1.field : string)
             (ty2.field : string)];
-    let kind =
-      conv_neutral ty_env ty1.mod_e ty2.mod_e |> unfold |> Uvalue.ty_mod_val_exn
-    in
     eval_ty_mod_closure
       (Value_neutral (Uneutral.to_neutral ty1.mod_e))
       kind
@@ -443,7 +441,7 @@ let rec sub cx (e : term) (ty1 : ty) (ty2 : ty) : term option =
       None
     | Some e' ->
       conv cx.ty_env (Context.eval cx e') ty2.identity ty2.ty;
-      Some (Term_sing_wrap { identity = Context.quote cx ty2.identity; e = e' })
+      Some (Term_sing_wrap { identity = e'; e = e' })
     end
   | Uvalue_ty_sing _, _ ->
     let e, ty1 = coerce_singleton (Context.size cx) e ty1 in
@@ -451,11 +449,11 @@ let rec sub cx (e : term) (ty1 : ty) (ty2 : ty) : term option =
   | _, Uvalue_ty_sing ty2 ->
     let e = coerce cx e ty1 ty2.ty in
     conv cx.ty_env (Context.eval cx e) ty2.identity ty2.ty;
-    Some (Term_sing_wrap { identity = Context.quote cx ty2.identity; e })
+    Some (Term_sing_wrap { identity = e; e })
   | Uvalue_ty_fun ty1, Uvalue_ty_fun ty2 ->
     let var = ty2.var in
     let arg_var_value = Context.next_var cx in
-    let cx = Context.bind var arg_var_value cx in
+    let cx = Context.bind var ty2.param_ty cx in
     let arg_var_term = Term_var (Index.of_int 0) in
     let arg = sub cx arg_var_term ty2.param_ty ty1.param_ty in
     begin match arg with
@@ -556,18 +554,62 @@ let rec infer_value_universe (ty_env : Env.t) (e : value) : Universe.t =
         ~f:(fun (closure_env, ty_env, universe) ty_decl ->
           let ty = eval closure_env ty_decl.ty in
           let universe' = infer_value_universe ty_env ty in
-          let closure_env, ty_env =
-            ( Env.push
-                (* Important: make sure to use the size of ty_env instead of env *)
-                (next_var_of_env ty_env)
-                closure_env
-            , Env.push ty ty_env )
-          in
-          closure_env, ty_env, Universe.max universe universe')
+          ( Env.push
+              (* Important: make sure to use the size of ty_env instead of env *)
+              (next_var_of_env ty_env)
+              closure_env
+          , Env.push ty ty_env
+          , Universe.max universe universe' ))
     in
     universe
 ;;
 
+(*
+  The following function implements the ignorable judgement which is used in the following judgement.
+  
+    t : U_i        t ignorable
+  ----------------------------------
+            ignore : t
+            
+  This allows us to for example, instead of constructing
+  (fun (a : Type) -> (x : a) -> ignore) : Fun (a : Type) -> a -> a
+  we can do instead
+  ignore : Fun (a : Type) -> a -> a
+  So we can ignore an entire type at once.
+  This corresponds to the sealed at judgement in https://www.cs.cmu.edu/~rwh/papers/multiphase/mlw.pdf
+*)
+let rec check_ty_ignorable (ty_env : Env.t) (ty : ty) : unit =
+  match unfold ty with
+  | Uvalue_ignore | Uvalue_mod _ | Uvalue_abs _ | Uvalue_sing_wrap _ ->
+    raise_s [%message "Not a type" (ty : value)]
+  | Uvalue_ty_pack _ | Uvalue_core_ty _ | Uvalue_ty_sing _ -> ()
+  | Uvalue_neutral neutral ->
+    let kind =
+      infer_neutral ty_env (Uneutral.to_neutral neutral)
+      |> unfold
+      |> Uvalue.universe_val_exn
+    in
+    if not (Universe.equal kind Type)
+    then fail_s [%message "Type was not ignorable" (ty : ty)]
+  | Uvalue_ty_fun ty ->
+    check_ty_ignorable
+      (Env.push ty.param_ty ty_env)
+      (eval_closure1 ty.body_ty (next_var_of_env ty_env))
+  | Uvalue_ty_mod ty ->
+    let _ =
+      List.fold
+        ty.ty_decls
+        ~init:(ty_env, ty.env)
+        ~f:(fun (ty_env, closure_env) ty_decl ->
+          let ty = eval closure_env ty_decl.ty in
+          check_ty_ignorable ty_env ty;
+          Env.push ty ty_env, Env.push (next_var_of_env ty_env) closure_env)
+    in
+    ()
+  | _ -> fail_s [%message "Type was not ignorable" (ty : ty)]
+;;
+
+(* TODO: these should not unwrap types with exn *)
 let rec infer (cx : Context.t) (e : expr) : term * ty =
   match e with
   | Expr_var { var; span = _ } ->
@@ -583,13 +625,13 @@ let rec infer (cx : Context.t) (e : expr) : term * ty =
       ( Term_sing_wrap { identity = term_var; e = term_var }
       , Value_ty_sing { identity = Context.eval cx term_var; ty } )
     end
-  | Expr_ann { e; ty = ty'; span = _ } ->
-    let ty', _ = check_universe cx ty' in
-    let ty' = Context.eval cx ty' in
-    check cx e ty', ty'
+  | Expr_ann { e; ty; span = _ } ->
+    let ty, _ = check_universe cx ty in
+    let ty = Context.eval cx ty in
+    check cx e ty, ty
   | Expr_app { func; arg; span = _ } ->
     let func, func_ty = infer cx func in
-    let func_ty = Uvalue.ty_fun_val_exn (unfold func_ty) in
+    let func_ty = unfold func_ty |> Uvalue.ty_fun_val_exn in
     let arg = check cx arg func_ty.param_ty in
     Term_app { func; arg }, eval_closure1 func_ty.body_ty (Context.eval cx arg)
   | Expr_abs { var; param_ty; body; span = _ } ->
@@ -688,10 +730,49 @@ let rec infer (cx : Context.t) (e : expr) : term * ty =
             (universe2 : Universe.t)];
     conv_ty cx.ty_env body1_ty body2_ty;
     Term_if { cond; body1; body2 }, body1_ty
-  | Expr_ty_pack _ | Expr_pack _ | Expr_bind _ -> failwith "packs are not implemented yet"
+  | Expr_ty_pack { ty; span = _ } ->
+    let ty, _ = check_universe cx ty in
+    (* Packs always have kind Type, no matter the universe of the inner type *)
+    Term_ty_pack ty, Value_universe Type
+  | Expr_pack { e; span = _ } ->
+    let e, ty = infer cx e in
+    Term_pack e, Value_ty_pack ty
+  | Expr_bind _ -> fail_s [%message "Cannot infer bind expressions"]
 
 and check (cx : Context.t) (e : expr) (ty : ty) : term =
-  match e with
+  match e, unfold ty with
+  | Expr_abs { var; param_ty; body; span = _ }, Uvalue_ty_fun ty ->
+    let param_ty, _ = check_universe cx param_ty in
+    conv_ty cx.ty_env (Context.eval cx param_ty) ty.param_ty;
+    let body =
+      check
+        (Context.bind var ty.param_ty cx)
+        body
+        (eval_closure1 ty.body_ty (Context.next_var cx))
+    in
+    Term_abs { var; body }
+  | Expr_let { var; rhs; body; span = _ }, _ ->
+    let rhs, rhs_ty = infer cx rhs in
+    let body = check (Context.bind var rhs_ty cx) body ty in
+    Term_let { var; rhs; body }
+  | Expr_if { cond; body1; body2; span = _ }, _ ->
+    let cond = check cx cond (Value_core_ty Ty_bool) in
+    let body1 = check cx body1 ty in
+    let body2 = check cx body2 ty in
+    Term_if { cond; body1; body2 }
+  | Expr_pack { e; span = _ }, Uvalue_ty_pack ty ->
+    let e = check cx e ty in
+    Term_pack e
+  | Expr_bind { var; rhs; body; span = _ }, _ ->
+    check_ty_ignorable cx.ty_env ty;
+    let rhs, rhs_ty = infer cx rhs in
+    let rhs_inner_ty =
+      match unfold rhs_ty with
+      | Uvalue_ty_pack ty -> ty
+      | _ -> fail_s [%message "Expected a pack type" (rhs_ty : ty)]
+    in
+    let body = check (Context.bind var rhs_inner_ty cx) body ty in
+    Term_bind { var; rhs; body }
   | _ ->
     let e, ty' = infer cx e in
     coerce cx e ty' ty
