@@ -169,3 +169,40 @@ if
   Right(index, name)
 | ~else: Left(name)
 
+
+let std = import("std")
+let another = import("another")
+
+variant Another {
+  First Int
+  Second Int Bool Int
+}
+
+record Testing {
+  first : int
+  second : int
+}
+
+rec {
+  fun even? (n: Nat) = match n with {
+    S n -> odd? n
+    Z -> True
+  }
+  
+  fun odd? 'a 'b 'c (n : Nat) = match n with {
+    S n -> even? n
+    Z -> False
+  }
+}
+
+fun zip_with f xs ys = {
+  if { 
+    xs is x :: xs
+      and ys is y :: ys
+      and zip_with f xs ys is {
+        Some tail -> Some (f x y) :: tail
+        None -> None
+      }
+    else -> None
+  }
+}

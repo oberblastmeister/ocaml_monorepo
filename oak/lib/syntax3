@@ -21,3 +21,6 @@ func first(x Int, y Int, z Fun(Int) Int):
   x + z(y)
   
 }
+
+let first = import("another");
+let final = import("this is the final one");

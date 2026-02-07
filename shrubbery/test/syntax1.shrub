@@ -1,7 +1,15 @@
-let std: import("std")
-let another: import("another")
-let struct {first, second, third}: import("another")
-let struct {first, second, third}: import("another")
+let hello = fun first second third -> {
+  let first = 1324234
+  let second = 1324234234
+  let third = 132423423
+  first + second + third
+}
+
+let testing = sig {
+  let first : int
+  let second : int
+  let third : int
+}
 
 rec:
   record Testing:

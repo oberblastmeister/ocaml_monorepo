@@ -1,45 +1,12 @@
 open Prelude
-module Span = Utility.Span
-module Bruh = Core.Array.Permissioned
 
-module Universe = struct
-  module T = struct
-    type t =
-      | Type
-      | Kind
-      | Sig
-    [@@deriving sexp, equal, compare]
-  end
-
-  include T
-  include Base.Comparable.Make (T)
-
-  let minimum = Type
-  let maximum = Sig
-
-  let to_int = function
-    | Type -> 0
-    | Kind -> 1
-    | Sig -> 2
-  ;;
-
-  let of_int_exn = function
-    | 0 -> Type
-    | 1 -> Kind
-    | 2 -> Sig
-    | _ -> failwith "invalid universe"
-  ;;
-
-  let lub u v = of_int_exn (Int.max (to_int u) (to_int v))
-  let incr_exn u = of_int_exn (to_int u + 1)
-  let decr_exn u = of_int_exn (to_int u - 1)
-
-  let to_string = function
-    | Type -> "Type"
-    | Kind -> "Kind"
-    | Sig -> "Sig"
-  ;;
+open struct
+  module Span = Utility.Span
+  module Common = Oak_common
 end
+
+module Core_ty = Common.Core_ty
+module Universe = Common.Universe
 
 module Level = struct
   type t = { level : int } [@@unboxed] [@@deriving sexp_of, equal, compare]
@@ -74,10 +41,6 @@ module Var_info = struct
 
   let generated = { name = "<generated>"; pos = 0 }
 end
-
-type core_ty = Ty_bool [@@deriving sexp_of, equal, compare]
-
-module Subst = struct end
 
 type 'a subst =
   | Shift of { amount : int }
@@ -223,7 +186,7 @@ type expr =
       ; span : Span.t
       }
   | Expr_core_ty of
-      { ty : core_ty
+      { ty : Core_ty.t
       ; span : Span.t
       }
   | Expr_universe of
@@ -313,7 +276,7 @@ and term =
       ; body : term
       }
   | Term_universe of Universe.t
-  | Term_core_ty of core_ty
+  | Term_core_ty of Core_ty.t
     (*
       This is not present in the surface language.
       We would need to use some quantitative type theory to handle this properly
@@ -357,7 +320,7 @@ type value =
       { identity : value
       ; e : value
       }
-  | Value_core_ty of core_ty
+  | Value_core_ty of Core_ty.t
   | Value_neutral of neutral
   | Value_universe of Universe.t
   | Value_ty_sing of value_ty_sing
@@ -454,7 +417,7 @@ type uvalue =
       { identity : value
       ; e : value
       }
-  | Uvalue_core_ty of core_ty
+  | Uvalue_core_ty of Core_ty.t
   | Uvalue_neutral of uneutral
   | Uvalue_universe of Universe.t
   | Uvalue_ty_sing of value_ty_sing

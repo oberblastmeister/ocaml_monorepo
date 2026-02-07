@@ -14,6 +14,14 @@ module Token = struct
   ;;
 end
 
+module Item_delim = struct
+  let single_group env (d : Syntax.item_delim) =
+    match d.groups with
+    | [ { group; sep = None } ] -> group
+    | _ -> Fail.fail env
+  ;;
+end
+
 module Item = struct
   let token env (t : Syntax.item) =
     match t with

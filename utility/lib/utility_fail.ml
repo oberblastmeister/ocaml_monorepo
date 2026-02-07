@@ -1,4 +1,5 @@
 open Core
+module Non_empty_list = Utility_non_empty_list
 
 type t = Env
 
@@ -72,10 +73,18 @@ module List = struct
       x
   ;;
 
-  let peek env t =
+  let next_exn t =
     match !t with
-    | [] -> fail env
-    | x :: _ -> x
+    | [] -> failwith "Expected list to have more elements"
+    | x :: xs ->
+      t := xs;
+      x
+  ;;
+
+  let peek t =
+    match !t with
+    | [] -> None
+    | x :: _ -> Some x
   ;;
 
   let take t =
@@ -110,28 +119,25 @@ module List = struct
     | x -> Second x
   ;;
 
-  let many_rev t f =
-    let rec loop acc =
-      let saved = !t in
-      match f () with
-      | exception Fail ->
-        t := saved;
-        acc
-      | x -> loop (x :: acc)
-    in
-    loop []
+  let rec many_rev_acc t f acc =
+    let saved = !t in
+    match f () with
+    | exception Fail ->
+      t := saved;
+      acc
+    | x -> many_rev_acc t f (x :: acc)
   ;;
 
+  let many_rev t f = many_rev_acc t f []
   let guard env _t b = if not b then fail env
   let many t f = many_rev t f |> List.rev
 
   let some_rev t f =
     let x = f () in
-    let xs = many_rev t f in
-    x :: xs
+    many_rev_acc t f [ x ] |> Non_empty_list.of_list_exn
   ;;
 
-  let some t f = some_rev t f |> List.rev
+  let some t f = some_rev t f |> Non_empty_list.rev
 
   let rec one_of t fs =
     match fs with
@@ -160,6 +166,16 @@ module List = struct
     | exception Fail ->
       t := saved;
       default ()
+    | x -> x
+  ;;
+
+  let run_or_peek t ~default ~f =
+    let saved = !t in
+    match f Env with
+    | exception Fail ->
+      let res = default !t in
+      t := saved;
+      res
     | x -> x
   ;;
 

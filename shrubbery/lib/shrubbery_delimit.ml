@@ -132,10 +132,6 @@ and many_rec acc st is_top_level =
       many_rec (Token (Error (Token.to_string t.token)) :: acc) st is_top_level
     end
     else List.rev acc
-  | { token = Comma; _ } when is_top_level ->
-    let _ = State.next st in
-    (* commas at the top levels are errors, because they are not surrounded by delimiters *)
-    many_rec (Token (Error ",") :: acc) st is_top_level
   | _ ->
     let tt = single st in
     many_rec (tt :: acc) st is_top_level

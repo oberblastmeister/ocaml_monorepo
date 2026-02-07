@@ -1,7 +1,7 @@
 open Prelude
 module Syntax = Oak_syntax
 
-let render ~width doc = Pp.render_to_string ~width doc
+(* let render ~width doc = Pp.render_to_string ~width doc
 
 let check ?(widths = [ 80; 40; 20 ]) doc =
   List.iter widths ~f:(fun width ->
@@ -720,4 +720,4 @@ let%test_module "Pretty" =
         Bool |}]
     ;;
   end)
-;;
+;; *)

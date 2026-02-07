@@ -1,4 +1,4 @@
-open Prelude
+(* open Prelude
 module Shrub = Shrubbery.Syntax
 module Token = Shrubbery.Token
 module Fail = Utility.Fail
@@ -119,20 +119,23 @@ let cut_list l e ~f =
   | Some x -> x
 ;;
 
-let rec parse_root st (block : Shrub.block) : Syntax.expr =
-  let group, groups =
-    match block.groups with
-    | group :: groups -> group, groups
-    | [] ->
-      error (Spanned.create "Root should have exactly one group" (Shrub.Block.span block))
+let strip_eof (group : Shrub.group) : Shrub.group =
+  (* Remove trailing Veof token from root group *)
+  let items = Non_empty_list.to_list group in
+  let items =
+    List.filter items ~f:(fun item ->
+      match item with
+      | Shrub.Token { token = Veof; _ } -> false
+      | _ -> true)
   in
-  List.hd groups
-  |> Option.iter ~f:(fun group ->
-    error
-      (Error.create
-         "Root cannot have more than one group"
-         (Shrub.Group.first_token group.group).index));
-  parse_expr_group st group.group
+  match Non_empty_list.of_list items with
+  | Some group -> group
+  | None -> group
+
+let rec parse_root st (root : Shrub.root) : Syntax.expr =
+  match root with
+  | None -> error (Spanned.create "Empty root" Span.empty)
+  | Some group -> parse_expr_group st (strip_eof group)
 
 and parse_decl st (group : Shrub.group) : Syntax.expr_decl =
   run_or_error
@@ -140,7 +143,7 @@ and parse_decl st (group : Shrub.group) : Syntax.expr_decl =
     ~f:(fun h -> Fail.one_of [ (fun () -> parse_let_decl st h group) ])
 
 and parse_expr_group st (group : Shrub.group) : Syntax.expr =
-  let@ h = Fail.run_or_thunk ~default:(fun () -> parse_simple_expr st group) in
+  let@ h = Fail.run_or_thunk ~default:(fun () -> parse_simple_expr_items st group) in
   Fail.one_of
     [ (fun () -> parse_mod_expr st h group)
     ; (fun () -> parse_do_expr st h group)
@@ -149,20 +152,19 @@ and parse_expr_group st (group : Shrub.group) : Syntax.expr =
     ]
 
 and parse_do_expr st h (group : Shrub.group) : Syntax.expr =
-  let items = Items.create group.items in
+  let items = Items.create group in
   let do_tok = Items.next h items |> Match.builtin h "do" in
   let h = () in
   ignore h;
   let block =
-    Option.value_or_thunk group.block ~default:(fun () ->
-      error (Error.create "Expected block after do" do_tok.index))
+    run_or_error
+      ~f:(fun h -> Items.next h items |> Match.Item.tree h)
+      (lazy (Error.create "Expected block after do" do_tok.index))
   in
-  if not (List.is_empty group.alts)
-  then error (Error.create "Do expression should not have any alternatives" do_tok.index);
-  parse_expr_token_block st block
+  parse_expr_delim st block
 
 and parse_fun_expr st h (group : Shrub.group) : Syntax.expr =
-  let items = Items.create group.items in
+  let items = Items.create group in
   let item = Items.next h items in
   let fun_tok, purity =
     Fail.one_of
@@ -180,7 +182,7 @@ and parse_fun_expr st h (group : Shrub.group) : Syntax.expr =
   in
   let params =
     List.map params_item.groups ~f:(fun param_group ->
-      let param_items = Items.create param_group.group.items in
+      let param_items = Items.create param_group.group in
       let var =
         run_or_error
           ~f:(fun h -> Match.var h (Items.next h param_items))
@@ -205,17 +207,19 @@ and parse_fun_expr st h (group : Shrub.group) : Syntax.expr =
       items
       ~f:(fun h ->
         let _ = Items.peek h items in
-        Some (parse_atom_expr st items))
+        (* Only consume as return type if it's NOT a brace block (which would be the body) *)
+        let next = Items.peek h items in
+        match next with
+        | Delim { ldelim = { token = LBrace; _ }; _ } -> Fail.fail h
+        | _ -> Some (parse_atom_expr st items))
       ~default:(fun () -> None)
   in
   let block =
-    Option.value_or_thunk group.block ~default:(fun () ->
-      error (Error.create "Expected block after fun parameters" fun_tok.index))
+    run_or_error
+      ~f:(fun h -> Items.next h items |> Match.Item.tree h)
+      (lazy (Error.create "Expected block after fun parameters" fun_tok.index))
   in
-  if not (List.is_empty group.alts)
-  then
-    error (Error.create "Fun expression should not have any alternatives" fun_tok.index);
-  let body = parse_expr_token_block st block in
+  let body = parse_expr_delim st block in
   let span = Span.combine (Span.single fun_tok.index) (Syntax.expr_span body) in
   match return_ty with
   | None -> Syntax.Expr_abs { params; body; purity; span }
@@ -228,46 +232,42 @@ and parse_fun_expr st h (group : Shrub.group) : Syntax.expr =
       }
 
 and parse_mod_expr st h (group : Shrub.group) : Syntax.expr =
-  let items = Items.create group.items in
+  let items = Items.create group in
   let mod_tok = Items.next h items |> Match.builtin h "mod" in
   let h = () in
   ignore h;
   let block =
-    Option.value_or_thunk group.block ~default:(fun () ->
-      error (Error.create "Expected block after mod" mod_tok.index))
+    run_or_error
+      ~f:(fun h -> Items.next h items |> Match.Item.tree h)
+      (lazy (Error.create "Expected block after mod" mod_tok.index))
   in
-  if not (List.is_empty group.alts)
-  then
-    error (Error.create "Mod expression should not have any alternatives" mod_tok.index);
-  let decls = List.map block.block.groups ~f:(fun group -> parse_decl st group.group) in
+  let decls = List.map block.groups ~f:(fun group -> parse_decl st group.group) in
   let var = Syntax.Mod_var.create_initial mod_tok.index in
   let span =
     List.last decls
     |> Option.map ~f:(fun decl -> Span.combine (Span.single mod_tok.index) decl.span)
     |> Option.value
          ~default:
-           (Span.combine (Span.single mod_tok.index) (Span.single block.token.index))
+           (Span.combine (Span.single mod_tok.index) (Span.single block.ldelim.index))
   in
   Syntax.Expr_mod { var; decls; span }
 
 and parse_sig_expr st h (group : Shrub.group) : Syntax.expr =
-  let items = Items.create group.items in
+  let items = Items.create group in
   let sig_tok = Items.next h items |> Match.builtin h "sig" in
   let h = () in
   ignore h;
+  let block =
+    run_or_error
+      ~f:(fun h -> Items.next h items |> Match.Item.tree h)
+      (lazy (Error.create "Expected block after sig" sig_tok.index))
+  in
   Items.take items
   |> List.hd
   |> Option.iter ~f:(fun item ->
     error (Error.create "Unexpected tokens after sig" (Shrub.Item.first_token item).index));
-  let block =
-    Option.value_or_thunk group.block ~default:(fun () ->
-      error (Error.create "Expected block after sig" sig_tok.index))
-  in
-  if not (List.is_empty group.alts)
-  then
-    error (Error.create "Sig expression should not have any alternatives" sig_tok.index);
   let ty_decls =
-    List.map block.block.groups ~f:(fun group -> parse_ty_decl st group.group)
+    List.map block.groups ~f:(fun group -> parse_ty_decl st group.group)
   in
   let var = Syntax.Mod_var.create_initial sig_tok.index in
   let span =
@@ -275,7 +275,7 @@ and parse_sig_expr st h (group : Shrub.group) : Syntax.expr =
     |> Option.map ~f:(fun decl -> Span.combine (Span.single sig_tok.index) decl.span)
     |> Option.value
          ~default:
-           (Span.combine (Span.single sig_tok.index) (Span.single block.token.index))
+           (Span.combine (Span.single sig_tok.index) (Span.single block.ldelim.index))
   in
   Syntax.Expr_ty_mod { var; ty_decls; span }
 
@@ -285,7 +285,7 @@ and parse_ty_decl st (group : Shrub.group) : Syntax.expr_ty_decl =
     ~f:(fun h -> parse_let_ty_decl st h group)
 
 and parse_let_ty_decl st h (group : Shrub.group) : Syntax.expr_ty_decl =
-  let items = Items.create group.items in
+  let items = Items.create group in
   let let_tok = Match.builtin h "let" (Items.next h items) in
   let h = () in
   ignore h;
@@ -353,6 +353,10 @@ and parse_atom_app_cont st func (items : Items.t) : Syntax.expr =
       items
       ~f:(fun h ->
         let args_item = Items.next h items |> Match.Item.tree h in
+        (* Only treat parenthesized delimiters as function application *)
+        (match args_item.ldelim.token with
+         | LParen -> ()
+         | _ -> Fail.fail h);
         let args =
           List.map args_item.groups ~f:(fun group -> parse_expr_group st group.group)
         in
@@ -384,7 +388,7 @@ and parse_fun_ty st h items : Syntax.expr =
   in
   let params =
     List.map params_item.groups ~f:(fun param_group ->
-      let param_items = Items.create param_group.group.items in
+      let param_items = Items.create param_group.group in
       (* Use parse_base_atom_expr to avoid consuming parentheses as function application *)
       let first_atom = parse_base_atom_expr st param_items in
       (* Check if there's another token after the first atom *)
@@ -432,15 +436,6 @@ and parse_fun_ty st h items : Syntax.expr =
   let body_ty = parse_atom_expr st items in
   let span = Span.combine (Span.single fun_tok.index) (Syntax.expr_span body_ty) in
   Syntax.Expr_ty_fun { params; body_ty; purity; span }
-
-(* a simple expr is an expr without a block or alternatives *)
-and parse_simple_expr st group : Syntax.expr =
-  Option.iter group.block ~f:(fun block ->
-    error (Error.create "Expression should not have block" block.token.index));
-  List.hd group.alts
-  |> Option.iter ~f:(fun alt ->
-    error (Error.create "Expression should not have alt" alt.token.index));
-  parse_simple_expr_items st group.items
 
 and parse_simple_expr_items st (items : Shrub.item Non_empty_list.t) : Syntax.expr =
   let items = Items.create items in
@@ -507,13 +502,10 @@ and parse_var_expr _st h items : Syntax.expr =
   let var = Match.var h item in
   Syntax.Expr_var { var = Var var; span = Span.single (Option.value_exn var.pos) }
 
-and parse_expr_token_block st (block : Shrub.token_block) : Syntax.expr =
-  parse_expr_block st block.block
-
-and parse_expr_block st (block : Shrub.block) : Syntax.expr =
+and parse_expr_delim st (block : Shrub.item_delim) : Syntax.expr =
   let groups, last_group =
     match List.last block.groups with
-    | None -> error (Error.create "Empty block" block.lbrace.index)
+    | None -> error (Error.create "Empty block" block.ldelim.index)
     | Some x -> List.drop_last_exn block.groups, x
   in
   let decls = List.map groups ~f:(fun g -> parse_decl st g.group) in
@@ -528,7 +520,7 @@ and parse_expr_block st (block : Shrub.block) : Syntax.expr =
   expr
 
 and parse_let_decl st h (group : Shrub.group) : Syntax.expr_decl =
-  let items = Items.create group.items in
+  let items = Items.create group in
   let let_tok = Match.builtin h "let" (Items.next h items) in
   let h = () in
   ignore h;
@@ -540,26 +532,22 @@ and parse_let_decl st h (group : Shrub.group) : Syntax.expr_decl =
     let var = Match.Token.ident h tok in
     tok, var
   in
-  let block =
-    Option.value_or_thunk group.block ~default:(fun () ->
-      error (Error.create "Expected block after variable" field_tok.index))
+  let remaining = Items.take items in
+  let body_group =
+    match Non_empty_list.of_list remaining with
+    | None ->
+      error (Error.create "Expected expression after variable" field_tok.index)
+    | Some group -> group
   in
-  let body = parse_expr_token_block st block in
+  let body = parse_expr_group st body_group in
   let span = Span.combine (Span.single let_tok.index) (Syntax.expr_span body) in
   ({ let_pos = let_tok.index; field; field_pos = field_tok.index; e = body; span }
    : Syntax.expr_decl)
 ;;
 
-let parse_block st root_block =
-  match parse_root st root_block with
-  | exception Error e ->
-    ( [ e ]
-    , Syntax.Expr_hole
-        { span =
-            Span.combine
-              (Span.single root_block.lbrace.index)
-              (Span.single root_block.rbrace.index)
-        } )
+let parse_root_result st (root : Shrub.root) =
+  match parse_root st root with
+  | exception Error e -> [ e ], Syntax.Expr_hole { span = Span.empty }
   | x -> [], x
 ;;
 
@@ -605,14 +593,15 @@ let shrub_error_to_diagnostic ~file (e : Shrubbery.Delimit.Error.t) : Diagnostic
 ;;
 
 let parse ~file s =
-  let tts, block, shrub_errors = Shrubbery.Parser.parse s in
+  let tts, root, shrub_errors = Shrubbery.Parser.parse s in
   let tokens = Shrubbery.Token_tree.Root.to_list tts |> Array.of_list in
   let offsets = Shrubbery.Token.calculate_offsets tokens in
   let st = State.create tokens in
-  let errors, expr = parse_block st block in
+  let errors, expr = parse_root_result st root in
   let diagnostics =
     List.map shrub_errors ~f:(shrub_error_to_diagnostic ~file)
     @ List.map errors ~f:(error_to_diagnostic ~file ~offsets)
   in
   tts, diagnostics, expr
-;;
+;; 
+*)

@@ -11,8 +11,8 @@ open struct
 end
 
 let check s =
-  let _tts, block, errors = Parser.parse s in
-  print_s (Syntax.Minimal_sexp_of.sexp_of_block block);
+  let _tts, root, errors = Parser.parse s in
+  print_s (Syntax.Minimal_sexp_of.sexp_of_root root);
   if not (List.is_empty errors) then print_s [%sexp (errors : Delimit.Error.t list)];
   ()
 ;;
@@ -20,275 +20,123 @@ let check s =
 let%expect_test "basic" =
   check
     {|
-def first:
+fun first {
   x
   y
   z
+}
     |};
-  [%expect
-    {| (_{ (((def first (: (_{ (((x) "_;") ((y) "_;") ((z))) _}))))) _}) |}]
+  [%expect {| ((fun first ({ ((x) "_;") ((y) "_;") ((z)) }))) |}]
 ;;
 
 let%expect_test "more" =
   check
     {|
-def first:
+def first = {
   call_function(
-    do:
+    {
       a
       b; c
-      d,
-    do:
-      x; y;
-      z,
-    do:
+      d
+    },
+    {
+      x; y
+      z
+    },
+    {
       a; b; c; d
+    }
   )
-  |};
-  [%expect
-    {|
-    (_{
-     (((def first
-        (:
-         (_{
-          (((call_function
-             ("(" ((do (: (_{ (((a) "_;") ((b) ";") ((c) "_;") ((d))) _}))) ,)
-              ((do (: (_{ (((x) ";") ((y) ";") ((z))) _}))) ,)
-              ((do (: (_{ (((a) ";") ((b) ";") ((c) ";") ((d))) _})))) ")"))))
-          _})))))
-     _})
-    |}]
-;;
-
-let%expect_test "invalid comma on toplevel" =
-  check
-    {|
-def first:
-  x; y; z
-,
-def another:
-  x; y; z
+}
     |};
   [%expect
     {|
-    (_{
-     (((def first (: (_{ (((x) ";") ((y) ";") ((z))) _}))) "_;")
-      (((error ,)) "_;") ((def another (: (_{ (((x) ";") ((y) ";") ((z))) _})))))
-     _})
+    ((def first =
+      ({
+       ((call_function
+         ("(" ((({ ((a) "_;") ((b) ";") ((c) "_;") ((d)) })) ,)
+          ((({ ((x) ";") ((y) "_;") ((z)) })) ,)
+          ((({ ((a) ";") ((b) ";") ((c) ";") ((d)) }))) ")")))
+       })))
     |}]
 ;;
 
-let%expect_test "weird start indentation" =
+let%expect_test "weird comma" =
   check
     {|
-  def f:
-    x; y; z
-    
-  def another:
-    x
-    y
-  |};
+df first {
+  x; y; z
+}
+,
+def another {
+  x; y; z
+}
+    |};
   [%expect
     {|
-    (_{
-     (((def f (: (_{ (((x) ";") ((y) ";") ((z))) _}))))
-      ((def another (: (_{ (((x) "_;") ((y))) _})))))
-     _})
-    |}]
-;;
-
-let%expect_test "weird start indentation dedented" =
-  check
-    {|
-  def f:
-    x; y; z
-    
-def another:
-  x
-  y
-  
-def g:
-  x; y
-
-  |};
-  [%expect
-    {|
-    (_{
-     (((def f (: (_{ (((x) ";") ((y) ";") ((z))) _}))) "_;")
-      ((def another (: (_{ (((x) "_;") ((y))) _}))) "_;")
-      ((def g (: (_{ (((x) ";") ((y))) _})))))
-     _})
+    ((df first ({ ((x) ";") ((y) ";") ((z)) }) , def another
+      ({ ((x) ";") ((y) ";") ((z)) })))
     |}]
 ;;
 
 let%expect_test "fib" =
   check
     {|
-def fib pos_int
-| fib(0): 1
-| fib(1): 1
-| fib(n nat, n bool): fib(n - 1) + fib(n - 2)
-
-def another:
-  (x, y, z)
-
-    |};
-  [%expect
-    {|
-    (_{
-     (((def fib pos_int (| (_{ (((fib ("(" ((0)) ")") (: (_{ (((1))) _}))))) _}))
-        (| (_{ (((fib ("(" ((1)) ")") (: (_{ (((1))) _}))))) _}))
-        (|
-         (_{
-          (((fib ("(" ((n nat) ,) ((n bool)) ")")
-             (:
-              (_{
-               (((fib ("(" ((n (operator -) 1)) ")") (operator +) fib
-                  ("(" ((n (operator -) 2)) ")"))))
-               _})))))
-          _})))
-       "_;")
-      ((def another (: (_{ (((("(" ((x) ,) ((y) ,) ((z)) ")")))) _})))))
-     _})
-    |}]
-;;
-
-let%expect_test "weird unbalanced braces" =
-  check
-    {|
-hello_world } another { awefawe )
-    |};
-  [%expect
-    {|
-    (_{ (((hello_world (error }) another ({ ((awefawe)) ")")))) _})
-    ((Mismatching_delimiters (ldelim ((start 23) (stop 24)))
-      (rdelim ((start 33) (stop 34)))))
-    |}]
-;;
-
-let%expect_test "explicit blocks" =
-  check
-    {|
-def first: {
-  first;
-  second; third;
-  fourth
+func fib = match pos_int {
+  0 -> 1
+  1 -> 1
+  n -> fib (n - 1) + fib (n - 2)
 }
     |};
   [%expect
     {|
-    (_{
-     (((def first
-        (: ({ (((first) ";") ((second) ";") ((third) ";") ((fourth))) })))))
-     _})
+    ((func fib = match pos_int
+      ({ ((0 (operator ->) 1) "_;") ((1 (operator ->) 1) "_;")
+       ((n (operator ->) fib ("(" ((n (operator -) 1)) ")") (operator +) fib
+         ("(" ((n (operator -) 2)) ")")))
+       })))
     |}]
 ;;
 
-let%expect_test "semi after alternatives" =
+let%expect_test "data types" =
   check
     {|
-data Option(a):
-| Some(a)
-| None
-;
+let Option [a] = data {
+  Some a
+  None
+}
 
-data Either(a, b)
-| Left(a)
-| Right(b)
-
-record Pair(a, b):
-  fst a
-  snd b
-
+let Either [a] [b] = data {
+  Left a
+  Right b
+}
     |};
   [%expect
     {|
-    (_{
-     (((data Option ("(" ((a)) ")") (: (_{ () _}))
-        (| (_{ (((Some ("(" ((a)) ")")))) _})) (| (_{ (((None))) _})))
-       "_;")
-      ((data Either ("(" ((a) ,) ((b)) ")")
-        (| (_{ (((Left ("(" ((a)) ")")))) _}))
-        (| (_{ (((Right ("(" ((b)) ")")))) _})))
-       "_;")
-      ((record Pair ("(" ((a) ,) ((b)) ")")
-        (: (_{ (((fst a) "_;") ((snd b))) _})))))
-     _})
+    ((let Option ([ ((a)) ]) = data ({ ((Some a) "_;") ((None)) }) let Either
+      ([ ((a)) ]) ([ ((b)) ]) = data ({ ((Left a) "_;") ((Right b)) })))
     |}]
 ;;
 
 let%expect_test "nested match" =
   check
     {|
-def nested_match(x, y):
-  match x:
-  | Some(x):
-    match y:
-    | Some(y): print(x, y)
-    | None: throw()
-  | None:
-    throw()
-
-  |};
-  [%expect
-    {|
-    (_{
-     (((def nested_match ("(" ((x) ,) ((y)) ")")
-        (:
-         (_{
-          (((match x (: (_{ () _}))
-             (|
-              (_{
-               (((Some ("(" ((x)) ")") (: (_{ () _}))) "_;")
-                ((match y (: (_{ () _}))
-                  (|
-                   (_{
-                    (((Some ("(" ((y)) ")")
-                       (: (_{ (((print ("(" ((x) ,) ((y)) ")")))) _})))))
-                    _}))
-                  (| (_{ (((None (: (_{ (((throw ("(" ")")))) _}))))) _})))))
-               _}))
-             (| (_{ (((None (: (_{ () _}))) "_;") ((throw ("(" ")")))) _})))))
-          _})))))
-     _})
-    |}]
-;;
-
-let%expect_test "equal sign" =
-  check
-    {|
-    let first: fun:
-      let x: 1324234
-      let y: 12341324
+func nested_match x y = match x {
+  Some x -> match y {
+    Some y -> print x y
+    None -> throw ()
+  }
+  None -> throw ()
+}
     |};
   [%expect
     {|
-    (_{
-     (((let first (: (_{ (((fun (: (_{ () _}))))) _}))))
-      ((let x (: (_{ (((1324234))) _})))) ((let y (: (_{ (((12341324))) _})))))
-     _})
-    |}]
-;;
-
-let%expect_test "comma in block" =
-  check
-    {|
-let testing:
-  first
-  second
-  ,
-  third
-  fourth
-    |};
-  [%expect
-    {|
-    (_{
-     (((let testing
-        (:
-         (_{
-          (((first) "_;") ((second) "_;") (((error ,)) "_;") ((third) "_;")
-           ((fourth)))
-          _})))))
-     _})
+    ((func nested_match x y = match x
+      ({
+       ((Some x (operator ->) match y
+         ({ ((Some y (operator ->) print x y) "_;")
+          ((None (operator ->) throw ("(" ")"))) }))
+        "_;")
+       ((None (operator ->) throw ("(" ")"))) })))
     |}]
 ;;

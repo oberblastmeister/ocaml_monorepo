@@ -424,8 +424,8 @@ let rec sub cx (e : term) (ty1 : ty) (ty2 : ty) : term option =
       fail_s [%message "Universes were not equal" (ty1 : Universe.t) (ty2 : Universe.t)];
     None
   | Uvalue_core_ty ty1, Uvalue_core_ty ty2 ->
-    if not (equal_core_ty ty1 ty2)
-    then fail_s [%message "Core types were not equal" (ty1 : core_ty) (ty2 : core_ty)];
+    if not (Core_ty.equal ty1 ty2)
+    then fail_s [%message "Core types were not equal" (ty1 : Core_ty.t) (ty2 : Core_ty.t)];
     None
   | Uvalue_ty_sing ty1, Uvalue_ty_sing ty2 ->
     let e' =
@@ -707,12 +707,12 @@ let rec infer (cx : Context.t) (e : expr) : term * ty =
     then fail_s [%message "Cannot form singletons with runtime terms"];
     ( Term_ty_sing { identity = e; ty = Context.quote cx ty }
     , Value_universe (Universe.decr_exn universe) )
-  | Expr_bool { value; span = _ } -> Term_bool { value }, Value_core_ty Ty_bool
+  | Expr_bool { value; span = _ } -> Term_bool { value }, Value_core_ty Bool
   | Expr_core_ty { ty; span = _ } -> Term_core_ty ty, Value_universe Type
   | Expr_universe { universe; span = _ } ->
     Term_universe universe, Value_universe (Universe.incr_exn universe)
   | Expr_if { cond; body1; body2; span = _ } ->
-    let cond = check cx cond (Value_core_ty Ty_bool) in
+    let cond = check cx cond (Value_core_ty Bool) in
     let body1, body1_ty = infer cx body1 in
     let body2, body2_ty = infer cx body2 in
     let universe1 = infer_value_universe cx.ty_env body1_ty in
@@ -756,7 +756,7 @@ and check (cx : Context.t) (e : expr) (ty : ty) : term =
     let body = check (Context.bind var rhs_ty cx) body ty in
     Term_let { var; rhs; body }
   | Expr_if { cond; body1; body2; span = _ }, _ ->
-    let cond = check cx cond (Value_core_ty Ty_bool) in
+    let cond = check cx cond (Value_core_ty Bool) in
     let body1 = check cx body1 ty in
     let body2 = check cx body2 ty in
     Term_if { cond; body1; body2 }

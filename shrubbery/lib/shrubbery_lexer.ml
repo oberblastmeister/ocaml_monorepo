@@ -11,7 +11,7 @@ let is_operator_char c =
   | _ -> false
 ;;
 
-let is_ident_start c = Char.is_alpha c || Char.equal c '_'
+let is_ident_start c = Char.is_alpha c || Char.equal c '_' || Char.equal c '#'
 
 let is_ident_continue c =
   is_ident_start c || Char.is_digit c || Char.equal c '\'' || Char.equal c '?'
@@ -120,4 +120,20 @@ let%expect_test "operator" =
 13242 :: Int
     |};
   [%expect {| ("\n" 13242 " " (operator ::) " " Int "\n" "    " _eof) |}]
+;;
+
+let%expect_test "underscore" =
+  check
+    {|
+    _
+    |};
+  [%expect {| ("\n" "    " _ "\n" "    " _eof) |}]
+;;
+
+let%expect_test "waefaewf" =
+  check
+    {|
+#t #f
+    |};
+  [%expect {| ("\n" #t " " #f "\n" "    " _eof) |}]
 ;;

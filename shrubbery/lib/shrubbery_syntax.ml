@@ -3,12 +3,7 @@ module Token_tree = Shrubbery_token_tree
 module Token = Shrubbery_token
 module Span = Utility.Span
 
-(* TODO: a group should have nonempty items here *)
-type group =
-  { items : item Non_empty_list.t
-  ; block : token_block option
-  ; alts : alt list
-  }
+type group = item Non_empty_list.t
 
 and item =
   | Token of Token.ti
@@ -20,23 +15,16 @@ and item_delim =
   ; rdelim : Token.ti
   }
 
-and token_block =
-  { token : Token.ti
-  ; block : block
-  }
-
-and block =
-  { lbrace : Token.ti
-  ; groups : group_sep list
-  ; rbrace : Token.ti
-  }
-
 and group_sep =
   { group : group
   ; sep : Token.ti option
   }
 
-and alt = token_block [@@deriving sexp_of, equal, compare]
+and root = group option
+
+module Root = struct
+  type t = root
+end
 
 module Item = struct
   type t = item
@@ -58,16 +46,8 @@ module Group = struct
   type t = group
 
   let first_token t =
-    let item = Non_empty_list.hd t.items in
+    let item = Non_empty_list.hd t in
     Item.first_token item
-  ;;
-end
-
-module Block = struct
-  type t = block
-
-  let span { lbrace; groups = _; rbrace } =
-    Span.combine (Span.single lbrace.index) (Span.single rbrace.index)
   ;;
 end
 
@@ -77,11 +57,11 @@ module Make_sexp_of (Sexp_of_token : sig
 struct
   open Sexp_of_token
 
-  let rec sexp_of_group { items; block; alts } =
+  let rec sexp_of_group items =
     let group = Non_empty_list.to_list items |> List.map ~f:sexp_of_item in
-    let block = Option.to_list block |> List.map ~f:sexp_of_token_block in
-    let alts = List.map alts ~f:sexp_of_alt in
-    Sexp.List (group @ block @ alts)
+    Sexp.List group
+
+  and sexp_of_root root = Option.sexp_of_t sexp_of_group root
 
   and sexp_of_item item =
     match item with
@@ -95,18 +75,7 @@ struct
   and sexp_of_item_delim { ldelim; groups; rdelim } =
     let groups = List.map groups ~f:sexp_of_group_sep in
     Sexp.List ([ sexp_of_token ldelim ] @ groups @ [ sexp_of_token rdelim ])
-
-  and sexp_of_token_block ({ token; block } : token_block) =
-    Sexp.List [ sexp_of_token token; sexp_of_block block ]
-
-  and sexp_of_block ({ lbrace; groups; rbrace } : block) =
-    Sexp.List
-      [ sexp_of_token lbrace
-      ; List (List.map groups ~f:sexp_of_group_sep)
-      ; sexp_of_token rbrace
-      ]
-
-  and sexp_of_alt alt = sexp_of_token_block alt
+  ;;
 end
 
 include Make_sexp_of (struct

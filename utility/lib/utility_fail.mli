@@ -1,5 +1,7 @@
 type t
 
+module Non_empty_list := Utility_non_empty_list
+
 exception Fail
 
 val env : t
@@ -23,7 +25,8 @@ module List : sig
   type 'a t = 'a list ref [@@deriving sexp_of]
 
   val next : env -> 'a t -> 'a
-  val peek : env -> 'a t -> 'a
+  val next_exn : 'a t -> 'a
+  val peek : 'a t -> 'a option
   val take : 'a t -> 'a list
   val empty : env -> 'a t -> unit
   val create : 'a list -> 'a t
@@ -31,13 +34,14 @@ module List : sig
   val either : 'a t -> (unit -> 'b) -> (unit -> 'c) -> ('c, 'b) Base.Either.t
   val many_rev : 'a t -> (unit -> 'b) -> 'b list
   val many : 'a t -> (unit -> 'b) -> 'b list
-  val some_rev : 'a t -> (unit -> 'b) -> 'b list
-  val some : 'a t -> (unit -> 'b) -> 'b list
+  val some_rev : 'a t -> (unit -> 'b) -> 'b Non_empty_list.t
+  val some : 'a t -> (unit -> 'b) -> 'b Non_empty_list.t
   val guard : env -> 'a t -> bool -> unit
   val one_of : 'a t -> (unit -> 'b) list -> 'b
   val run : 'a t -> f:(env -> 'b) -> 'b option
   val run_or_thunk : 'a t -> default:(unit -> 'b) -> f:(env -> 'b) -> 'b
   val run_exn : 'a t -> f:(env -> 'b) -> 'b
+  val run_or_peek : 'a t -> default:('a list -> 'b) -> f:(env -> 'b) -> 'b
 end
 
 module Syntax : sig
