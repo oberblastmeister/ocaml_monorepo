@@ -1,790 +1,750 @@
-(* open Prelude
-module Syntax = Oak_syntax
-module Parse = Oak_parse
-module Diagnostic = Oak_diagnostic
+open Core
+module Snippet = Utility.Diagnostic.Snippet
 
 let check s =
   let file = "<input>" in
-  let _tts, diagnostics, expr = Parse.parse ~file s in
-  let files = String.Map.of_alist_exn [ file, Diagnostic.Snippet.File.create s ] in
+  let _tts, diagnostics, expr = Oak_parse.parse ~file s in
+  let files = String.Map.of_alist_exn [ file, Snippet.File.create s ] in
   if not (List.is_empty diagnostics)
-  then begin
+  then
     List.iter diagnostics ~f:(fun diagnostic ->
-      Diagnostic.print ~color:false ~files diagnostic;
+      Oak_diagnostic.print ~color:false ~files diagnostic;
       print_string "\n\n")
-  end
-  else print_s [%sexp (expr : Syntax.expr)]
+  else print_s [%sexp (expr : Oak_surface.expr option)]
 ;;
 
-let%expect_test "error" =
+let%expect_test "simple function" =
   check
     {|
-        mod {
-        let 1234234
-        }
-        |};
-  [%expect
-    {|
-    error[E0001]: Expected variable after let
-     --> <input>:3:9
-      |
-    3 |         let 1234234
-      |         ^^^
-    |}]
-;;
-
-let%expect_test "mismatching" =
-  check
-    {|
-      let first ( }
-      |};
-  [%expect
-    {|
-    error[E0001]: mismatching delimiters
-     --> <input>:2:19
-      |
-    2 |       let first ( }
-      |                   ^
-    note: opening delimiter here
-     --> <input>:2:17
-      |
-    2 |       let first ( }
-      |                 ^
-
-    error[E0001]: Unconsumed tokens in expression
-     --> <input>:2:11
-      |
-    2 |       let first ( }
-      |           ^^^^^
-    |}]
-;;
-
-let%expect_test "mod with let declarations" =
-  check
-    {|
-mod {
-
-let first (12341342 :: Int)
-
-let second 13432
-
-let third 1323243
-
-}
-        |};
-  [%expect
-    {|
-    (Expr_mod (var ((id 0) (pos (1))))
-     (decls
-      (((let_pos 6) (field first) (field_pos 8)
-        (e
-         (Expr_seal (e (Expr_int (value 12341342) (span ((start 11) (stop 12)))))
-          (ty (Expr_core_ty (ty Ty_int) (span ((start 15) (stop 16)))))
-          (span ((start 11) (stop 16)))))
-        (span ((start 6) (stop 16))))
-       ((let_pos 20) (field second) (field_pos 22)
-        (e (Expr_int (value 13432) (span ((start 24) (stop 25)))))
-        (span ((start 20) (stop 25))))
-       ((let_pos 28) (field third) (field_pos 30)
-        (e (Expr_int (value 1323243) (span ((start 32) (stop 33)))))
-        (span ((start 28) (stop 33))))))
-     (span ((start 1) (stop 33))))
-    |}]
-;;
-
-let%expect_test "function types taking variables" =
-  check
-    {|
-Fun(x Int, A Type) A
+fun x -> x
     |};
   [%expect
     {|
-    (Expr_ty_fun
-     ((params
-       (((var ((id 0) (name x) (pos (3))))
-         (ty (Expr_core_ty (ty Ty_int) (span ((start 5) (stop 6)))))
-         (span ((start 3) (stop 6))))
-        ((var ((id 0) (name A) (pos (8))))
-         (ty (Expr_universe (univ Type) (span ((start 10) (stop 11)))))
-         (span ((start 8) (stop 11))))))
-      (body_ty
-       (Expr_var (var (Var ((id 0) (name A) (pos (13)))))
-        (span ((start 13) (stop 14)))))
-      (purity Pure) (span ((start 1) (stop 14)))))
+    ((Expr_abs
+      (params
+       (((vars (((name x) (span ((start 3) (stop 4)))))) (ann ())
+         (span ((start 3) (stop 4))))))
+      (ret_ty ()) (body (Expr_var ((name x) (span ((start 7) (stop 8))))))
+      (span ((start 1) (stop 8)))))
+    |}];
+  check
+    {|
+fun x y z -> x
+      |};
+  [%expect
+    {|
+    ((Expr_abs
+      (params
+       (((vars (((name x) (span ((start 3) (stop 4)))))) (ann ())
+         (span ((start 3) (stop 4))))
+        ((vars (((name y) (span ((start 5) (stop 6)))))) (ann ())
+         (span ((start 5) (stop 6))))
+        ((vars (((name z) (span ((start 7) (stop 8)))))) (ann ())
+         (span ((start 7) (stop 8))))))
+      (ret_ty ()) (body (Expr_var ((name x) (span ((start 11) (stop 12))))))
+      (span ((start 1) (stop 12)))))
+    |}];
+  check
+    {|
+      fun (x w a : Bool) (y : Bool) z -> x
+      |};
+  [%expect
+    {|
+    ((Expr_abs
+      (params
+       (((vars
+          (((name x) (span ((start 5) (stop 6))))
+           ((name w) (span ((start 7) (stop 8))))
+           ((name a) (span ((start 9) (stop 10))))))
+         (ann ((Expr_core_ty (ty Bool) (span ((start 13) (stop 14))))))
+         (span ((start 5) (stop 12))))
+        ((vars (((name y) (span ((start 17) (stop 18))))))
+         (ann ((Expr_core_ty (ty Bool) (span ((start 21) (stop 22))))))
+         (span ((start 17) (stop 20))))
+        ((vars (((name z) (span ((start 24) (stop 25)))))) (ann ())
+         (span ((start 24) (stop 25))))))
+      (ret_ty ()) (body (Expr_var ((name x) (span ((start 28) (stop 29))))))
+      (span ((start 2) (stop 29)))))
+    |}];
+  check
+    {|
+fun x y : Bool -> x
+      |};
+  [%expect
+    {|
+    ((Expr_abs
+      (params
+       (((vars (((name x) (span ((start 3) (stop 4)))))) (ann ())
+         (span ((start 3) (stop 4))))
+        ((vars (((name y) (span ((start 5) (stop 6)))))) (ann ())
+         (span ((start 5) (stop 6))))))
+      (ret_ty ((Expr_core_ty (ty Bool) (span ((start 9) (stop 10))))))
+      (body (Expr_var ((name x) (span ((start 13) (stop 14))))))
+      (span ((start 1) (stop 14)))))
     |}]
 ;;
 
-let%expect_test "function type with mixed params" =
-  (* Mix of bound and unbound parameters *)
-  check {| Fun(x Int, Bool) Int |};
+let%expect_test "blocks" =
+  check
+    {|
+  fun x y -> {
+    let z = x
+    let w = y
+    w
+  }
+    |};
   [%expect
     {|
-    (Expr_ty_fun
-     ((params
-       (((var ((id 0) (name x) (pos (3))))
-         (ty (Expr_core_ty (ty Ty_int) (span ((start 5) (stop 6)))))
-         (span ((start 3) (stop 6))))
-        ((var ((id 0) (name _) (pos (8))))
-         (ty (Expr_core_ty (ty Ty_bool) (span ((start 8) (stop 9)))))
-         (span ((start 8) (stop 9))))))
-      (body_ty (Expr_core_ty (ty Ty_int) (span ((start 11) (stop 12)))))
-      (purity Pure) (span ((start 1) (stop 12)))))
+    ((Expr_abs
+      (params
+       (((vars (((name x) (span ((start 4) (stop 5)))))) (ann ())
+         (span ((start 4) (stop 5))))
+        ((vars (((name y) (span ((start 6) (stop 7)))))) (ann ())
+         (span ((start 6) (stop 7))))))
+      (ret_ty ())
+      (body
+       (Expr_block
+        (decls
+         ((Block_decl_let (var ((name z) (span ((start 15) (stop 16)))))
+           (ann ()) (rhs (Expr_var ((name x) (span ((start 19) (stop 20))))))
+           (span ((start 13) (stop 20))))
+          (Block_decl_let (var ((name w) (span ((start 25) (stop 26)))))
+           (ann ()) (rhs (Expr_var ((name y) (span ((start 29) (stop 30))))))
+           (span ((start 23) (stop 30))))))
+        (ret (Expr_var ((name w) (span ((start 33) (stop 34))))))
+        (span ((start 10) (stop 37)))))
+      (span ((start 2) (stop 37)))))
+    |}];
+  check
+    {|
+fun x y z w -> {
+  let w = {
+    let x = x
+    x
+  }
+  { w }
+}
+      |};
+  [%expect
+    {|
+    ((Expr_abs
+      (params
+       (((vars (((name x) (span ((start 3) (stop 4)))))) (ann ())
+         (span ((start 3) (stop 4))))
+        ((vars (((name y) (span ((start 5) (stop 6)))))) (ann ())
+         (span ((start 5) (stop 6))))
+        ((vars (((name z) (span ((start 7) (stop 8)))))) (ann ())
+         (span ((start 7) (stop 8))))
+        ((vars (((name w) (span ((start 9) (stop 10)))))) (ann ())
+         (span ((start 9) (stop 10))))))
+      (ret_ty ())
+      (body
+       (Expr_block
+        (decls
+         ((Block_decl_let (var ((name w) (span ((start 18) (stop 19)))))
+           (ann ())
+           (rhs
+            (Expr_block
+             (decls
+              ((Block_decl_let (var ((name x) (span ((start 27) (stop 28)))))
+                (ann ())
+                (rhs (Expr_var ((name x) (span ((start 31) (stop 32))))))
+                (span ((start 25) (stop 32))))))
+             (ret (Expr_var ((name x) (span ((start 35) (stop 36))))))
+             (span ((start 22) (stop 39)))))
+           (span ((start 16) (stop 39))))))
+        (ret
+         (Expr_block (decls ())
+          (ret (Expr_var ((name w) (span ((start 44) (stop 45))))))
+          (span ((start 42) (stop 47)))))
+        (span ((start 13) (stop 49)))))
+      (span ((start 1) (stop 49)))))
     |}]
 ;;
 
-let%expect_test "function type param with non-variable name" =
-  (* Using a non-variable as the name should error *)
-  check {| Fun(123 Int) Int |};
+let%expect_test "base types" =
+  check
+    {|
+{
+  let x = ()
+  let y : Bool = #t
+  let z = #f
+  let another = first.T#first
+  ()
+}
+    |};
   [%expect
     {|
-    error[E0001]: Expected variable name
-     --> <input>:1:6
-      |
-    1 |  Fun(123 Int) Int
-      |      ^^^
+    ((Expr_block
+      (decls
+       ((Block_decl_let (var ((name x) (span ((start 6) (stop 7))))) (ann ())
+         (rhs (Expr_unit (span ((start 10) (stop 12)))))
+         (span ((start 4) (stop 12))))
+        (Block_decl_let (var ((name y) (span ((start 17) (stop 18)))))
+         (ann ((Expr_core_ty (ty Bool) (span ((start 21) (stop 22))))))
+         (rhs (Expr_bool (value true) (span ((start 25) (stop 26)))))
+         (span ((start 15) (stop 26))))
+        (Block_decl_let (var ((name z) (span ((start 31) (stop 32))))) (ann ())
+         (rhs (Expr_bool (value false) (span ((start 35) (stop 36)))))
+         (span ((start 29) (stop 36))))
+        (Block_decl_let (var ((name another) (span ((start 41) (stop 42)))))
+         (ann ())
+         (rhs
+          (Expr_proj
+           (mod_e (Expr_var ((name first) (span ((start 45) (stop 46))))))
+           (field T#first) (span ((start 45) (stop 48)))))
+         (span ((start 39) (stop 48))))))
+      (ret (Expr_unit (span ((start 51) (stop 53)))))
+      (span ((start 1) (stop 55)))))
     |}]
 ;;
 
-let%expect_test "function type param with extra tokens" =
-  check {| Fun(x Int Int) Int |};
+let%expect_test "modules" =
+  check
+    {|
+mod {
+  let first = {
+    let x = 1234
+    let y = 234
+    ()
+  }
+  
+  let second = 1324
+}
+    |};
   [%expect
     {|
-    error[E0001]: Unconsumed tokens in parameter
-     --> <input>:1:12
-      |
-    1 |  Fun(x Int Int) Int
-      |            ^^^
+    ((Expr_mod
+      (decls
+       (((var ((name first) (span ((start 8) (stop 9)))))
+         (e
+          (Expr_block
+           (decls
+            ((Block_decl_let (var ((name x) (span ((start 17) (stop 18)))))
+              (ann ())
+              (rhs (Expr_number (value 1234) (span ((start 21) (stop 22)))))
+              (span ((start 15) (stop 22))))
+             (Block_decl_let (var ((name y) (span ((start 27) (stop 28)))))
+              (ann ())
+              (rhs (Expr_number (value 234) (span ((start 31) (stop 32)))))
+              (span ((start 25) (stop 32))))))
+           (ret (Expr_unit (span ((start 35) (stop 37)))))
+           (span ((start 12) (stop 40)))))
+         (span ((start 6) (stop 40))))
+        ((var ((name second) (span ((start 47) (stop 48)))))
+         (e (Expr_number (value 1324) (span ((start 51) (stop 52)))))
+         (span ((start 45) (stop 52))))))
+      (span ((start 1) (stop 54)))))
+    |}]
+;;
+
+let%expect_test "sig" =
+  check
+    {|
+sig {
+  let x : Bool
+  
+  let y : Bool
+}
+    |};
+  [%expect
+    {|
+    ((Expr_ty_mod
+      (ty_decls
+       (((var ((name x) (span ((start 8) (stop 9)))))
+         (ty (Expr_core_ty (ty Bool) (span ((start 12) (stop 13)))))
+         (span ((start 6) (stop 13))))
+        ((var ((name y) (span ((start 20) (stop 21)))))
+         (ty (Expr_core_ty (ty Bool) (span ((start 24) (stop 25)))))
+         (span ((start 18) (stop 25))))))
+      (span ((start 1) (stop 27)))))
     |}]
 ;;
 
 let%expect_test "function types" =
   check
     {|
-Fun(Int, Bool) Fun(Int) Int
-        |};
-  check
-    {|
-Funct(Int, Int, Bool) Funct(Int) Int
-        |};
-  [%expect
-    {|
-    (Expr_ty_fun
-     ((params
-       (((var ((id 0) (name _) (pos (3))))
-         (ty (Expr_core_ty (ty Ty_int) (span ((start 3) (stop 4)))))
-         (span ((start 3) (stop 4))))
-        ((var ((id 0) (name _) (pos (6))))
-         (ty (Expr_core_ty (ty Ty_bool) (span ((start 6) (stop 7)))))
-         (span ((start 6) (stop 7))))))
-      (body_ty
-       (Expr_ty_fun
-        ((params
-          (((var ((id 0) (name _) (pos (11))))
-            (ty (Expr_core_ty (ty Ty_int) (span ((start 11) (stop 12)))))
-            (span ((start 11) (stop 12))))))
-         (body_ty (Expr_core_ty (ty Ty_int) (span ((start 14) (stop 15)))))
-         (purity Pure) (span ((start 9) (stop 15))))))
-      (purity Pure) (span ((start 1) (stop 15)))))
-    (Expr_ty_fun
-     ((params
-       (((var ((id 0) (name _) (pos (3))))
-         (ty (Expr_core_ty (ty Ty_int) (span ((start 3) (stop 4)))))
-         (span ((start 3) (stop 4))))
-        ((var ((id 0) (name _) (pos (6))))
-         (ty (Expr_core_ty (ty Ty_int) (span ((start 6) (stop 7)))))
-         (span ((start 6) (stop 7))))
-        ((var ((id 0) (name _) (pos (9))))
-         (ty (Expr_core_ty (ty Ty_bool) (span ((start 9) (stop 10)))))
-         (span ((start 9) (stop 10))))))
-      (body_ty
-       (Expr_ty_fun
-        ((params
-          (((var ((id 0) (name _) (pos (14))))
-            (ty (Expr_core_ty (ty Ty_int) (span ((start 14) (stop 15)))))
-            (span ((start 14) (stop 15))))))
-         (body_ty (Expr_core_ty (ty Ty_int) (span ((start 17) (stop 18)))))
-         (purity Impure) (span ((start 12) (stop 18))))))
-      (purity Impure) (span ((start 1) (stop 18)))))
-    |}];
-  check
-    {|
-Fun(Int, Bool) -
-      |};
-  [%expect
-    {|
-    error[E0001]: expected atom expression
-     --> <input>:2:16
-      |
-    2 | Fun(Int, Bool) -
-      |                ^
-    |}]
-;;
-
-let%expect_test "function expressions" =
-  check
-    {|
-fun(x Int, y Int, z Int) {
-  x
-}
-|};
-  [%expect
-    {|
-    (Expr_abs
-     (params
-      (((var ((id 0) (name x) (pos (3))))
-        (ty (Expr_core_ty (ty Ty_int) (span ((start 5) (stop 6)))))
-        (span ((start 3) (stop 6))))
-       ((var ((id 0) (name y) (pos (8))))
-        (ty (Expr_core_ty (ty Ty_int) (span ((start 10) (stop 11)))))
-        (span ((start 8) (stop 11))))
-       ((var ((id 0) (name z) (pos (13))))
-        (ty (Expr_core_ty (ty Ty_int) (span ((start 15) (stop 16)))))
-        (span ((start 13) (stop 16))))))
-     (body
-      (Expr_var (var (Var ((id 0) (name x) (pos (21)))))
-       (span ((start 21) (stop 22)))))
-     (purity Pure) (span ((start 1) (stop 22))))
-    |}]
-;;
-
-let%expect_test "function expression with return type annotation" =
-  check
-    {|
-fun(x Int) Int {
-  x
-}
-|};
-  [%expect
-    {|
-    (Expr_abs
-     (params
-      (((var ((id 0) (name x) (pos (3))))
-        (ty (Expr_core_ty (ty Ty_int) (span ((start 5) (stop 6)))))
-        (span ((start 3) (stop 6))))))
-     (body
-      (Expr_seal
-       (e
-        (Expr_var (var (Var ((id 0) (name x) (pos (13)))))
-         (span ((start 13) (stop 14)))))
-       (ty (Expr_core_ty (ty Ty_int) (span ((start 8) (stop 9)))))
-       (span ((start 13) (stop 14)))))
-     (purity Pure) (span ((start 1) (stop 14))))
-    |}]
-;;
-
-let%expect_test "impure function expression" =
-  check
-    {|
-funct(x Int) {
-  x
-}
-|};
-  [%expect
-    {|
-    (Expr_abs
-     (params
-      (((var ((id 0) (name x) (pos (3))))
-        (ty (Expr_core_ty (ty Ty_int) (span ((start 5) (stop 6)))))
-        (span ((start 3) (stop 6))))))
-     (body
-      (Expr_var (var (Var ((id 0) (name x) (pos (11)))))
-       (span ((start 11) (stop 12)))))
-     (purity Impure) (span ((start 1) (stop 12))))
-    |}]
-;;
-
-let%expect_test "function expression in let binding" =
-  check
-    {|
-mod {
-  let add fun(x Int, y Int) {
-    x
-  }
-}
-|};
-  [%expect
-    {|
-    (Expr_mod (var ((id 0) (pos (1))))
-     (decls
-      (((let_pos 6) (field add) (field_pos 8)
-        (e
-         (Expr_abs
-          (params
-           (((var ((id 0) (name x) (pos (12))))
-             (ty (Expr_core_ty (ty Ty_int) (span ((start 14) (stop 15)))))
-             (span ((start 12) (stop 15))))
-            ((var ((id 0) (name y) (pos (17))))
-             (ty (Expr_core_ty (ty Ty_int) (span ((start 19) (stop 20)))))
-             (span ((start 17) (stop 20))))))
-          (body
-           (Expr_var (var (Var ((id 0) (name x) (pos (25)))))
-            (span ((start 25) (stop 26)))))
-          (purity Pure) (span ((start 10) (stop 26)))))
-        (span ((start 6) (stop 26))))))
-     (span ((start 1) (stop 26))))
-    |}]
-;;
-
-let%expect_test "variable expressions" =
-  check {| foo |};
-  [%expect
-    {|
-    (Expr_var (var (Var ((id 0) (name foo) (pos (1)))))
-     (span ((start 1) (stop 2))))
-    |}];
-  check {| (foo) |};
-  [%expect
-    {|
-    (Expr_var (var (Var ((id 0) (name foo) (pos (2)))))
-     (span ((start 2) (stop 3))))
-    |}]
-;;
-
-let%expect_test "function expression missing params" =
-  check
-    {|
-fun {
-  x
-}
-|};
-  [%expect
-    {|
-    error[E0001]: expected atom expression
-     --> <input>:3:4
-      |
-    3 |   x
-      |    ^...
-    |}]
-;;
-
-let%expect_test "function expression missing body" =
-  check {| fun(x Int) |};
-  [%expect
-    {|
-    error[E0001]: Expected block after fun parameters
-     --> <input>:1:2
-      |
-    1 |  fun(x Int)
-      |  ^^^
-    |}]
-;;
-
-let%expect_test "function expression param missing type" =
-  check
-    {|
-fun(x) {
-  x
-}
-|};
-  [%expect
-    {|
-    error[E0001]: expected atom expression
-     --> <input>:2:6
-      |
-    2 | fun(x) {
-      |      ^
-    |}]
-;;
-
-let%expect_test "function expression param missing name" =
-  check
-    {|
-fun(Int) {
-  x
-}
-|};
-  [%expect
-    {|
-    error[E0001]: expected atom expression
-     --> <input>:2:8
-      |
-    2 | fun(Int) {
-      |        ^
-    |}]
-;;
-
-let%expect_test "function expression param with extra tokens" =
-  check
-    {|
-fun(x Int Int) {
-  x
-}
-|};
-  [%expect
-    {|
-    error[E0001]: Unconsumed tokens in parameter
-     --> <input>:2:11
-      |
-    2 | fun(x Int Int) {
-      |           ^^^
-    |}]
-;;
-
-let%expect_test "signatures" =
-  check
-    {|
-sig {
-  let hello Int
-  let another Bool
-  let T Type
-  let unit Unit
-  let wow Sig
-  let wow Kind
-}
+Fun (a : Bool) (x y z: Bool) Bool -> x
     |};
   [%expect
     {|
-    (Expr_ty_mod
-     ((var ((id 0) (pos (1))))
-      (ty_decls
-       (((field hello) (field_pos 8)
-         (ty (Expr_core_ty (ty Ty_int) (span ((start 10) (stop 11)))))
-         (span ((start 6) (stop 11))))
-        ((field another) (field_pos 16)
-         (ty (Expr_core_ty (ty Ty_bool) (span ((start 18) (stop 19)))))
-         (span ((start 14) (stop 19))))
-        ((field T) (field_pos 24)
-         (ty (Expr_universe (univ Type) (span ((start 26) (stop 27)))))
-         (span ((start 22) (stop 27))))
-        ((field unit) (field_pos 32)
-         (ty (Expr_core_ty (ty Ty_unit) (span ((start 34) (stop 35)))))
-         (span ((start 30) (stop 35))))
-        ((field wow) (field_pos 40)
-         (ty (Expr_universe (univ Sig) (span ((start 42) (stop 43)))))
-         (span ((start 38) (stop 43))))
-        ((field wow) (field_pos 48)
-         (ty (Expr_universe (univ Kind) (span ((start 50) (stop 51)))))
-         (span ((start 46) (stop 51))))))
-      (span ((start 1) (stop 51)))))
+    ((Expr_ty_fun
+      (param_tys
+       (((vars (((name a) (span ((start 4) (stop 5))))))
+         (ty (Expr_core_ty (ty Bool) (span ((start 8) (stop 9)))))
+         (span ((start 4) (stop 9))))
+        ((vars
+          (((name x) (span ((start 12) (stop 13))))
+           ((name y) (span ((start 14) (stop 15))))
+           ((name z) (span ((start 16) (stop 17))))))
+         (ty (Expr_core_ty (ty Bool) (span ((start 19) (stop 20)))))
+         (span ((start 12) (stop 20))))
+        ((vars ()) (ty (Expr_core_ty (ty Bool) (span ((start 22) (stop 23)))))
+         (span ((start 22) (stop 23))))))
+      (body_ty (Expr_var ((name x) (span ((start 26) (stop 27))))))
+      (span ((start 1) (stop 27)))))
     |}]
 ;;
 
-let%expect_test "signature missing block" =
-  check {| sig |};
-  [%expect
-    {|
-    error[E0001]: Expected block after sig
-     --> <input>:1:2
-      |
-    1 |  sig
-      |  ^^^
-    |}]
-;;
-
-let%expect_test "signature with extra tokens" =
+let%expect_test "paren exprs" =
   check
     {|
-sig foo {
-  let x Int
-}
-|};
+    {
+  let awe = fun x -> (x.y.z.w)
+  ()
+    }
+    |};
   [%expect
     {|
-    error[E0001]: Expected block after sig
-     --> <input>:2:1
-      |
-    2 | sig foo {
-      | ^^^
-    |}]
-;;
-
-let%expect_test "signature decl missing field name" =
-  check
-    {|
-sig {
-  let Int
-}
-|};
-  [%expect
-    {|
-    error[E0001]: expected atom expression
-     --> <input>:3:10
-      |
-    3 |   let Int
-      |          ^...
-    |}]
-;;
-
-let%expect_test "signature decl with extra tokens" =
-  check
-    {|
-sig {
-  let x Int Int
-}
-|};
-  [%expect
-    {|
-    error[E0001]: Unconsumed tokens in type declaration
-     --> <input>:3:13
-      |
-    3 |   let x Int Int
-      |             ^^^
-    |}]
-;;
-
-let%expect_test "empty signature" =
-  check
-    {|
-sig {
-}
-|};
-  [%expect
-    {|
-    (Expr_ty_mod
-     ((var ((id 0) (pos (1)))) (ty_decls ()) (span ((start 1) (stop 4)))))
+    ((Expr_block
+      (decls
+       ((Block_decl_let (var ((name awe) (span ((start 7) (stop 8))))) (ann ())
+         (rhs
+          (Expr_abs
+           (params
+            (((vars (((name x) (span ((start 13) (stop 14)))))) (ann ())
+              (span ((start 13) (stop 14))))))
+           (ret_ty ())
+           (body
+            (Expr_proj
+             (mod_e
+              (Expr_proj
+               (mod_e
+                (Expr_proj
+                 (mod_e (Expr_var ((name x) (span ((start 18) (stop 19))))))
+                 (field y) (span ((start 18) (stop 21)))))
+               (field z) (span ((start 18) (stop 23)))))
+             (field w) (span ((start 18) (stop 25)))))
+           (span ((start 11) (stop 25)))))
+         (span ((start 5) (stop 25))))))
+      (ret (Expr_unit (span ((start 29) (stop 31)))))
+      (span ((start 2) (stop 34)))))
     |}]
 ;;
 
 let%expect_test "function application" =
   check
     {|
-hello(1234, 1234, hello(1234, 1233, 4))
+      {
+        let app = fun f x y z -> (f w z).x.y.w x (a b c) z
+        ()
+      }
     |};
   [%expect
     {|
-    (Expr_app
-     (func
-      (Expr_var (var (Var ((id 0) (name hello) (pos (1)))))
-       (span ((start 1) (stop 2)))))
-     (args
-      ((Expr_int (value 1234) (span ((start 3) (stop 4))))
-       (Expr_int (value 1234) (span ((start 6) (stop 7))))
-       (Expr_app
-        (func
-         (Expr_var (var (Var ((id 0) (name hello) (pos (9)))))
-          (span ((start 9) (stop 10)))))
-        (args
-         ((Expr_int (value 1234) (span ((start 11) (stop 12))))
-          (Expr_int (value 1233) (span ((start 14) (stop 15))))
-          (Expr_int (value 4) (span ((start 17) (stop 18))))))
-        (span ((start 9) (stop 19))))))
-     (span ((start 1) (stop 20))))
+    ((Expr_block
+      (decls
+       ((Block_decl_let (var ((name app) (span ((start 7) (stop 8))))) (ann ())
+         (rhs
+          (Expr_abs
+           (params
+            (((vars (((name f) (span ((start 13) (stop 14)))))) (ann ())
+              (span ((start 13) (stop 14))))
+             ((vars (((name x) (span ((start 15) (stop 16)))))) (ann ())
+              (span ((start 15) (stop 16))))
+             ((vars (((name y) (span ((start 17) (stop 18)))))) (ann ())
+              (span ((start 17) (stop 18))))
+             ((vars (((name z) (span ((start 19) (stop 20)))))) (ann ())
+              (span ((start 19) (stop 20))))))
+           (ret_ty ())
+           (body
+            (Expr_app
+             (func
+              (Expr_proj
+               (mod_e
+                (Expr_proj
+                 (mod_e
+                  (Expr_proj
+                   (mod_e
+                    (Expr_app
+                     (func (Expr_var ((name f) (span ((start 24) (stop 25))))))
+                     (args
+                      ((Expr_var ((name w) (span ((start 26) (stop 27)))))
+                       (Expr_var ((name z) (span ((start 28) (stop 29)))))))
+                     (span ((start 24) (stop 29)))))
+                   (field x) (span ((start 24) (stop 32)))))
+                 (field y) (span ((start 24) (stop 34)))))
+               (field w) (span ((start 24) (stop 36)))))
+             (args
+              ((Expr_var ((name x) (span ((start 37) (stop 38)))))
+               (Expr_app
+                (func (Expr_var ((name a) (span ((start 40) (stop 41))))))
+                (args
+                 ((Expr_var ((name b) (span ((start 42) (stop 43)))))
+                  (Expr_var ((name c) (span ((start 44) (stop 45)))))))
+                (span ((start 40) (stop 45))))
+               (Expr_var ((name z) (span ((start 47) (stop 48)))))))
+             (span ((start 24) (stop 48)))))
+           (span ((start 11) (stop 48)))))
+         (span ((start 5) (stop 48))))))
+      (ret (Expr_unit (span ((start 51) (stop 53)))))
+      (span ((start 2) (stop 56)))))
     |}]
 ;;
 
-let%expect_test "function application with single argument" =
-  check {| f(x) |};
-  [%expect
-    {|
-    (Expr_app
-     (func
-      (Expr_var (var (Var ((id 0) (name f) (pos (1)))))
-       (span ((start 1) (stop 2)))))
-     (args
-      ((Expr_var (var (Var ((id 0) (name x) (pos (3)))))
-        (span ((start 3) (stop 4))))))
-     (span ((start 1) (stop 5))))
-    |}]
-;;
-
-let%expect_test "function application with no arguments" =
-  check {| f() |};
-  [%expect
-    {|
-    (Expr_app
-     (func
-      (Expr_var (var (Var ((id 0) (name f) (pos (1)))))
-       (span ((start 1) (stop 2)))))
-     (args ()) (span ((start 1) (stop 4))))
-    |}]
-;;
-
-let%expect_test "chained function applications" =
-  check {| f(x)(y)(z) |};
-  [%expect
-    {|
-    (Expr_app
-     (func
-      (Expr_app
-       (func
-        (Expr_app
-         (func
-          (Expr_var (var (Var ((id 0) (name f) (pos (1)))))
-           (span ((start 1) (stop 2)))))
-         (args
-          ((Expr_var (var (Var ((id 0) (name x) (pos (3)))))
-            (span ((start 3) (stop 4))))))
-         (span ((start 1) (stop 5)))))
-       (args
-        ((Expr_var (var (Var ((id 0) (name y) (pos (6)))))
-          (span ((start 6) (stop 7))))))
-       (span ((start 1) (stop 8)))))
-     (args
-      ((Expr_var (var (Var ((id 0) (name z) (pos (9)))))
-        (span ((start 9) (stop 10))))))
-     (span ((start 1) (stop 11))))
-    |}]
-;;
-
-let%expect_test "application in type position - module" =
+let%expect_test "awefaewf" =
   check
     {|
-mod {
-  let x Option(Int)
+{
+  let testing = fun x -> {
+    bind awef = (pack x)
+    pack awef
+  }
+  testing
 }
-|};
+  |};
   [%expect
     {|
-    (Expr_mod (var ((id 0) (pos (1))))
-     (decls
-      (((let_pos 6) (field x) (field_pos 8)
-        (e
-         (Expr_app
-          (func
-           (Expr_var (var (Var ((id 0) (name Option) (pos (10)))))
-            (span ((start 10) (stop 11)))))
-          (args ((Expr_core_ty (ty Ty_int) (span ((start 12) (stop 13))))))
-          (span ((start 10) (stop 14)))))
-        (span ((start 6) (stop 14))))))
-     (span ((start 1) (stop 14))))
+    ((Expr_block
+      (decls
+       ((Block_decl_let (var ((name testing) (span ((start 6) (stop 7)))))
+         (ann ())
+         (rhs
+          (Expr_abs
+           (params
+            (((vars (((name x) (span ((start 12) (stop 13)))))) (ann ())
+              (span ((start 12) (stop 13))))))
+           (ret_ty ())
+           (body
+            (Expr_block
+             (decls
+              ((Block_decl_bind (var ((name awef) (span ((start 21) (stop 22)))))
+                (rhs
+                 (Expr_pack
+                  (e (Expr_var ((name x) (span ((start 28) (stop 29))))))
+                  (span ((start 26) (stop 29)))))
+                (span ((start 19) (stop 29))))))
+             (ret
+              (Expr_pack
+               (e (Expr_var ((name awef) (span ((start 35) (stop 36))))))
+               (span ((start 33) (stop 36)))))
+             (span ((start 16) (stop 39)))))
+           (span ((start 10) (stop 39)))))
+         (span ((start 4) (stop 39))))))
+      (ret (Expr_var ((name testing) (span ((start 42) (stop 43))))))
+      (span ((start 1) (stop 45)))))
     |}]
 ;;
 
-let%expect_test "application in function type return" =
-  check
-    {|
-Fun(Int) List(Bool)
-|};
+let%expect_test "error: empty input" =
+  check {||};
   [%expect
     {|
-    (Expr_ty_fun
-     ((params
-       (((var ((id 0) (name _) (pos (3))))
-         (ty (Expr_core_ty (ty Ty_int) (span ((start 3) (stop 4)))))
-         (span ((start 3) (stop 4))))))
-      (body_ty
-       (Expr_app
-        (func
-         (Expr_var (var (Var ((id 0) (name List) (pos (6)))))
-          (span ((start 6) (stop 7)))))
-        (args ((Expr_core_ty (ty Ty_bool) (span ((start 8) (stop 9))))))
-        (span ((start 6) (stop 10)))))
-      (purity Pure) (span ((start 1) (stop 10)))))
+    error[E0001]: Empty root
+     --> <input>:1:1
+      |
+    1 |
+      | ^
     |}]
 ;;
 
-let%expect_test "nested applications in type" =
-  check
-    {|
-Fun(Option(List(Int))) Result(Option(Bool), String)
-|};
+let%expect_test "error: fun missing arrow" =
+  check {|fun x y z|};
   [%expect
     {|
-    (Expr_ty_fun
-     ((params
-       (((var ((id 0) (name Option) (pos (3))))
-         (ty
-          (Expr_app
-           (func
-            (Expr_var (var (Var ((id 0) (name List) (pos (5)))))
-             (span ((start 5) (stop 6)))))
-           (args ((Expr_core_ty (ty Ty_int) (span ((start 7) (stop 8))))))
-           (span ((start 5) (stop 9)))))
-         (span ((start 3) (stop 9))))))
-      (body_ty
-       (Expr_app
-        (func
-         (Expr_var (var (Var ((id 0) (name Result) (pos (12)))))
-          (span ((start 12) (stop 13)))))
-        (args
-         ((Expr_app
-           (func
-            (Expr_var (var (Var ((id 0) (name Option) (pos (14)))))
-             (span ((start 14) (stop 15)))))
-           (args ((Expr_core_ty (ty Ty_bool) (span ((start 16) (stop 17))))))
-           (span ((start 14) (stop 18))))
-          (Expr_var (var (Var ((id 0) (name String) (pos (20)))))
-           (span ((start 20) (stop 21))))))
-        (span ((start 12) (stop 22)))))
-      (purity Pure) (span ((start 1) (stop 22)))))
+    error[E0001]: Expected arrow
+     --> <input>:1:10
+      |
+    1 | fun x y z
+      |          ^
     |}]
 ;;
 
-let%expect_test "application with complex expressions as arguments" =
-  check
-    {|
-f(fun(x Int) { x }, g(y), z)
-|};
+let%expect_test "error: fun missing body" =
+  check {|fun x ->|};
   [%expect
     {|
-    (Expr_app
-     (func
-      (Expr_var (var (Var ((id 0) (name f) (pos (1)))))
-       (span ((start 1) (stop 2)))))
-     (args
-      ((Expr_abs
-        (params
-         (((var ((id 0) (name x) (pos (5))))
-           (ty (Expr_core_ty (ty Ty_int) (span ((start 7) (stop 8)))))
-           (span ((start 5) (stop 8))))))
-        (body
-         (Expr_var (var (Var ((id 0) (name x) (pos (12)))))
-          (span ((start 12) (stop 13)))))
-        (purity Pure) (span ((start 3) (stop 13))))
-       (Expr_app
-        (func
-         (Expr_var (var (Var ((id 0) (name g) (pos (17)))))
-          (span ((start 17) (stop 18)))))
-        (args
-         ((Expr_var (var (Var ((id 0) (name y) (pos (19)))))
-           (span ((start 19) (stop 20))))))
-        (span ((start 17) (stop 21))))
-       (Expr_var (var (Var ((id 0) (name z) (pos (23)))))
-        (span ((start 23) (stop 24))))))
-     (span ((start 1) (stop 25))))
+    error[E0001]: Invalid expression
+     --> <input>:1:9
+      |
+    1 | fun x ->
+      |         ^
     |}]
 ;;
 
-let%expect_test "application in signature type" =
-  check
-    {|
-sig {
-  let x List(Int)
-}
-|};
+let%expect_test "error: fun missing params" =
+  check {|fun -> x|};
   [%expect
     {|
-    (Expr_ty_mod
-     ((var ((id 0) (pos (1))))
-      (ty_decls
-       (((field x) (field_pos 8)
-         (ty
-          (Expr_app
-           (func
-            (Expr_var (var (Var ((id 0) (name List) (pos (10)))))
-             (span ((start 10) (stop 11)))))
-           (args ((Expr_core_ty (ty Ty_int) (span ((start 12) (stop 13))))))
-           (span ((start 10) (stop 14)))))
-         (span ((start 6) (stop 14))))))
-      (span ((start 1) (stop 14)))))
-    |}]
-;;
-
-let%expect_test "application with mismatched delimiter" =
-  check {| f(x, y] |};
-  [%expect
-    {|
-    error[E0001]: mismatching delimiters
+    error[E0001]: Expected a function parameter
      --> <input>:1:8
       |
-    1 |  f(x, y]
+    1 | fun -> x
       |        ^
-    note: opening delimiter here
-     --> <input>:1:3
-      |
-    1 |  f(x, y]
-      |   ^
     |}]
 ;;
 
-let%expect_test "function without closing paren" =
-  check {|f(x, y|};
+let%expect_test "error: mod missing brace" =
+  check {|mod x|};
   [%expect
     {|
-    error[E0001]: expecting delimiter
+    error[E0001]: Expected {
+     --> <input>:1:6
+      |
+    1 | mod x
+      |      ^
+    |}]
+;;
+
+let%expect_test "error: sig missing brace" =
+  check {|sig x|};
+  [%expect
+    {|
+    error[E0001]: Expected {
+     --> <input>:1:6
+      |
+    1 | sig x
+      |      ^
+    |}]
+;;
+
+let%expect_test "error: Fun missing arrow" =
+  check {|Fun Bool Bool|};
+  [%expect
+    {|
+    error[E0001]: Expected arrow
+     --> <input>:1:14
+      |
+    1 | Fun Bool Bool
+      |              ^
+    |}]
+;;
+
+let%expect_test "error: empty block" =
+  check {|{}|};
+  [%expect
+    {|
+    error[E0001]: Empty block
+     --> <input>:1:1
+      |
+    1 | {}
+      | ^
+    |}]
+;;
+
+let%expect_test "single-group block treats let as variable" =
+  (* When a block has only one group, it's parsed as a return expression,
+     so `let` is treated as a regular variable name, not a keyword *)
+  check {|{ let x y }|};
+  [%expect
+    {|
+    ((Expr_block (decls ())
+      (ret
+       (Expr_app (func (Expr_var ((name let) (span ((start 2) (stop 3))))))
+        (args
+         ((Expr_var ((name x) (span ((start 4) (stop 5)))))
+          (Expr_var ((name y) (span ((start 6) (stop 7)))))))
+        (span ((start 2) (stop 7)))))
+      (span ((start 0) (stop 9)))))
+    |}]
+;;
+
+let%expect_test "error: let missing rhs" =
+  check {|{ let x = }|};
+  [%expect
+    {|
+    error[E0001]: Unconsumed tokens when parsing expression
+     --> <input>:1:9
+      |
+    1 | { let x = }
+      |         ^
+    |}]
+;;
+
+let%expect_test "top-level application" =
+  check {|x y z|};
+  [%expect
+    {|
+    ((Expr_app (func (Expr_var ((name x) (span ((start 0) (stop 1))))))
+      (args
+       ((Expr_var ((name y) (span ((start 2) (stop 3)))))
+        (Expr_var ((name z) (span ((start 4) (stop 5)))))))
+      (span ((start 0) (stop 5)))))
+    |}]
+;;
+
+let%expect_test "error: mod bad decl" =
+  check {|mod { x }|};
+  [%expect
+    {|
+    error[E0001]: Expected module declaration
      --> <input>:1:7
       |
-    1 | f(x, y
+    1 | mod { x }
       |       ^
     |}]
-;; *)
+;;
+
+let%expect_test "error: sig missing type" =
+  check {|sig { let x }|};
+  [%expect
+    {|
+    error[E0001]: Expected :
+     --> <input>:1:12
+      |
+    1 | sig { let x }
+      |            ^
+    |}]
+;;
+
+let%expect_test "single variable" =
+  check {|x|};
+  [%expect {| ((Expr_var ((name x) (span ((start 0) (stop 1)))))) |}]
+;;
+
+let%expect_test "nested application" =
+  check {|(f x) y|};
+  [%expect
+    {|
+    ((Expr_app
+      (func
+       (Expr_app (func (Expr_var ((name f) (span ((start 1) (stop 2))))))
+        (args ((Expr_var ((name x) (span ((start 3) (stop 4)))))))
+        (span ((start 1) (stop 4)))))
+      (args ((Expr_var ((name y) (span ((start 6) (stop 7)))))))
+      (span ((start 1) (stop 7)))))
+    |}]
+;;
+
+let%expect_test "chained projections" =
+  check {|a.b.c.d|};
+  [%expect
+    {|
+    ((Expr_proj
+      (mod_e
+       (Expr_proj
+        (mod_e
+         (Expr_proj (mod_e (Expr_var ((name a) (span ((start 0) (stop 1))))))
+          (field b) (span ((start 0) (stop 3)))))
+        (field c) (span ((start 0) (stop 5)))))
+      (field d) (span ((start 0) (stop 7)))))
+    |}]
+;;
+
+let%expect_test "nested Fun" =
+  check {|Fun Bool -> Fun Bool -> Bool|};
+  [%expect
+    {|
+    ((Expr_ty_fun
+      (param_tys
+       (((vars ()) (ty (Expr_core_ty (ty Bool) (span ((start 2) (stop 3)))))
+         (span ((start 2) (stop 3))))))
+      (body_ty
+       (Expr_ty_fun
+        (param_tys
+         (((vars ()) (ty (Expr_core_ty (ty Bool) (span ((start 8) (stop 9)))))
+           (span ((start 8) (stop 9))))))
+        (body_ty (Expr_core_ty (ty Bool) (span ((start 12) (stop 13)))))
+        (span ((start 6) (stop 13)))))
+      (span ((start 0) (stop 13)))))
+    |}]
+;;
+
+let%expect_test "fun with annotated return and body" =
+  check {|fun (x : Bool) : Bool -> x|};
+  [%expect
+    {|
+    ((Expr_abs
+      (params
+       (((vars (((name x) (span ((start 3) (stop 4))))))
+         (ann ((Expr_core_ty (ty Bool) (span ((start 7) (stop 8))))))
+         (span ((start 3) (stop 6))))))
+      (ret_ty ((Expr_core_ty (ty Bool) (span ((start 12) (stop 13))))))
+      (body (Expr_var ((name x) (span ((start 16) (stop 17))))))
+      (span ((start 0) (stop 17)))))
+    |}]
+;;
+
+let%expect_test "error: block without return expression" =
+  (* The last group in a block is treated as the return expression.
+     When it starts with `let`, parsing fails because `let` falls through
+     to application and `=` is unconsumed. *)
+  check
+    {|
+{
+  let x = #t
+  let y = #f
+}
+    |};
+  [%expect
+    {|
+    error[E0001]: Unconsumed tokens when parsing expression
+     --> <input>:4:9
+      |
+    4 |   let y = #f
+      |         ^
+    |}]
+;;
+
+let%expect_test "let with annotation" =
+  check
+    {|
+{
+  let x : Bool = #t
+  x
+}
+    |};
+  [%expect
+    {|
+    ((Expr_block
+      (decls
+       ((Block_decl_let (var ((name x) (span ((start 6) (stop 7)))))
+         (ann ((Expr_core_ty (ty Bool) (span ((start 10) (stop 11))))))
+         (rhs (Expr_bool (value true) (span ((start 14) (stop 15)))))
+         (span ((start 4) (stop 15))))))
+      (ret (Expr_var ((name x) (span ((start 18) (stop 19))))))
+      (span ((start 1) (stop 21)))))
+    |}]
+;;
+
+let%expect_test "application of block" =
+  check
+    {|
+f { let x = #t
+    x }
+    |};
+  [%expect
+    {|
+    ((Expr_app (func (Expr_var ((name f) (span ((start 1) (stop 2))))))
+      (args
+       ((Expr_block
+         (decls
+          ((Block_decl_let (var ((name x) (span ((start 7) (stop 8))))) (ann ())
+            (rhs (Expr_bool (value true) (span ((start 11) (stop 12)))))
+            (span ((start 5) (stop 12))))))
+         (ret (Expr_var ((name x) (span ((start 15) (stop 16))))))
+         (span ((start 3) (stop 18))))))
+      (span ((start 1) (stop 18)))))
+    |}]
+;;
+
+let%expect_test "pack in application" =
+  check {|(pack x) y|};
+  [%expect
+    {|
+    ((Expr_app
+      (func
+       (Expr_pack (e (Expr_var ((name x) (span ((start 3) (stop 4))))))
+        (span ((start 1) (stop 4)))))
+      (args ((Expr_var ((name y) (span ((start 6) (stop 7)))))))
+      (span ((start 1) (stop 7)))))
+    |}]
+;;
+
+let%expect_test "pack low precedence" =
+  check
+    {|
+    pack x y z
+    |};
+  [%expect
+    {|
+    ((Expr_pack
+      (e
+       (Expr_app (func (Expr_var ((name x) (span ((start 4) (stop 5))))))
+        (args
+         ((Expr_var ((name y) (span ((start 6) (stop 7)))))
+          (Expr_var ((name z) (span ((start 8) (stop 9)))))))
+        (span ((start 4) (stop 9)))))
+      (span ((start 2) (stop 9)))))
+    |}]
+;;
