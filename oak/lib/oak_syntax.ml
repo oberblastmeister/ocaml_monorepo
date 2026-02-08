@@ -7,27 +7,8 @@ end
 
 module Core_ty = Common.Core_ty
 module Universe = Common.Universe
-
-module Level = struct
-  type t = { level : int } [@@unboxed] [@@deriving sexp_of, equal, compare]
-
-  let of_int level =
-    assert (level >= 0);
-    { level }
-  ;;
-end
-
-module Index = struct
-  type t = { index : int } [@@unboxed] [@@deriving sexp_of, equal, compare]
-
-  let of_int index =
-    assert (index >= 0);
-    { index }
-  ;;
-
-  let to_level context_size { index } = Level.of_int (context_size - index - 1)
-  let of_level context_size { Level.level } = of_int (context_size - level - 1)
-end
+module Index = Common.Index
+module Level = Common.Level
 
 let index = Index.of_int
 let level = Level.of_int
@@ -147,7 +128,7 @@ type expr =
       }
   | Expr_abs of
       { var : Var_info.t
-      ; param_ty : expr
+      ; param_ty : expr option
       ; body : expr
       ; span : Span.t
       }
@@ -213,6 +194,7 @@ type expr =
       ; body : expr
       ; span : Span.t
       }
+  | Expr_error of { span : Span.t }
 
 and expr_decl =
   { var : Var_info.t
@@ -258,13 +240,9 @@ and term =
       { identity : term
       ; ty : term
       }
-  | Term_sing_wrap of
-      { identity : term
-      ; e : term
-      }
-    (* Used for subtyping coercions. See sub and eval functions. *)
-  | Term_weaken of term
-  | Term_sing_unwrap of
+  | Term_sing_in of term
+  | Term_weaken of term (* Used for subtyping coercions. See sub and eval functions. *)
+  | Term_sing_out of
       { identity : term
       ; e : term
       }
@@ -300,6 +278,7 @@ and term_field =
 
 and term_ty_mod = { ty_decls : term_ty_decl list }
 
+(* The var represents both the field name and the binder name *)
 and term_ty_decl =
   { var : Var_info.t
   ; ty : term_ty
@@ -316,10 +295,7 @@ type value =
   | Value_ignore
   | Value_mod of value_mod
   | Value_abs of value_abs
-  | Value_sing_wrap of
-      { identity : value
-      ; e : value
-      }
+  | Value_sing_in of value
   | Value_core_ty of Core_ty.t
   | Value_neutral of neutral
   | Value_universe of Universe.t
@@ -330,26 +306,34 @@ type value =
 
 and ty = value
 
-and neutral =
-  | Neutral_var of Level.t
-  | Neutral_app of
-      { func : neutral
-      ; arg : value
-      }
-  | Neutral_proj of
-      { mod_e : neutral
-      ; field : string
+and elim =
+  | Elim_app of value
+  | Elim_proj of
+      { field : string
       ; field_index : int
       }
-    (*
-        We technically only need Value_sing_wrap, because we can always apply the extension rule for unwrap.
-        However, we keep it around because always applying this rule amounts to unfolding all types,
-        which is bad for error messages.
-      *)
-  | Neutral_sing_unwrap of
-      { identity : value
-      ; e : neutral
+  | Elim_out of { identity : value }
+
+(* It's elim without sing_out *)
+and uelim =
+  | Uelim_app of value
+  | Uelim_proj of
+      { field : string
+      ; field_index : int
       }
+
+and neutral =
+  { head : Level.t
+  ; spine : spine
+  }
+
+and uneutral =
+  { head : Level.t
+  ; spine : uspine
+  }
+
+and spine = elim Bwd.t
+and uspine = uelim Bwd.t
 
 (*
   These is an ordered tuple.
@@ -413,10 +397,7 @@ type uvalue =
   | Uvalue_ignore
   | Uvalue_mod of value_mod
   | Uvalue_abs of value_abs
-  | Uvalue_sing_wrap of
-      { identity : value
-      ; e : value
-      }
+  | Uvalue_sing_in of value
   | Uvalue_core_ty of Core_ty.t
   | Uvalue_neutral of uneutral
   | Uvalue_universe of Universe.t
@@ -424,25 +405,35 @@ type uvalue =
   | Uvalue_ty_mod of value_ty_mod_closure
   | Uvalue_ty_fun of value_ty_fun
   | Uvalue_ty_pack of ty
-
-(* It's neutral without sing_unwrap *)
-and uneutral =
-  | Uneutral_var of Level.t
-  | Uneutral_app of
-      { func : uneutral
-      ; arg : value
-      }
-  | Uneutral_proj of
-      { mod_e : uneutral
-      ; field : string
-      ; field_index : int
-      }
 [@@deriving sexp_of]
+
+module Expr = struct
+  let span = function
+    | Expr_error { span; _ }
+    | Expr_var { span; _ }
+    | Expr_ann { span; _ }
+    | Expr_app { span; _ }
+    | Expr_abs { span; _ }
+    | Expr_ty_fun { span; _ }
+    | Expr_proj { span; _ }
+    | Expr_mod { span; _ }
+    | Expr_ty_mod { span; _ }
+    | Expr_let { span; _ }
+    | Expr_ty_sing { span; _ }
+    | Expr_bool { span; _ }
+    | Expr_core_ty { span; _ }
+    | Expr_universe { span; _ }
+    | Expr_if { span; _ }
+    | Expr_ty_pack { span; _ }
+    | Expr_pack { span; _ }
+    | Expr_bind { span; _ } -> span
+  ;;
+end
 
 module Value = struct
   type t = value
 
-  let var v = Value_neutral (Neutral_var v)
+  let var v = Value_neutral { head = v; spine = Empty }
 end
 
 (* might want to change this to use random access lists, they allow pushing i values in O(log(n)) and indexing in O(log(n)) *)
@@ -477,14 +468,20 @@ module Neutral = struct
   type t = neutral
 end
 
+module Uelim = struct
+  type t = uelim
+
+  let to_elim = function
+    | Uelim_app v -> Elim_app v
+    | Uelim_proj { field; field_index } -> Elim_proj { field; field_index }
+  ;;
+end
+
 module Uneutral = struct
   type t = uneutral
 
-  let rec to_neutral = function
-    | Uneutral_var var -> Neutral_var var
-    | Uneutral_app { func; arg } -> Neutral_app { func = to_neutral func; arg }
-    | Uneutral_proj { mod_e; field; field_index } ->
-      Neutral_proj { mod_e = to_neutral mod_e; field; field_index }
+  let rec to_neutral ({ head; spine } : t) =
+    { head; spine = Bwd.map ~f:Uelim.to_elim spine }
   ;;
 end
 
@@ -517,7 +514,7 @@ module Uvalue = struct
   ;;
 
   let var_val_exn = function
-    | Uvalue_neutral (Uneutral_var var) -> var
+    | Uvalue_neutral { head = var; spine = Empty } -> var
     | _ -> failwith "not a neutral var"
   ;;
 
@@ -535,7 +532,7 @@ module Uvalue = struct
     | Uvalue_ignore -> Value_ignore
     | Uvalue_mod v -> Value_mod v
     | Uvalue_abs v -> Value_abs v
-    | Uvalue_sing_wrap { identity; e } -> Value_sing_wrap { identity; e }
+    | Uvalue_sing_in e -> Value_sing_in e
     | Uvalue_core_ty ty -> Value_core_ty ty
     | Uvalue_neutral n -> Value_neutral (Uneutral.to_neutral n)
     | Uvalue_universe u -> Value_universe u

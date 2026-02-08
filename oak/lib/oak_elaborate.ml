@@ -1,208 +1,11 @@
-(*
-  Todo, only have Var_info for bound variables and not free variables.
-*)
 open Prelude
 open Oak_syntax
+open Oak_evaluate
 
 exception Error of Error.t
 
 let fail e = raise_notrace (Error e)
 let fail_s s = fail (Error.t_of_sexp s)
-
-(* This evaluates only terms that have identity, so all terms that have type in universe at least Kind.
-   This means it ignores all runtime terms.
-*)
-let rec eval (env : Env.t) (term : term) : value =
-  match term with
-  | Term_var var -> Env.find_exn env var
-  | Term_app { func; arg } ->
-    let func = eval env func in
-    let arg = eval env arg in
-    app_value func arg
-  | Term_abs { var; body } -> Value_abs { var; body = { env; body } }
-  | Term_ty_fun { var; param_ty; body_ty } ->
-    let param_ty = eval env param_ty in
-    Value_ty_fun { var; param_ty; body_ty = { env; body = body_ty } }
-  | Term_proj { mod_e; field; field_index } ->
-    let mod_e = eval env mod_e in
-    proj_value mod_e field field_index
-  | Term_mod { fields } ->
-    let fields =
-      List.map fields ~f:(fun { name; e } -> ({ name; e = eval env e } : value_field))
-    in
-    Value_mod { fields }
-  | Term_ty_mod { ty_decls } -> Value_ty_mod { env; ty_decls }
-  | Term_let { var = _; rhs; body } ->
-    let rhs = eval env rhs in
-    eval (Env.push rhs env) body
-  | Term_ty_sing { identity; ty } ->
-    let identity = eval env identity in
-    let ty = eval env ty in
-    Value_ty_sing { identity; ty }
-  | Term_ty_pack ty ->
-    let ty = eval env ty in
-    Value_ty_pack ty
-  | Term_universe universe -> Value_universe universe
-  | Term_core_ty ty -> Value_core_ty ty
-  | Term_sing_wrap { identity; e } ->
-    let identity = eval env identity in
-    let e = eval env e in
-    Value_sing_wrap { identity; e }
-  | Term_sing_unwrap { identity; e } ->
-    let identity = eval env identity in
-    let e = eval env e in
-    unwrap_value identity e
-  | Term_weaken term -> eval (Env.pop_exn env) term
-  | Term_pack _ | Term_bind _ | Term_ignore | Term_if _ | Term_bool _ -> Value_ignore
-
-and unwrap_value identity e =
-  begin match e with
-  | Value_ignore -> identity
-  | Value_sing_wrap { identity = _; e = e' } -> e'
-  | Value_neutral e -> Value_neutral (Neutral_sing_unwrap { identity; e })
-  | _ -> assert false
-  end
-
-and app_value func arg =
-  begin match func with
-  | Value_ignore -> Value_ignore
-  | Value_abs func -> app_abs func arg
-  | Value_neutral func -> Value_neutral (Neutral_app { func; arg })
-  | _ -> assert false
-  end
-
-and proj_value mod_e field field_index =
-  begin match mod_e with
-  | Value_ignore -> Value_ignore
-  | Value_mod mod_e -> proj_mod mod_e field_index
-  | Value_neutral mod_e -> Value_neutral (Neutral_proj { mod_e; field; field_index })
-  | _ -> assert false
-  end
-
-and app_abs (abs : value_abs) arg = eval_closure1 abs.body arg
-
-and proj_mod (mod_e : value_mod) index =
-  let field = List.drop mod_e.fields index |> List.hd_exn in
-  field.e
-
-and eval_closure1 closure arg = eval (Env.push arg closure.env) closure.body
-
-and eval_ty_mod_closure e (ty : value_ty_mod_closure) field_index =
-  let ty_decl = List.drop ty.ty_decls field_index |> List.hd_exn in
-  let env =
-    List.take ty.ty_decls field_index
-    |> List.foldi ~init:ty.env ~f:(fun field_index env ty_decl ->
-      Env.push (proj_value e ty_decl.var.name field_index) env)
-  in
-  eval env ty_decl.ty
-;;
-
-(* Apply singleton extension rule to remove Neutral_sing_unwrap.*)
-let rec unfold (e : value) : uvalue =
-  match e with
-  | Value_ignore -> Uvalue_ignore
-  | Value_mod { fields } -> Uvalue_mod { fields }
-  | Value_abs abs -> Uvalue_abs abs
-  | Value_sing_wrap { identity; e } -> Uvalue_sing_wrap { identity; e }
-  | Value_core_ty ty -> Uvalue_core_ty ty
-  | Value_neutral neutral -> unfold_neutral neutral
-  | Value_universe u -> Uvalue_universe u
-  | Value_ty_sing sing -> Uvalue_ty_sing sing
-  | Value_ty_mod ty_mod -> Uvalue_ty_mod ty_mod
-  | Value_ty_fun ty_fun -> Uvalue_ty_fun ty_fun
-  | Value_ty_pack ty -> Uvalue_ty_pack ty
-
-and unfold_neutral (e : neutral) : uvalue =
-  match e with
-  | Neutral_var var -> Uvalue_neutral (Uneutral_var var)
-  | Neutral_app { func; arg } ->
-    let func = unfold_neutral func in
-    app_uvalue func arg
-  | Neutral_proj { mod_e; field; field_index } ->
-    let mod_e = unfold_neutral mod_e in
-    proj_uvalue mod_e field field_index
-  | Neutral_sing_unwrap { identity; e = _ } -> unfold identity
-
-and app_uvalue func arg =
-  begin match func with
-  | Uvalue_abs func -> unfold (app_abs func arg)
-  | Uvalue_neutral func -> Uvalue_neutral (Uneutral_app { func; arg })
-  | _ -> assert false
-  end
-
-and proj_uvalue mod_e field field_index =
-  begin match mod_e with
-  | Uvalue_mod mod_e -> unfold (proj_mod mod_e field_index)
-  | Uvalue_neutral mod_e -> Uvalue_neutral (Uneutral_proj { mod_e; field; field_index })
-  | _ -> assert false
-  end
-;;
-
-let next_var_of_size size = Value.var (Level.of_int size)
-let next_var_of_env env = next_var_of_size (Env.size env)
-
-let rec quote context_size (e : value) : term =
-  match e with
-  | Value_ignore -> Term_ignore
-  | Value_mod { fields } ->
-    let fields =
-      List.map fields ~f:(fun { name; e } ->
-        let e = quote context_size e in
-        ({ name; e } : term_field))
-    in
-    Term_mod { fields }
-  | Value_abs { var; body } ->
-    let body =
-      quote (context_size + 1) (eval_closure1 body (next_var_of_size context_size))
-    in
-    Term_abs { var; body }
-  | Value_sing_wrap { identity; e } ->
-    let identity = quote context_size identity in
-    let e = quote context_size e in
-    Term_sing_wrap { identity; e }
-  | Value_core_ty ty -> Term_core_ty ty
-  | Value_neutral neutral -> quote_neutral context_size neutral
-  | Value_universe universe -> Term_universe universe
-  | Value_ty_sing { identity; ty } ->
-    let identity = quote context_size identity in
-    let ty = quote context_size ty in
-    Term_ty_sing { identity; ty }
-  | Value_ty_fun { var; param_ty; body_ty } ->
-    let param_ty = quote context_size param_ty in
-    let body_ty =
-      quote (context_size + 1) (eval_closure1 body_ty (next_var_of_size context_size))
-    in
-    Term_ty_fun { var; param_ty; body_ty }
-  | Value_ty_mod ty ->
-    let _, ty_decls =
-      List.fold_map
-        ty.ty_decls
-        ~init:(context_size, ty.env)
-        ~f:(fun (context_size, closure_env) { var; ty } ->
-          let ty = quote context_size (eval closure_env ty) in
-          ( (context_size + 1, Env.push (next_var_of_size context_size) closure_env)
-          , ({ var; ty } : term_ty_decl) ))
-    in
-    Term_ty_mod { ty_decls }
-  | Value_ty_pack ty ->
-    let ty = quote context_size ty in
-    Term_ty_pack ty
-
-and quote_neutral context_size (e : neutral) : term =
-  match e with
-  | Neutral_var var -> Term_var (Index.of_level context_size var)
-  | Neutral_app { func; arg } ->
-    let func = quote_neutral context_size func in
-    let arg = quote context_size arg in
-    Term_app { func; arg }
-  | Neutral_proj { mod_e; field; field_index } ->
-    let mod_e = quote_neutral context_size mod_e in
-    Term_proj { mod_e; field; field_index }
-  | Neutral_sing_unwrap { identity; e } ->
-    let identity = quote context_size identity in
-    let e = quote_neutral context_size e in
-    Term_sing_unwrap { identity; e }
-;;
 
 module Context = struct
   type t =
@@ -217,7 +20,7 @@ module Context = struct
     { cx with
       value_env =
         Env.push
-          (Value_neutral (Neutral_var (Level.of_int (Env.size cx.value_env))))
+          (Value_neutral { head = Level.of_int (Env.size cx.value_env); spine = Empty })
           cx.value_env
     ; ty_env = Env.push ty cx.ty_env
     ; var_info = var :: cx.var_info
@@ -237,7 +40,27 @@ end
 
 (* precondition: the neutral must be well typed, but it *doesn't* have to be an element of some universe. *)
 let rec infer_neutral (ty_env : Env.t) (e : neutral) : value =
-  match e with
+  Bwd.fold_left
+    e.spine
+    ~init:(Bwd.Empty, Env.find_exn ty_env (Index.of_level (Env.size ty_env) e.head))
+    ~f:(fun (spine, ty) elim ->
+      let ty =
+        match elim with
+        | Elim_app arg ->
+          let func_ty = unfold ty |> Uvalue.ty_fun_val_exn in
+          eval_closure1 func_ty.body_ty arg
+        | Elim_proj { field = _; field_index } ->
+          let mod_ty = unfold ty |> Uvalue.ty_mod_val_exn in
+          eval_ty_mod_closure (Value_neutral { head = e.head; spine }) mod_ty field_index
+        | Elim_out { identity = _ } ->
+          let e_ty = unfold ty |> Uvalue.ty_sing_val_exn in
+          e_ty.ty
+      in
+      spine <: elim, ty)
+  |> snd
+;;
+
+(* match e with
   | Neutral_var var ->
     let index = Index.of_level (Env.size ty_env) var in
     let ty = Env.find_exn ty_env index in
@@ -248,20 +71,19 @@ let rec infer_neutral (ty_env : Env.t) (e : neutral) : value =
   | Neutral_proj { mod_e; field = _; field_index } ->
     let mod_ty = infer_neutral ty_env mod_e |> unfold |> Uvalue.ty_mod_val_exn in
     eval_ty_mod_closure (Value_neutral mod_e) mod_ty field_index
-  | Neutral_sing_unwrap { identity = _; e } ->
+  | Neutral_sing_out { identity = _; e } ->
     (*
       We ignore identity here instead of inferring from it because we can only reliably infer universes from values.
       It can also be faster to avoid infering the identity and infer the neutral instead.
       Imagine if the identity is a huge signature, while e is just a neutral, so it could be a variable.
     *)
     let e_ty = infer_neutral ty_env e |> unfold |> Uvalue.ty_sing_val_exn in
-    e_ty.ty
-;;
+    e_ty.ty *)
 
 (* precondition: e1 and e2 must have type ty. ty must be an element of some universe. *)
 let rec conv ty_env (e1 : value) (e2 : value) (ty : value) : unit =
   match unfold ty with
-  | Uvalue_ignore | Uvalue_mod _ | Uvalue_abs _ | Uvalue_sing_wrap _ ->
+  | Uvalue_ignore | Uvalue_mod _ | Uvalue_abs _ | Uvalue_sing_in _ ->
     raise_s [%message "Not a type" (ty : value)]
   (* These have kind Type, so can be ignored *)
   | Uvalue_ty_pack _ | Uvalue_core_ty _ -> ()
@@ -366,49 +188,53 @@ and conv_ty (ty_env : Env.t) (ty1 : ty) (ty2 : ty) : unit =
   Checks if e1 = e2. Returns the kind that they are equivalent at.
 *)
 and conv_neutral (ty_env : Env.t) (ty1 : uneutral) (ty2 : uneutral) : value =
-  match ty1, ty2 with
-  | Uneutral_var ty1, Uneutral_var ty2 ->
-    if not (Level.equal ty1 ty2)
-    then fail_s [%message "Variables were not equal" (ty1 : Level.t) (ty2 : Level.t)];
-    Env.find_exn ty_env (Index.of_level (Env.size ty_env) ty1)
-  | Uneutral_app ty1, Uneutral_app ty2 ->
-    (*
-      This case is why we return the kind that the two neutrals are equivalent at,
-      because we need the type of the two arguments to check them for equivalence, since they are values.
-    *)
-    let func_kind =
-      conv_neutral ty_env ty1.func ty2.func |> unfold |> Uvalue.ty_fun_val_exn
-    in
-    conv ty_env ty1.arg ty2.arg func_kind.param_ty;
-    eval_closure1 func_kind.body_ty ty1.arg
-  | Uneutral_proj ty1, Uneutral_proj ty2 ->
-    let kind =
-      conv_neutral ty_env ty1.mod_e ty2.mod_e |> unfold |> Uvalue.ty_mod_val_exn
-    in
-    (*
-      Must do this check after we check that the modules are equivalent.
-      Otherwise it would not make sense to compare the indices.
-    *)
-    if not (ty1.field_index = ty2.field_index)
-    then
+  if not (Level.equal ty1.head ty2.head)
+  then
+    fail_s [%message "Variables were not equal" (ty1.head : Level.t) (ty2.head : Level.t)];
+  let spine1 = Bwd.to_list ty1.spine in
+  let spine2 = Bwd.to_list ty2.spine in
+  let zipped_spines =
+    match List.zip spine1 spine2 with
+    | Unequal_lengths ->
       fail_s
         [%message
-          "Fields were not equal in a projection"
-            (ty1.field : string)
-            (ty2.field : string)];
-    eval_ty_mod_closure
-      (Value_neutral (Uneutral.to_neutral ty1.mod_e))
-      kind
-      ty1.field_index
-  | _ ->
-    fail_s [%message "Neutrals were not equivalent" (ty1 : uneutral) (ty2 : uneutral)]
+          "Spine lengths were different" (spine1 : uelim list) (spine2 : uelim list)]
+    | Ok t -> t
+  in
+  List.fold
+    zipped_spines
+    ~init:(Bwd.Empty, Env.find_exn ty_env (Index.of_level (Env.size ty_env) ty1.head))
+    ~f:(fun (spine, ty) (elim1, elim2) ->
+      let ty =
+        match elim1, elim2 with
+        | Uelim_app arg1, Uelim_app arg2 ->
+          let func_kind = unfold ty |> Uvalue.ty_fun_val_exn in
+          conv ty_env arg1 arg2 func_kind.param_ty;
+          eval_closure1 func_kind.body_ty arg1
+        | ( Uelim_proj { field = field1; field_index = field_index1; _ }
+          , Uelim_proj { field = field2; field_index = field_index2; _ } ) ->
+          let kind = unfold ty |> Uvalue.ty_mod_val_exn in
+          if not (field_index1 = field_index2)
+          then
+            fail_s
+              [%message
+                "Fields were not equal in a projection"
+                  (field1 : string)
+                  (field2 : string)];
+          eval_ty_mod_closure (Value_neutral { head = ty1.head; spine }) kind field_index1
+        | _ ->
+          fail_s
+            [%message "Neutrals were not equivalent" (ty1 : uneutral) (ty2 : uneutral)]
+      in
+      spine <: Uelim.to_elim elim1, ty)
+  |> snd
 ;;
 
 let rec coerce_singleton context_size (e : term) (ty : ty) : term * uvalue =
   match unfold ty with
   | Uvalue_ty_sing { identity; ty = kind } ->
     let identity = quote context_size identity in
-    coerce_singleton context_size (Term_sing_unwrap { identity; e }) kind
+    coerce_singleton context_size (Term_sing_out { identity; e }) kind
   | ty -> e, ty
 ;;
 
@@ -429,11 +255,7 @@ let rec sub cx (e : term) (ty1 : ty) (ty2 : ty) : term option =
     None
   | Uvalue_ty_sing ty1, Uvalue_ty_sing ty2 ->
     let e' =
-      sub
-        cx
-        (Term_sing_unwrap { identity = Context.quote cx ty1.identity; e })
-        ty1.ty
-        ty2.ty
+      sub cx (Term_sing_out { identity = Context.quote cx ty1.identity; e }) ty1.ty ty2.ty
     in
     begin match e' with
     | None ->
@@ -441,7 +263,7 @@ let rec sub cx (e : term) (ty1 : ty) (ty2 : ty) : term option =
       None
     | Some e' ->
       conv cx.ty_env (Context.eval cx e') ty2.identity ty2.ty;
-      Some (Term_sing_wrap { identity = e'; e = e' })
+      Some (Term_sing_in e')
     end
   | Uvalue_ty_sing _, _ ->
     let e, ty1 = coerce_singleton (Context.size cx) e ty1 in
@@ -449,7 +271,7 @@ let rec sub cx (e : term) (ty1 : ty) (ty2 : ty) : term option =
   | _, Uvalue_ty_sing ty2 ->
     let e = coerce cx e ty1 ty2.ty in
     conv cx.ty_env (Context.eval cx e) ty2.identity ty2.ty;
-    Some (Term_sing_wrap { identity = e; e })
+    Some (Term_sing_in e)
   | Uvalue_ty_fun ty1, Uvalue_ty_fun ty2 ->
     let var = ty2.var in
     let arg_var_value = Context.next_var cx in
@@ -529,7 +351,7 @@ and coerce cx e ty1 ty2 = sub cx e ty1 ty2 |> Option.value ~default:e
 let rec infer_value_universe (ty_env : Env.t) (e : value) : Universe.t =
   let panic () = raise_s [%message "value was not in a universe" (e : value)] in
   match e with
-  | Value_mod _ | Value_abs _ | Value_ignore | Value_sing_wrap _ -> panic ()
+  | Value_mod _ | Value_abs _ | Value_ignore | Value_sing_in _ -> panic ()
   | Value_core_ty _ | Value_ty_pack _ -> Universe.Type
   | Value_neutral neutral ->
     infer_neutral ty_env neutral |> unfold |> Uvalue.universe_val_exn
@@ -580,7 +402,7 @@ let rec infer_value_universe (ty_env : Env.t) (e : value) : Universe.t =
 *)
 let rec check_ty_ignorable (ty_env : Env.t) (ty : ty) : unit =
   match unfold ty with
-  | Uvalue_ignore | Uvalue_mod _ | Uvalue_abs _ | Uvalue_sing_wrap _ ->
+  | Uvalue_ignore | Uvalue_mod _ | Uvalue_abs _ | Uvalue_sing_in _ ->
     raise_s [%message "Not a type" (ty : value)]
   | Uvalue_ty_pack _ | Uvalue_core_ty _ | Uvalue_ty_sing _ -> ()
   | Uvalue_neutral neutral ->
@@ -612,6 +434,7 @@ let rec check_ty_ignorable (ty_env : Env.t) (ty : ty) : unit =
 (* TODO: these should not unwrap types with exn *)
 let rec infer (cx : Context.t) (e : expr) : term * ty =
   match e with
+  | Expr_error { span = _ } -> fail_s [%message "Cannot infer error term"]
   | Expr_var { var; span = _ } ->
     let ty = Context.var_ty cx var in
     (* TODO: cache the universe in the context *)
@@ -622,8 +445,7 @@ let rec infer (cx : Context.t) (e : expr) : term * ty =
       Term_var var, ty
     | _ ->
       let term_var = Term_var var in
-      ( Term_sing_wrap { identity = term_var; e = term_var }
-      , Value_ty_sing { identity = Context.eval cx term_var; ty } )
+      Term_sing_in term_var, Value_ty_sing { identity = Context.eval cx term_var; ty }
     end
   | Expr_ann { e; ty; span = _ } ->
     let ty, _ = check_universe cx ty in
@@ -634,7 +456,7 @@ let rec infer (cx : Context.t) (e : expr) : term * ty =
     let func_ty = unfold func_ty |> Uvalue.ty_fun_val_exn in
     let arg = check cx arg func_ty.param_ty in
     Term_app { func; arg }, eval_closure1 func_ty.body_ty (Context.eval cx arg)
-  | Expr_abs { var; param_ty; body; span = _ } ->
+  | Expr_abs { var; param_ty = Some param_ty; body; span = _ } ->
     let param_ty, _ = check_universe cx param_ty in
     let param_ty = Context.eval cx param_ty in
     let cx' = Context.bind var param_ty cx in
@@ -643,6 +465,8 @@ let rec infer (cx : Context.t) (e : expr) : term * ty =
       { env = cx.value_env; body = Context.quote cx' body_ty }
     in
     Term_abs { var; body }, Value_ty_fun { var; param_ty; body_ty }
+  | Expr_abs { var = _; param_ty = None; body = _; span = _ } ->
+    fail_s [%message "Cannot infer lambda without parameter type annotation"]
   | Expr_proj { mod_e; field; span = _ } ->
     let mod_e, mod_ty = infer cx mod_e in
     let mod_ty = unfold mod_ty |> Uvalue.ty_mod_val_exn in
@@ -742,8 +566,11 @@ let rec infer (cx : Context.t) (e : expr) : term * ty =
 and check (cx : Context.t) (e : expr) (ty : ty) : term =
   match e, unfold ty with
   | Expr_abs { var; param_ty; body; span = _ }, Uvalue_ty_fun ty ->
-    let param_ty, _ = check_universe cx param_ty in
-    conv_ty cx.ty_env (Context.eval cx param_ty) ty.param_ty;
+    (match param_ty with
+     | Some param_ty ->
+       let param_ty, _ = check_universe cx param_ty in
+       conv_ty cx.ty_env (Context.eval cx param_ty) ty.param_ty
+     | None -> ());
     let body =
       check
         (Context.bind var ty.param_ty cx)

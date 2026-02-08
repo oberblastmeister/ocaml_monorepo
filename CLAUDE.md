@@ -398,6 +398,35 @@ module Syntax = Shrubbery_syntax  (* Don't do this from other libraries *)
 
 This pattern ensures proper dependency tracking and avoids issues with module aliases.
 
+### Top-Level Convenience Functions via `let module`
+
+When a functor provides configurable behavior, expose a top-level convenience function that uses `let module` to instantiate it with default parameters:
+
+```ocaml
+module Make (Config : sig
+    val show_singletons : bool
+  end) =
+struct
+  let pp_value names value = ...
+end
+
+(* Top-level convenience function with default config *)
+let pp_value ?(show_singletons = false) names value =
+  let module P =
+    Make (struct
+      let show_singletons = show_singletons
+    end)
+  in
+  P.pp_value names value
+;;
+```
+
+Benefits:
+
+- Callers get a simple function with optional parameters instead of needing to instantiate a functor
+- The functor remains available for cases that need a fixed configuration
+- Default values are specified once at the call site
+
 ## Recent Work
 
 Based on git history, recent changes involve:

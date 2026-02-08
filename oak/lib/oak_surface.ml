@@ -9,11 +9,17 @@ module Core_ty = Common.Core_ty
 module Universe = Common.Universe
 
 module Var = struct
-  type t =
-    { name : string
-    ; span : Span.t
-    }
-  [@@deriving sexp_of]
+  module T = struct
+    type t =
+      { name : string
+      ; span : Span.t [@equal.ignore] [@compare.ignore] [@hash.ignore]
+      }
+    [@@deriving sexp_of, compare, equal, hash]
+  end
+
+  include T
+  include Comparable.Make_plain (T)
+  include Hashable.Make_plain (T)
 
   let create name span = { name; span }
 end

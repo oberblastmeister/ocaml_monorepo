@@ -4,7 +4,7 @@ type t =
   { start : int
   ; stop : int
   }
-[@@deriving sexp_of, equal, compare]
+[@@deriving sexp, equal, compare]
 
 let start { start; stop = _ } = start
 let stop { start = _; stop } = stop
