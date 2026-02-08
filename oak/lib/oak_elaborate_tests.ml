@@ -78,7 +78,6 @@ mod {
     ::
     sig { let first : Bool; let second : Type }
     |}];
-  (* TODO: fix this test *)
   check
     {|
   mod {
@@ -86,7 +85,24 @@ mod {
     let second = Bool
     let third = second
   }
-      |}
+      |};
+  [%expect
+    {|
+    (Term_let (var ((name first) (pos 9))) (rhs (Term_bool (value true)))
+     (body
+      (Term_let (var ((name second) (pos 19))) (rhs (Term_core_ty Bool))
+       (body
+        (Term_let (var ((name third) (pos 29)))
+         (rhs (Term_sing_in (Term_var ((index 0)))))
+         (body
+          (Term_mod
+           (fields
+            (((name first) (e (Term_var ((index 2)))))
+             ((name second) (e (Term_var ((index 1)))))
+             ((name third) (e (Term_var ((index 0))))))))))))))
+    ::
+    sig { let first : Bool; let second : Type; let third : =second }
+    |}]
 ;;
 
 let%expect_test "signatures" =
@@ -105,5 +121,20 @@ sig {
         ((var ((name second) (pos 18))) (ty (Term_core_ty Bool)))))))
     ::
     Kind
+    |}]
+;;
+
+let%expect_test "application" =
+  check
+    {|
+(fun (x : Bool) -> x) #t
+    |};
+  [%expect
+    {|
+    (Term_app
+     (func (Term_abs (var ((name x) (pos 5))) (body (Term_var ((index 0))))))
+     (arg (Term_bool (value true))))
+    ::
+    Bool
     |}]
 ;;

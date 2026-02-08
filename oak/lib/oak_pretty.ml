@@ -40,13 +40,13 @@ struct
 
   let rec pp_value (names : Name_list.t) (value : Syntax.value) =
     match value with
-    | Syntax.Value_ignore -> Doc.string "ignore"
-    | Syntax.Value_neutral neutral -> pp_neutral names neutral
-    | Syntax.Value_core_ty Bool -> Doc.string "Bool"
-    | Syntax.Value_universe Type -> Doc.string "Type"
-    | Syntax.Value_universe Kind -> Doc.string "Kind"
-    | Syntax.Value_universe Sig -> Doc.string "Sig"
-    | Syntax.Value_abs abs ->
+    | Value_ignore -> Doc.string "ignore"
+    | Value_neutral neutral -> pp_neutral names neutral
+    | Value_core_ty Bool -> Doc.string "Bool"
+    | Value_universe Type -> Doc.string "Type"
+    | Value_universe Kind -> Doc.string "Kind"
+    | Value_universe Sig -> Doc.string "Sig"
+    | Value_abs abs ->
       let params, names, body = collect_abs_params names [ abs.var.name ] abs in
       Doc.group
         (Doc.string "fun"
@@ -69,10 +69,10 @@ struct
                ^^ Doc.string "->"
                ^^ Doc.break1
                ^^ pp_value names' body_ty))
-    | Syntax.Value_ty_sing { identity; ty = _ } ->
+    | Value_ty_sing { identity; ty = _ } ->
       Doc.group (Doc.string "=" ^^ pp_atom names identity)
-    | Syntax.Value_sing_in e -> pp_value names e
-    | Syntax.Value_mod { fields } ->
+    | Value_sing_in e -> pp_value names e
+    | Value_mod { fields } ->
       let decls =
         List.map fields ~f:(fun ({ name; e } : Syntax.value_field) ->
           Doc.group
@@ -84,29 +84,30 @@ struct
              ^^ Doc.indent 2 (Doc.break1 ^^ pp_value names e)))
       in
       Doc.group (Doc.string "mod" ^^ Doc.space ^^ block decls)
-    | Syntax.Value_ty_mod ty_mod -> pp_ty_mod names ty_mod
-    | Syntax.Value_ty_pack ty ->
-      Doc.group (Doc.string "Pack" ^^ Doc.break1 ^^ pp_atom names ty)
+    | Value_ty_mod ty_mod -> pp_ty_mod names ty_mod
+    | Value_ty_pack ty -> Doc.group (Doc.string "Pack" ^^ Doc.break1 ^^ pp_atom names ty)
 
   and pp_ty_mod names (ty_mod : Syntax.value_ty_mod_closure) =
-    let decls, _ =
-      List.fold ty_mod.ty_decls ~init:([], ty_mod.env) ~f:(fun (acc, env) decl ->
-        let ty = Evaluate.eval env decl.ty in
-        let name = decl.var.name in
-        let doc =
-          Doc.group
-            (Doc.string "let"
-             ^^ Doc.space
-             ^^ Doc.string name
-             ^^ Doc.space
-             ^^ Doc.string ":"
-             ^^ Doc.indent 2 (Doc.break1 ^^ pp_value names ty))
-        in
-        let var = next_var_of_size (Name_list.size names) in
-        let env = Syntax.Env.push var env in
-        doc :: acc, env)
+    let _, decls =
+      List.fold_map
+        ty_mod.ty_decls
+        ~init:(names, ty_mod.env)
+        ~f:(fun (names, closure_env) decl ->
+          let ty = Evaluate.eval closure_env decl.ty in
+          let name = decl.var.name in
+          let doc =
+            Doc.group
+              (Doc.string "let"
+               ^^ Doc.space
+               ^^ Doc.string name
+               ^^ Doc.space
+               ^^ Doc.string ":"
+               ^^ Doc.indent 2 (Doc.break1 ^^ pp_value names ty))
+          in
+          ( ( Name_list.push name names
+            , Syntax.Env.push (next_var_of_size (Name_list.size names)) closure_env )
+          , doc ))
     in
-    let decls = List.rev decls in
     Doc.group (Doc.string "sig" ^^ Doc.space ^^ block decls)
 
   and collect_abs_params names acc_names ({ var; body } : Syntax.value_abs) =
