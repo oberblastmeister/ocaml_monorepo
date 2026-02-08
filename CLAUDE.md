@@ -398,6 +398,34 @@ module Syntax = Shrubbery_syntax  (* Don't do this from other libraries *)
 
 This pattern ensures proper dependency tracking and avoids issues with module aliases.
 
+### Destructive Module Aliases in `.mli` Files
+
+In `.mli` files, use destructive module aliases (`:=`) at the top of the file to shorten repeated references to other library modules:
+
+```ocaml
+(* Good: .mli with destructive aliases *)
+module Syntax := Oak_syntax
+module Context := Oak_context
+module Diagnostic := Oak_diagnostic
+
+val infer
+  :  Context.t
+  -> Syntax.expr
+  -> (Syntax.term * Syntax.value, Diagnostic.t) result
+
+(* Less preferred: fully qualified names everywhere *)
+val infer
+  :  Oak_context.t
+  -> Oak_syntax.expr
+  -> (Oak_syntax.term * Oak_syntax.value, Oak_diagnostic.t) result
+```
+
+Benefits:
+
+- More readable signatures with shorter names
+- Destructive aliases (`:=`) don't leak into the module's public interface
+- Consistent shorthand across the file
+
 ### Top-Level Convenience Functions via `let module`
 
 When a functor provides configurable behavior, expose a top-level convenience function that uses `let module` to instantiate it with default parameters:

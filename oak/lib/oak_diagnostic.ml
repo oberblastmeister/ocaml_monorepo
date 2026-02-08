@@ -37,6 +37,8 @@ module Part = struct
     ; snippet : Snippet.t option
     }
   [@@deriving sexp_of]
+
+  let create ?(kind = Kind.Error) ?snippet message = { kind; message; snippet }
 end
 
 module Code = struct
@@ -87,6 +89,12 @@ let pp ~files diagnostic =
 
 let print ?(width = 100) ?(color = true) ~files diagnostic =
   Pp.render_to_stdout ~color ~width (pp ~files diagnostic)
+;;
+
+let print_many ?width ?color ~files diagnostics =
+  List.iter diagnostics ~f:(fun diagnostic ->
+    print ?width ?color ~files diagnostic;
+    print_string "\n\n")
 ;;
 
 let%test_module "format" =

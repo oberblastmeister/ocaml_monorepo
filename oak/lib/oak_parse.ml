@@ -1,13 +1,17 @@
 open Prelude
-module Shrub = Shrubbery.Syntax
-module Token = Shrubbery.Token
-module Fail = Utility.Fail
-module Surface = Oak_surface
-module Span = Utility.Span
-module Spanned = Utility.Spanned
-module File_span = Utility.File_span
-module Diagnostic = Oak_diagnostic
-module Snippet = Utility.Diagnostic.Snippet
+
+open struct
+  module Source = Oak_source
+  module Shrub = Shrubbery.Syntax
+  module Token = Shrubbery.Token
+  module Fail = Utility.Fail
+  module Surface = Oak_surface
+  module Span = Utility.Span
+  module Spanned = Utility.Spanned
+  module File_span = Utility.File_span
+  module Diagnostic = Oak_diagnostic
+  module Snippet = Utility.Diagnostic.Snippet
+end
 
 module Error = struct
   type t = string Spanned.t [@@deriving sexp_of]
@@ -521,22 +525,26 @@ let parse_root st (root : Shrub.root) =
   | x -> [], Some x
 ;;
 
-let error_to_diagnostic ~file ~offsets (e : Error.t) : Diagnostic.t =
-  let start = offsets.(e.span.start) in
-  let stop = offsets.(e.span.stop) in
+let error_to_diagnostic (source : Source.t) (e : Error.t) : Diagnostic.t =
+  let start = source.token_offsets.(e.span.start) in
+  let stop = source.token_offsets.(e.span.stop) in
   { code = Some Parse_error
   ; parts =
       [ { kind = Error
         ; message = Doc.string e.value
-        ; snippet = Some { file; start; stop }
+        ; snippet = Some { file = source.filename; start; stop }
         }
       ]
   }
 ;;
 
-let shrub_error_to_diagnostic ~file (e : Shrubbery.Delimit.Error.t) : Diagnostic.t =
+let shrub_error_to_diagnostic (source : Source.t) (e : Shrubbery.Delimit.Error.t)
+  : Diagnostic.t
+  =
   (* shrub errors are byte positions *)
-  let to_snippet ({ start; stop } : Span.t) : File_span.t = { file; start; stop } in
+  let to_snippet ({ start; stop } : Span.t) : File_span.t =
+    { file = source.filename; start; stop }
+  in
   match e with
   | Mismatching_delimiters { ldelim; rdelim } ->
     { code = Some Parse_error
@@ -565,12 +573,13 @@ let shrub_error_to_diagnostic ~file (e : Shrubbery.Delimit.Error.t) : Diagnostic
 let parse ~file s =
   let tts, root, shrub_errors = Shrubbery.Parser.parse s in
   let tokens = Shrubbery.Token_tree.Root.to_list tts |> Array.of_list in
-  let offsets = Shrubbery.Token.calculate_offsets tokens in
+  let token_offsets = Shrubbery.Token.calculate_offsets tokens in
   let st = State.create tokens in
   let errors, expr = parse_root st root in
+  let source = { Source.content = s; filename = file; tts; tokens; token_offsets } in
   let diagnostics =
-    List.map shrub_errors ~f:(shrub_error_to_diagnostic ~file)
-    @ List.map errors ~f:(error_to_diagnostic ~file ~offsets)
+    List.map shrub_errors ~f:(shrub_error_to_diagnostic source)
+    @ List.map errors ~f:(error_to_diagnostic source)
   in
-  tts, diagnostics, expr
+  source, diagnostics, expr
 ;;

@@ -19,6 +19,8 @@ module Part : sig
     ; snippet : Snippet.t option
     }
   [@@deriving sexp_of]
+
+  val create : ?kind:Kind.t -> ?snippet:Snippet.t -> Doc.t -> t
 end
 
 module Code : sig
@@ -36,3 +38,4 @@ type t =
 
 val pp : files:Snippet.files -> t -> Doc.t
 val print : ?width:int -> ?color:bool -> files:Snippet.files -> t -> unit
+val print_many : ?width:int -> ?color:bool -> files:Snippet.files -> t list -> unit

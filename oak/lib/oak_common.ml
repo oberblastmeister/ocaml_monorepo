@@ -8,6 +8,16 @@ module Core_ty = struct
   type t = Bool [@@deriving sexp_of, equal, compare]
 end
 
+module Var_info = struct
+  type t =
+    { name : string
+    ; pos : int
+    }
+  [@@deriving sexp_of]
+
+  let generated = { name = "<generated>"; pos = 0 }
+end
+
 module Universe = struct
   module T = struct
     type t =
@@ -45,6 +55,8 @@ module Universe = struct
     | Kind -> "Kind"
     | Sig -> "Sig"
   ;;
+
+  let pp t = Doc.string (to_string t)
 end
 
 module Level = struct

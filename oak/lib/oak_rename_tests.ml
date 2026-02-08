@@ -1,27 +1,20 @@
 open Core
 module Snippet = Utility.Diagnostic.Snippet
+module Diagnostic = Oak_diagnostic
 
 let check s =
   let file = "<input>" in
-  let tts, parse_diagnostics, expr = Oak_parse.parse ~file s in
+  let source, parse_diagnostics, expr = Oak_parse.parse ~file s in
   let files = String.Map.of_alist_exn [ file, Snippet.File.create s ] in
   if not (List.is_empty parse_diagnostics)
-  then
-    List.iter parse_diagnostics ~f:(fun diagnostic ->
-      Oak_diagnostic.print ~color:false ~files diagnostic;
-      print_string "\n\n")
+  then Diagnostic.print_many ~files ~color:false parse_diagnostics
   else (
     match expr with
     | None -> print_string "no expression\n"
     | Some expr ->
-      let tokens = Shrubbery.Token_tree.Root.to_list tts |> Array.of_list in
-      let offsets = Shrubbery.Token.calculate_offsets tokens in
-      let diagnostics, result = Oak_rename.rename ~file ~offsets expr in
+      let diagnostics, result = Oak_rename.rename source expr in
       if not (List.is_empty diagnostics)
-      then
-        List.iter diagnostics ~f:(fun diagnostic ->
-          Oak_diagnostic.print ~color:false ~files diagnostic;
-          print_string "\n\n")
+      then Diagnostic.print_many ~files ~color:false diagnostics
       else print_s [%sexp (result : Oak_syntax.expr)])
 ;;
 

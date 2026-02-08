@@ -10,6 +10,7 @@ open struct
   module Var = Surface.Var
   module Diagnostic = Oak_diagnostic
   module Doc = Utility.Pp.Doc
+  module Source = Oak_source
 end
 
 module Error = struct
@@ -182,24 +183,22 @@ and rename_ty_decls st ty_decls =
     State.with_var st decl.var ~f:(fun () -> d :: rename_ty_decls st rest)
 ;;
 
-let error_to_diagnostic ~file ~offsets (e : Error.t) : Diagnostic.t =
-  let start = offsets.(e.span.start) in
-  let stop = offsets.(e.span.stop) in
+let error_to_diagnostic (source : Source.t) (e : Error.t) : Diagnostic.t =
+  let start = source.token_offsets.(e.span.start) in
+  let stop = source.token_offsets.(e.span.stop) in
   { code = None
   ; parts =
       [ { kind = Error
         ; message = Doc.string e.value
-        ; snippet = Some { file; start; stop }
+        ; snippet = Some { file = source.filename; start; stop }
         }
       ]
   }
 ;;
 
-let rename ~file ~offsets expr =
+let rename source expr =
   let st : State.t = { var_map = Var.Table.create (); errors = []; context_size = 0 } in
   let expr = rename_expr st expr in
-  let diagnostics =
-    List.rev st.errors |> List.map ~f:(error_to_diagnostic ~file ~offsets)
-  in
+  let diagnostics = List.rev st.errors |> List.map ~f:(error_to_diagnostic source) in
   diagnostics, expr
 ;;

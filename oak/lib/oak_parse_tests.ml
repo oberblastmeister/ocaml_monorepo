@@ -3,7 +3,7 @@ module Snippet = Utility.Diagnostic.Snippet
 
 let check s =
   let file = "<input>" in
-  let _tts, diagnostics, expr = Oak_parse.parse ~file s in
+  let _source, diagnostics, expr = Oak_parse.parse ~file s in
   let files = String.Map.of_alist_exn [ file, Snippet.File.create s ] in
   if not (List.is_empty diagnostics)
   then
