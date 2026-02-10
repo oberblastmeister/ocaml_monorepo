@@ -43,6 +43,7 @@ type ti =
   }
 [@@deriving sexp_of, equal, compare]
 
+val unindex : ti -> t
 val to_indexed : t list -> ti list
 val advance_line_col : t -> Line_col.t -> Line_col.t
 val calculate_offsets : t array -> int array

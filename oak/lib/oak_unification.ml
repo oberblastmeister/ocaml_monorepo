@@ -129,6 +129,15 @@ and conv_ty (cx : Context.t) (ty1 : ty) (ty2 : ty) : unit =
           , Context.bind ty_decl1.var ty1 cx ))
     in
     ()
+  | Uvalue_core_ty ty1, Uvalue_core_ty ty2 ->
+    if not (Core_ty.equal ty1 ty2)
+    then
+      raise_type_mismatch
+        (Diagnostic.Part.create
+           (Doc.string "Base types were not equal: "
+            ^^ Context.pp_value cx (Value_core_ty ty1)
+            ^^ Doc.string " != "
+            ^^ Context.pp_value cx (Value_core_ty ty2)))
   | Uvalue_neutral ty1, Uvalue_neutral ty2 ->
     (* ty1 and ty2 are elements of some universe, and the kind of a universe is at least Kind *)
     let _ = conv_neutral cx ty1 ty2 in

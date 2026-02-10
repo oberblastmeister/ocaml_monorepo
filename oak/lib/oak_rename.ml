@@ -99,7 +99,7 @@ let rec rename_expr st (expr : Surface.expr) : Syntax.expr =
     let e = rename_expr st e in
     Expr_ty_sing { e; span }
   | Surface.Expr_bool { value; span } -> Expr_bool { value; span }
-  | Surface.Expr_unit { span = _ } -> failwith "todo: Expr_unit"
+  | Surface.Expr_unit { span } -> Expr_unit { span }
   | Surface.Expr_number { value = _; span = _ } -> failwith "todo: Expr_number"
   | Surface.Expr_core_ty { ty; span } -> Expr_core_ty { ty; span }
   | Surface.Expr_universe { universe; span } -> Expr_universe { universe; span }
@@ -170,7 +170,14 @@ and rename_decls st decls =
   match decls with
   | [] -> []
   | (decl : Surface.decl) :: rest ->
-    let e = rename_expr st decl.e in
+    let e =
+      match decl.ann with
+      | Some ty ->
+        let ty = rename_expr st ty in
+        let rhs = rename_expr st decl.e in
+        Syntax.Expr_ann { e = rhs; ty; span = decl.span }
+      | None -> rename_expr st decl.e
+    in
     let d : Syntax.expr_decl = { var = var_info decl.var; e; span = decl.span } in
     State.with_var st decl.var ~f:(fun () -> d :: rename_decls st rest)
 

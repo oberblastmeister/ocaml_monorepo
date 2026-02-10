@@ -5,7 +5,17 @@ open struct
 end
 
 module Core_ty = struct
-  type t = Bool [@@deriving sexp_of, equal, compare]
+  type t =
+    | Bool
+    | Unit
+  [@@deriving sexp_of, equal, compare]
+
+  let to_string = function
+    | Bool -> "Bool"
+    | Unit -> "Unit"
+  ;;
+
+  let pp t = Doc.string (to_string t)
 end
 
 module Var_info = struct
@@ -49,6 +59,7 @@ module Universe = struct
   let lub u v = of_int_exn (Int.max (to_int u) (to_int v))
   let incr_exn u = of_int_exn (to_int u + 1)
   let decr_exn u = of_int_exn (to_int u - 1)
+  let decr u = of_int_exn (Int.max 0 (to_int u - 1))
 
   let to_string = function
     | Type -> "Type"

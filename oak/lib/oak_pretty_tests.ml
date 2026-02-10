@@ -218,7 +218,7 @@ let%test_module "pretty print" =
         Value_ty_sing { identity = Value_core_ty Bool; ty = Value_universe Type }
       in
       check v;
-      [%expect {| =Bool |}]
+      [%expect {| (= Bool) |}]
     ;;
 
     let%expect_test "singleton type (shown)" =
@@ -226,7 +226,7 @@ let%test_module "pretty print" =
         Value_ty_sing { identity = Value_core_ty Bool; ty = Value_universe Type }
       in
       check ~show_singletons:true v;
-      [%expect {| =Bool |}]
+      [%expect {| (= Bool) |}]
     ;;
 
     let%expect_test "multiple projections and applications" =

@@ -123,6 +123,7 @@ and block_decl =
 
 and decl =
   { var : Var.t
+  ; ann : expr option
   ; e : expr
   ; span : Span.t
   }

@@ -94,7 +94,7 @@ let print ?(width = 100) ?(color = true) ~files diagnostic =
 let print_many ?width ?color ~files diagnostics =
   List.iter diagnostics ~f:(fun diagnostic ->
     print ?width ?color ~files diagnostic;
-    print_string "\n\n")
+    print_endline "\n")
 ;;
 
 let%test_module "format" =

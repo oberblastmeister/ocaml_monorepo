@@ -35,14 +35,14 @@ let raise_type_not_ignorable e = raise_notrace (Type_not_ignorable e)
   So we can ignore an entire type at once.
   This corresponds to the sealed at judgement in https://www.cs.cmu.edu/~rwh/papers/multiphase/mlw.pdf
 *)
-let rec check_ty_ignorable (ty_env : Env.t) (ty : ty) : unit =
+let rec check_ty_ignorable (cx : Context.t) (ty : ty) : unit =
   match unfold ty with
   | Uvalue_ignore | Uvalue_mod _ | Uvalue_abs _ | Uvalue_sing_in _ ->
     raise_s [%message "Not a type" (ty : value)]
   | Uvalue_ty_pack _ | Uvalue_core_ty _ | Uvalue_ty_sing _ -> ()
   | Uvalue_neutral neutral ->
     let kind =
-      infer_neutral ty_env (Uneutral.to_neutral neutral)
+      infer_neutral cx.ty_env (Uneutral.to_neutral neutral)
       |> unfold
       |> Uvalue.universe_val_exn
     in
@@ -53,23 +53,26 @@ let rec check_ty_ignorable (ty_env : Env.t) (ty : ty) : unit =
            (Doc.string "Type was not ignorable: " ^^ Pretty.pp_value Name_list.empty ty))
   | Uvalue_ty_fun ty ->
     check_ty_ignorable
-      (Env.push ty.param_ty ty_env)
-      (eval_closure1 ty.body_ty (next_var_of_env ty_env))
+      (Context.bind ty.var ty.param_ty cx)
+      (eval_closure1 ty.body_ty (Context.next_var cx))
   | Uvalue_ty_mod ty ->
     let _ =
-      List.fold
-        ty.ty_decls
-        ~init:(ty_env, ty.env)
-        ~f:(fun (ty_env, closure_env) ty_decl ->
-          let ty = eval closure_env ty_decl.ty in
-          check_ty_ignorable ty_env ty;
-          Env.push ty ty_env, Env.push (next_var_of_env ty_env) closure_env)
+      List.fold ty.ty_decls ~init:(cx, ty.env) ~f:(fun (cx, closure_env) ty_decl ->
+        let ty = eval closure_env ty_decl.ty in
+        check_ty_ignorable cx ty;
+        Context.bind ty_decl.var ty cx, Env.push (Context.next_var cx) closure_env)
     in
     ()
   | _ ->
     raise_type_not_ignorable
       (Diagnostic.Part.create
          (Doc.string "Type was not ignorable: " ^^ Pretty.pp_value Name_list.empty ty))
+;;
+
+let check_type_ignorable cx ty =
+  match check_ty_ignorable cx ty with
+  | () -> Ok ()
+  | exception Type_not_ignorable part -> Error part
 ;;
 
 (* TODO: these should not unwrap types with exn *)
@@ -100,9 +103,23 @@ let rec infer (cx : Context.t) (e : expr) : term * ty =
     let ty, _ = check_universe cx ty in
     let ty = Context.eval cx ty in
     check cx e ty, ty
-  | Expr_app { func; arg; span = _ } ->
+  | Expr_app { func; arg; span } ->
     let func, func_ty = infer cx func in
-    let func_ty = unfold func_ty |> Uvalue.ty_fun_val_exn in
+    let func, func_ty = Unification.coerce_singleton (Context.size cx) func func_ty in
+    let func_ty =
+      match func_ty with
+      | Uvalue_ty_fun t -> t
+      | other ->
+        raise_error
+          { code = None
+          ; parts =
+              [ Diagnostic.Part.create
+                  ~snippet:(Context.snippet cx span)
+                  (Doc.string "Expected function type, got "
+                   ^^ Context.pp_value cx (Uvalue.to_value other))
+              ]
+          }
+    in
     let arg = check cx arg func_ty.param_ty in
     Term_app { func; arg }, eval_closure1 func_ty.body_ty (Context.eval cx arg)
   | Expr_abs { var; param_ty = Some param_ty; body; span = _ } ->
@@ -123,9 +140,23 @@ let rec infer (cx : Context.t) (e : expr) : term * ty =
               (Doc.string "Cannot infer lambda without parameter type annotation")
           ]
       }
-  | Expr_proj { mod_e; field; span = _ } ->
+  | Expr_proj { mod_e; field; span } ->
     let mod_e, mod_ty = infer cx mod_e in
-    let mod_ty = unfold mod_ty |> Uvalue.ty_mod_val_exn in
+    let mod_e, mod_ty = Unification.coerce_singleton (Context.size cx) mod_e mod_ty in
+    let mod_ty =
+      match mod_ty with
+      | Uvalue_ty_mod t -> t
+      | _ ->
+        raise_error
+          { code = None
+          ; parts =
+              [ Diagnostic.Part.create
+                  ~snippet:(Context.snippet cx span)
+                  (Doc.string "Expected mod type, got "
+                   ^^ Context.pp_value cx (Uvalue.to_value mod_ty))
+              ]
+          }
+    in
     let field_index, _ =
       List.findi_exn mod_ty.ty_decls ~f:(fun _ ty_decl ->
         String.equal ty_decl.var.name field)
@@ -161,8 +192,9 @@ let rec infer (cx : Context.t) (e : expr) : term * ty =
     let body_ty, universe2 =
       check_universe (Context.bind var (Context.eval cx param_ty) cx) body_ty
     in
-    ( Term_ty_fun { var; param_ty; body_ty }
-    , Value_universe (Universe.max universe1 universe2) )
+    let e = Term_ty_fun { var; param_ty; body_ty } in
+    let ty = Value_universe (Universe.max universe1 universe2) in
+    Term_sing_in e, Value_ty_sing { identity = Context.eval cx e; ty }
   | Expr_ty_mod { ty_decls; span = _ } ->
     let (_, universe), ty_decls =
       List.fold_map
@@ -173,32 +205,34 @@ let rec infer (cx : Context.t) (e : expr) : term * ty =
           ( (Context.bind var (Context.eval cx ty) cx, Universe.max universe universe')
           , ({ var; ty } : term_ty_decl) ))
     in
-    Term_ty_mod { ty_decls }, Value_universe universe
+    let e = Term_ty_mod { ty_decls } in
+    let ty = Value_universe universe in
+    Term_sing_in e, Value_ty_sing { identity = Context.eval cx e; ty }
   | Expr_let { var; rhs; body; span = _ } ->
     let rhs, rhs_ty = infer cx rhs in
     let cx' = Context.bind var rhs_ty cx in
     let body, body_ty = infer cx' body in
     ( Term_let { var; rhs; body }
     , eval (Env.push (Context.eval cx rhs) cx.value_env) (Context.quote cx' body_ty) )
-  | Expr_ty_sing { e; span } ->
+  | Expr_ty_sing { e; span = _ } ->
     let e, ty = infer cx e in
     let universe = infer_value_universe cx.ty_env ty in
     if Universe.equal universe Type
-    then
-      raise_error
-        { code = None
-        ; parts =
-            [ Diagnostic.Part.create
-                ~snippet:(Context.snippet cx span)
-                (Doc.string "Cannot form singletons with runtime terms")
-            ]
-        };
-    ( Term_ty_sing { identity = e; ty = Context.quote cx ty }
-    , Value_universe (Universe.decr_exn universe) )
+    then Context.quote cx ty, Value_universe universe
+    else
+      ( Term_ty_sing { identity = e; ty = Context.quote cx ty }
+      , Value_universe (Universe.decr_exn universe) )
   | Expr_bool { value; span = _ } -> Term_bool { value }, Value_core_ty Bool
-  | Expr_core_ty { ty; span = _ } -> Term_core_ty ty, Value_universe Type
+  | Expr_unit { span = _ } -> Term_unit, Value_core_ty Unit
+  | Expr_core_ty { ty; span = _ } ->
+    ( Term_sing_in (Term_core_ty ty)
+    , Value_ty_sing { identity = Value_core_ty ty; ty = Value_universe Type } )
   | Expr_universe { universe; span = _ } ->
-    Term_universe universe, Value_universe (Universe.incr_exn universe)
+    ( Term_sing_in (Term_universe universe)
+    , Value_ty_sing
+        { identity = Value_universe universe
+        ; ty = Value_universe (Universe.incr_exn universe)
+        } )
   | Expr_if { cond; body1; body2; span = _ } ->
     let body1_span = Expr.span body1 in
     let body2_span = Expr.span body2 in
@@ -248,7 +282,9 @@ let rec infer (cx : Context.t) (e : expr) : term * ty =
   | Expr_ty_pack { ty; span = _ } ->
     let ty, _ = check_universe cx ty in
     (* Packs always have kind Type, no matter the universe of the inner type *)
-    Term_ty_pack ty, Value_universe Type
+    let e = Term_ty_pack ty in
+    ( Term_sing_in e
+    , Value_ty_sing { identity = Context.eval cx e; ty = Value_universe Type } )
   | Expr_pack { e; span = _ } ->
     let e, ty = infer cx e in
     Term_pack e, Value_ty_pack ty
@@ -302,7 +338,19 @@ and check (cx : Context.t) (e : expr) (ty : ty) : term =
     let e = check cx e ty in
     Term_pack e
   | Expr_bind { var; rhs; body; span }, _ ->
-    check_ty_ignorable cx.ty_env ty;
+    (match check_type_ignorable cx ty with
+     | Ok () -> ()
+     | Error part ->
+       raise_error
+         { code = None
+         ; parts =
+             [ part
+             ; Diagnostic.Part.create
+                 ~kind:Note
+                 ~snippet:(Context.snippet cx span)
+                 (Doc.string "in bind expression")
+             ]
+         });
     let rhs, rhs_ty = infer cx rhs in
     let rhs_inner_ty =
       match unfold rhs_ty with
@@ -350,7 +398,7 @@ and check_universe (cx : Context.t) (ty_expr : expr) : term * Universe.t =
       ; parts =
           [ Diagnostic.Part.create
               ~snippet:(Context.snippet cx (Expr.span ty_expr))
-              (Doc.string "Kind was not a universe")
+              (Doc.string "Not a type")
           ]
       }
 ;;

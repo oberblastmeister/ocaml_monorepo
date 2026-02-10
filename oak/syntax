@@ -2,6 +2,13 @@ let first (x : int) (y : int) (z : int) = {
   x + y + z
 }
 
+mod {
+  alias first = int
+  
+  alias second = bool
+  
+  let first = first
+}
 fun draw_face (dc : draw.DC) (config : Map) = {
   let (draw.Size w h) = dc.size
   let s = math.max 10 ((math.min w h) - 20)
@@ -116,10 +123,31 @@ if first == second {
   print("another one")
 }
 
+let first = .{ first = 1324; second = 1324 }
+let third = .{ first = 1324; second = 234 }
+
+let another = list.T#cons x ys
+
 mod {
 
 let first = 123434
 
 let another = 1334
 
+}
+
+
+mod { 
+  alias first = 12342
+  alias second = 13244
+}
+
+sig {
+  let first := 1234234
+  
+  alias first : 12342134 = 12344
+  
+  alias second := 1324
+  
+  alias second : 234234 = 1324
 }

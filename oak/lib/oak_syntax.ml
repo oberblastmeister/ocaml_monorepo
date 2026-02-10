@@ -166,6 +166,7 @@ type expr =
       { value : bool
       ; span : Span.t
       }
+  | Expr_unit of { span : Span.t }
   | Expr_core_ty of
       { ty : Core_ty.t
       ; span : Span.t
@@ -255,11 +256,12 @@ and term =
       }
   | Term_universe of Universe.t
   | Term_core_ty of Core_ty.t
-    (*
+  (*
       This is not present in the surface language.
       We would need to use some quantitative type theory to handle this properly
       so we can ensure that it stays irrelevant.
     *)
+  | Term_unit
   | Term_ignore
     (* Cannot be written in the source syntax for now, can only be used in an irrelevant way *)
   | Term_bool of { value : bool }
@@ -426,6 +428,7 @@ module Expr = struct
     | Expr_if { span; _ }
     | Expr_ty_pack { span; _ }
     | Expr_pack { span; _ }
+    | Expr_unit { span; _ }
     | Expr_bind { span; _ } -> span
   ;;
 end
@@ -466,7 +469,6 @@ end
 
 module Neutral = struct
   type t = neutral
-  
 end
 
 module Uelim = struct
@@ -541,6 +543,11 @@ module Uvalue = struct
     | Uvalue_ty_mod v -> Value_ty_mod v
     | Uvalue_ty_fun v -> Value_ty_fun v
     | Uvalue_ty_pack ty -> Value_ty_pack ty
+  ;;
+
+  let is_ty_sing = function
+    | Uvalue_ty_sing _ -> true
+    | _ -> false
   ;;
 end
 

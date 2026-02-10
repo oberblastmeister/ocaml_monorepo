@@ -16,7 +16,7 @@ let check s =
 let%expect_test "simple function" =
   check
     {|
-fun x -> x
+fun x -> x : Fun (x : f Int) (g Bool) -> g Int
     |};
   [%expect
     {|
@@ -24,8 +24,33 @@ fun x -> x
       (params
        (((vars (((name x) (span ((start 3) (stop 4)))))) (ann ())
          (span ((start 3) (stop 4))))))
-      (ret_ty ()) (body (Expr_var ((name x) (span ((start 7) (stop 8))))))
-      (span ((start 1) (stop 8)))))
+      (ret_ty ())
+      (body
+       (Expr_ann (e (Expr_var ((name x) (span ((start 7) (stop 8))))))
+        (ty
+         (Expr_ty_fun
+          (param_tys
+           (((vars (((name x) (span ((start 14) (stop 15))))))
+             (ty
+              (Expr_app
+               (func (Expr_var ((name f) (span ((start 18) (stop 19))))))
+               (args ((Expr_var ((name Int) (span ((start 20) (stop 21)))))))
+               (span ((start 18) (stop 21)))))
+             (span ((start 14) (stop 21))))
+            ((vars ())
+             (ty
+              (Expr_app
+               (func (Expr_var ((name g) (span ((start 24) (stop 25))))))
+               (args ((Expr_core_ty (ty Bool) (span ((start 26) (stop 27))))))
+               (span ((start 24) (stop 27)))))
+             (span ((start 24) (stop 27))))))
+          (body_ty
+           (Expr_app (func (Expr_var ((name g) (span ((start 31) (stop 32))))))
+            (args ((Expr_var ((name Int) (span ((start 33) (stop 34)))))))
+            (span ((start 31) (stop 34)))))
+          (span ((start 11) (stop 34)))))
+        (span ((start 7) (stop 34)))))
+      (span ((start 1) (stop 34)))))
     |}];
   check
     {|
@@ -57,10 +82,10 @@ fun x y z -> x
            ((name w) (span ((start 7) (stop 8))))
            ((name a) (span ((start 9) (stop 10))))))
          (ann ((Expr_core_ty (ty Bool) (span ((start 13) (stop 14))))))
-         (span ((start 5) (stop 12))))
+         (span ((start 5) (stop 14))))
         ((vars (((name y) (span ((start 17) (stop 18))))))
          (ann ((Expr_core_ty (ty Bool) (span ((start 21) (stop 22))))))
-         (span ((start 17) (stop 20))))
+         (span ((start 17) (stop 22))))
         ((vars (((name z) (span ((start 24) (stop 25)))))) (ann ())
          (span ((start 24) (stop 25))))))
       (ret_ty ()) (body (Expr_var ((name x) (span ((start 28) (stop 29))))))
@@ -216,7 +241,7 @@ mod {
     {|
     ((Expr_mod
       (decls
-       (((var ((name first) (span ((start 8) (stop 9)))))
+       (((var ((name first) (span ((start 8) (stop 9))))) (ann ())
          (e
           (Expr_block
            (decls
@@ -231,7 +256,7 @@ mod {
            (ret (Expr_unit (span ((start 35) (stop 37)))))
            (span ((start 12) (stop 40)))))
          (span ((start 6) (stop 40))))
-        ((var ((name second) (span ((start 47) (stop 48)))))
+        ((var ((name second) (span ((start 47) (stop 48))))) (ann ())
          (e (Expr_number (value 1324) (span ((start 51) (stop 52)))))
          (span ((start 45) (stop 52))))))
       (span ((start 1) (stop 54)))))
@@ -454,7 +479,7 @@ let%expect_test "error: fun missing body" =
   check {|fun x ->|};
   [%expect
     {|
-    error[E0001]: Invalid expression
+    error[E0001]: Expected expression
      --> <input>:1:9
       |
     1 | fun x ->
@@ -648,7 +673,7 @@ let%expect_test "fun with annotated return and body" =
       (params
        (((vars (((name x) (span ((start 3) (stop 4))))))
          (ann ((Expr_core_ty (ty Bool) (span ((start 7) (stop 8))))))
-         (span ((start 3) (stop 6))))))
+         (span ((start 3) (stop 8))))))
       (ret_ty ((Expr_core_ty (ty Bool) (span ((start 12) (stop 13))))))
       (body (Expr_var ((name x) (span ((start 16) (stop 17))))))
       (span ((start 0) (stop 17)))))
@@ -738,13 +763,10 @@ let%expect_test "pack low precedence" =
     |};
   [%expect
     {|
-    ((Expr_pack
-      (e
-       (Expr_app (func (Expr_var ((name x) (span ((start 4) (stop 5))))))
-        (args
-         ((Expr_var ((name y) (span ((start 6) (stop 7)))))
-          (Expr_var ((name z) (span ((start 8) (stop 9)))))))
-        (span ((start 4) (stop 9)))))
-      (span ((start 2) (stop 9)))))
+    error[E0001]: Unconsumed tokens when parsing expression
+     --> <input>:2:12
+      |
+    2 |     pack x y z
+      |            ^
     |}]
 ;;

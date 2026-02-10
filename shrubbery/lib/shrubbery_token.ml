@@ -145,6 +145,7 @@ type ti =
   }
 [@@deriving equal, compare]
 
+let unindex = fun { token; _ } -> token
 let sexp_of_ti { token; index } = Sexp.List [ sexp_of_t token; Int.sexp_of_t index ]
 let to_indexed (ts : t list) = List.mapi ts ~f:(fun index token -> { token; index })
 

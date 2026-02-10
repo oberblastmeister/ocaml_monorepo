@@ -42,7 +42,7 @@ struct
     match value with
     | Value_ignore -> Doc.string "ignore"
     | Value_neutral neutral -> pp_neutral names neutral
-    | Value_core_ty Bool -> Doc.string "Bool"
+    | Value_core_ty ty -> Common.Core_ty.pp ty
     | Value_universe Type -> Doc.string "Type"
     | Value_universe Kind -> Doc.string "Kind"
     | Value_universe Sig -> Doc.string "Sig"
@@ -70,8 +70,9 @@ struct
                ^^ Doc.break1
                ^^ pp_value names' body_ty))
     | Value_ty_sing { identity; ty = _ } ->
-      Doc.group (Doc.string "=" ^^ pp_atom names identity)
-    | Value_sing_in e -> pp_value names e
+      Doc.group (parens (Doc.string "=" ^^ Doc.break1 ^^ pp_atom names identity))
+    | Value_sing_in e ->
+      Doc.group (Doc.string "in" ^^ Doc.indent 2 (Doc.break1 ^^ pp_atom names e))
     | Value_mod { fields } ->
       let decls =
         List.map fields ~f:(fun ({ name; e } : Syntax.value_field) ->
@@ -173,7 +174,10 @@ struct
     | Elim_app arg -> Doc.break1 ^^ pp_atom names arg
     | Elim_proj { field; field_index = _ } ->
       Doc.break0 ^^ Doc.char '.' ^^ Doc.string field
-    | Elim_out { identity = _ } -> Doc.break0 ^^ Doc.char '.' ^^ Doc.string "out"
+    | Elim_out { identity = _ } ->
+      if Config.show_singletons
+      then Doc.break0 ^^ Doc.char '.' ^^ Doc.string "out"
+      else Doc.empty
   ;;
 end
 

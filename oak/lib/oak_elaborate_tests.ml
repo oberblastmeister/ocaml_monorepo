@@ -1,32 +1,36 @@
 open Prelude
+module Syntax = Oak_syntax
 module Snippet = Utility.Diagnostic.Snippet
 module Pretty = Oak_pretty
 module Common = Oak_common
 module Diagnostic = Oak_diagnostic
 
-let check s =
+let check ?(print_term = false) s =
   let file = "<input>" in
   let source, parse_diagnostics, expr = Oak_parse.parse ~file s in
   let files = String.Map.of_alist_exn [ file, Snippet.File.create s ] in
   if not (List.is_empty parse_diagnostics)
   then Diagnostic.print_many ~files ~color:false parse_diagnostics
-  else (
+  else begin
     match expr with
     | None -> print_string "no expression\n"
     | Some expr ->
       let rename_diagnostics, renamed = Oak_rename.rename source expr in
       if not (List.is_empty rename_diagnostics)
-      then Diagnostic.print_many ~files ~color:false rename_diagnostics
-      else (
+      then begin
+        Diagnostic.print_many ~files ~color:false rename_diagnostics
+      end
+      else begin
         match Oak_elaborate.infer source renamed with
         | Ok (term, ty) ->
-          print_s [%sexp (term : Oak_syntax.term)];
-          print_string "::\n";
+          if print_term then print_s [%sexp (term : Syntax.term)];
           Pp.render_to_stdout ~color:false (Pretty.pp_value Common.Name_list.empty ty);
-          ()
+          Out_channel.newline stdout
         | Error diagnostic ->
           Diagnostic.print ~color:false ~files diagnostic;
-          Out_channel.newline stdout))
+          Out_channel.newline stdout
+      end
+  end
 ;;
 
 let%expect_test "smoke" =
@@ -41,6 +45,126 @@ fun x -> x
       |
     2 | fun x -> x
       | ^^^^^^^^^^
+    |}];
+  check
+    {|
+ fun (x : #t) -> x
+      |};
+  [%expect
+    {|
+    error: Not a type
+     --> <input>:2:11
+      |
+    2 |  fun (x : #t) -> x
+      |           ^^
+    |}];
+  check
+    {|
+{
+  let x = Bool
+  let y : x = #t
+  y
+}
+    |};
+  [%expect {| Bool |}];
+  check
+    {|
+mod {
+  let x = Bool
+  let y = {
+    let y : x = #t
+    y
+  }
+}
+      |};
+  [%expect {| sig { let x : (= Bool); let y : x.out } |}];
+  check
+    {|
+  mod {
+    let x = Type
+    let y = Type
+    let z = Type
+    let w = Kind
+  }
+      |};
+  [%expect
+    {| sig { let x : (= Type); let y : (= Type); let z : (= Type); let w : (= Kind) } |}];
+  check
+    {|
+      Sig
+      |};
+  [%expect
+    {|
+    error: Failed to find variable: Sig
+     --> <input>:2:7
+      |
+    2 |       Sig
+      |       ^^^
+    |}];
+  check
+    {|
+{
+  let r : Bool = {
+    bind x = pack #t
+    #t
+  }
+  r
+}
+
+      |};
+  check
+    {|
+  {
+    let x = Bool
+    #t : x
+  }
+      |};
+  [%expect
+    {|
+    Bool
+    Bool
+    |}];
+  check
+    {|
+{
+  let x = Bool
+  let f : Fun (= x) -> (= x) = fun x -> x
+  f Bool
+}
+      |};
+  [%expect {| (= Bool) |}];
+  check
+    {|
+mod {
+  let M1 = mod {
+    let T = Bool
+  }
+  
+  let M2 = M1
+  
+  let M3 : sig {
+    let T : Type
+  } = mod {
+    let T = Bool
+  }
+  
+  let T1 = M1.T
+  
+  let T2 = M2.T
+  
+  let T3 = M3.T
+}
+      |};
+  [%expect
+    {|
+    sig {
+      let M1 : sig { let T : (= Bool) }
+      let M2 : (= M1)
+      let M3 : sig { let T : Type }
+      let T1 : (= Bool)
+      let T2 : (= Bool)
+      let T3 : Type
+    }
     |}]
 ;;
 
@@ -49,12 +173,7 @@ let%expect_test "id" =
     {|
 fun (x : Bool) -> x
     |};
-  [%expect
-    {|
-    (Term_abs (var ((name x) (pos 4))) (body (Term_var ((index 0)))))
-    ::
-    Fun (x : Bool) -> Bool
-    |}]
+  [%expect {| Fun (x : Bool) -> Bool |}]
 ;;
 
 let%expect_test "modules" =
@@ -62,22 +181,13 @@ let%expect_test "modules" =
     {|
 mod {
   let first = #t
-  let second = Bool
+  let second : Type = Bool
+  let ty = Type
+  let b : ty = Bool
 }
     |};
   [%expect
-    {|
-    (Term_let (var ((name first) (pos 8))) (rhs (Term_bool (value true)))
-     (body
-      (Term_let (var ((name second) (pos 18))) (rhs (Term_core_ty Bool))
-       (body
-        (Term_mod
-         (fields
-          (((name first) (e (Term_var ((index 1)))))
-           ((name second) (e (Term_var ((index 0))))))))))))
-    ::
-    sig { let first : Bool; let second : Type }
-    |}];
+    {| sig { let first : Bool; let second : Type; let ty : (= Type); let b : ty.out } |}];
   check
     {|
   mod {
@@ -86,23 +196,7 @@ mod {
     let third = second
   }
       |};
-  [%expect
-    {|
-    (Term_let (var ((name first) (pos 9))) (rhs (Term_bool (value true)))
-     (body
-      (Term_let (var ((name second) (pos 19))) (rhs (Term_core_ty Bool))
-       (body
-        (Term_let (var ((name third) (pos 29)))
-         (rhs (Term_sing_in (Term_var ((index 0)))))
-         (body
-          (Term_mod
-           (fields
-            (((name first) (e (Term_var ((index 2)))))
-             ((name second) (e (Term_var ((index 1)))))
-             ((name third) (e (Term_var ((index 0))))))))))))))
-    ::
-    sig { let first : Bool; let second : Type; let third : =second }
-    |}]
+  [%expect {| sig { let first : Bool; let second : (= Bool); let third : (= Bool) } |}]
 ;;
 
 let%expect_test "signatures" =
@@ -113,15 +207,7 @@ sig {
   let second : Bool 
 }
     |};
-  [%expect
-    {|
-    (Term_ty_mod
-     ((ty_decls
-       (((var ((name first) (pos 8))) (ty (Term_core_ty Bool)))
-        ((var ((name second) (pos 18))) (ty (Term_core_ty Bool)))))))
-    ::
-    Kind
-    |}]
+  [%expect {| (= (sig { let first : Bool; let second : Bool })) |}]
 ;;
 
 let%expect_test "application" =
@@ -129,12 +215,5 @@ let%expect_test "application" =
     {|
 (fun (x : Bool) -> x) #t
     |};
-  [%expect
-    {|
-    (Term_app
-     (func (Term_abs (var ((name x) (pos 5))) (body (Term_var ((index 0))))))
-     (arg (Term_bool (value true))))
-    ::
-    Bool
-    |}]
+  [%expect {| Bool |}]
 ;;
