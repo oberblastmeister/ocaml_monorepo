@@ -44,7 +44,8 @@ let rec eval (env : Env.t) (term : term) : value =
     let e = eval env e in
     unwrap_value identity e
   | Term_weaken term -> eval (Env.pop_exn env) term
-  | Term_pack _ | Term_bind _ | Term_ignore | Term_if _ | Term_bool _ -> Value_ignore
+  | Term_unit | Term_pack _ | Term_bind _ | Term_ignore | Term_if _ | Term_bool _ ->
+    Value_ignore
 
 and unwrap_value identity e =
   begin match e with
@@ -182,10 +183,10 @@ let rec quote context_size (e : value) : term =
     Term_ty_pack ty
 
 and quote_neutral context_size (e : neutral) : term =
-  Bwd.fold_right
+  Bwd.fold_left
     e.spine
     ~init:(Term_var (Index.of_level context_size e.head))
-    ~f:(fun elim e ->
+    ~f:(fun e elim ->
       match elim with
       | Elim_proj { field; field_index } -> Term_proj { mod_e = e; field; field_index }
       | Elim_app arg ->

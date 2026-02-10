@@ -543,9 +543,9 @@ and parse_paren st (parens : Shrub.item_delim) : Surface.expr =
       items
       ~f:(fun h ->
         let _ = Items.next h items |> Match.equal_sign h in
-        let e = parse_expr st items in
+        let identity = parse_expr st items in
         Expr_ty_sing
-          { e
+          { identity
           ; span =
               Span.combine
                 (Span.single parens.ldelim.index)

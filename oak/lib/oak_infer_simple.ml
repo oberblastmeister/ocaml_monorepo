@@ -38,13 +38,16 @@ let rec infer_value_universe (ty_env : Env.t) (e : value) : Universe.t =
   let panic () = raise_s [%message "value was not in a universe" (e : value)] in
   match e with
   | Value_mod _ | Value_abs _ | Value_ignore | Value_sing_in _ -> panic ()
-  | Value_core_ty _ | Value_ty_pack _ -> Universe.Type
+  | Value_core_ty _ | Value_ty_pack _ ->
+    Universe.Type
+    (*
+      We infer kind here because we don't want subtyping issues at kind Type,
+      same reason ty_mod is inferred to be kind Kind
+    *)
+  | Value_ty_sing _ -> Kind
   | Value_neutral neutral ->
     infer_neutral ty_env neutral |> unfold |> Uvalue.universe_val_exn
   | Value_universe u -> Universe.incr_exn u
-  | Value_ty_sing { identity = _; ty } ->
-    (* We have the invariant that the universe of ty must be at least Kind *)
-    Universe.decr_exn (infer_value_universe ty_env ty)
   | Value_ty_fun { var = _; param_ty; body_ty } ->
     let universe1 = infer_value_universe ty_env param_ty in
     let universe2 =

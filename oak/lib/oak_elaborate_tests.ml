@@ -5,7 +5,7 @@ module Pretty = Oak_pretty
 module Common = Oak_common
 module Diagnostic = Oak_diagnostic
 
-let check ?(print_term = false) s =
+let check ?(print_term = false) ?(show_singletons = true) s =
   let file = "<input>" in
   let source, parse_diagnostics, expr = Oak_parse.parse ~file s in
   let files = String.Map.of_alist_exn [ file, Snippet.File.create s ] in
@@ -23,8 +23,10 @@ let check ?(print_term = false) s =
       else begin
         match Oak_elaborate.infer source renamed with
         | Ok (term, ty) ->
-          if print_term then print_s [%sexp (term : Syntax.term)];
-          Pp.render_to_stdout ~color:false (Pretty.pp_value Common.Name_list.empty ty);
+          if print_term then print_s [%message (term : Syntax.term) (ty : Syntax.ty)];
+          Pp.render_to_stdout
+            ~color:false
+            (Pretty.pp_value ~show_singletons Common.Name_list.empty ty);
           Out_channel.newline stdout
         | Error diagnostic ->
           Diagnostic.print ~color:false ~files diagnostic;
@@ -126,13 +128,24 @@ mod {
     |}];
   check
     {|
-{
+mod {
   let x = Bool
+  let y = x
   let f : Fun (= x) -> (= x) = fun x -> x
-  f Bool
+  let r = f Bool
+  let b : r = #t
 }
       |};
-  [%expect {| (= Bool) |}];
+  [%expect
+    {|
+    sig {
+      let x : (= Bool)
+      let y : (= x)
+      let f : Fun ((= (in x))) -> (= (in x))
+      let r : (= (f (in (in (in Bool)))))
+      let b : r.out.out.out.out
+    }
+    |}];
   check
     {|
 mod {
@@ -153,6 +166,8 @@ mod {
   let T2 = M2.T
   
   let T3 = M3.T
+  
+  let T4 = T3
 }
       |};
   [%expect
@@ -161,10 +176,164 @@ mod {
       let M1 : sig { let T : (= Bool) }
       let M2 : (= M1)
       let M3 : sig { let T : Type }
-      let T1 : (= Bool)
-      let T2 : (= Bool)
+      let T1 : (= M1.T)
+      let T2 : (= M2.out.T)
+      let T3 : (= M3.T)
+      let T4 : (= T3)
+    }
+    |}];
+  check
+    {|
+mod {
+  let M1 : sig {
+    let M : sig {
+      let M : sig {
+        let T : Type
+      }
+    }
+  } = mod {
+    let M = mod {
+      let M = mod {
+        let T = Bool
+      }
+    }
+  }
+  
+  let M2 = M1
+  
+  let T1 = M1.M.M.T
+  
+  let T2 = M2.M.M.T
+  
+  let T3 = (M2.M.M : sig { let T : Type }).T
+}
+      |};
+  [%expect
+    {|
+    sig {
+      let M1 : sig { let M : sig { let M : sig { let T : Type } } }
+      let M2 : (= M1)
+      let T1 : (= M1.M.M.T)
+      let T2 : (= M2.out.M.M.T)
       let T3 : Type
     }
+    |}];
+  check
+    {|
+mod {
+  let M = mod {
+    let M = mod {}
+  }
+  let T = M.M.T
+}
+    |};
+  [%expect
+    {|
+    error: Module does not have field T
+     --> <input>:6:11
+      |
+    6 |   let T = M.M.T
+      |           ^^^^^
+    |}];
+  check
+    {|
+Kind : Type
+      |};
+  [%expect
+    {|
+    error: Universes were not equal: Sig != Type
+    note: failed to coerce inferred type  (= Kind) when checking against type Type
+     --> <input>:2:1
+      |
+    2 | Kind : Type
+      | ^^^^
+    |}];
+  check
+    {|
+Type : Type
+    |};
+  [%expect
+    {|
+    error: Universes were not equal: Kind != Type
+    note: failed to coerce inferred type  (= Type) when checking against type Type
+     --> <input>:2:1
+      |
+    2 | Type : Type
+      | ^^^^
+    |}];
+  check
+    {|
+Bool : Type
+      |};
+  [%expect {| Type |}];
+  check
+    {|
+{
+  let b = #t
+  let m = mod {
+    let T = Bool
+    let T' = (T : Type)
+    let x : T = #t
+  }
+  m
+}
+    |};
+  [%expect {| (= (mod { let T = in Bool; let T' = Bool; let x = ignore })) |}];
+  check
+    {|
+(= mod {
+  let T = Bool
+  let T' = (T : Type)
+})
+      |};
+  [%expect {| (= ((= (mod { let T = in Bool; let T' = Bool })))) |}];
+  check
+    {|
+    (= (Bool : Type))
+    |};
+  [%expect {| (= ((= Bool))) |}];
+  check
+    {|
+(= #t)
+    |};
+  [%expect {| (= Bool) |}];
+  check
+    {|
+(#f : (= #t))
+    |};
+  [%expect {| Bool |}];
+  check
+    {|
+{
+  let packed_ty = pack (Bool : Type)
+  bind T = packed_ty
+  T
+} : Type
+    |};
+  [%expect
+    {|
+    error: Type was not ignorable: Type
+    note: in bind expression
+     --> <input>:2:1
+      |
+    2 | {
+      | ^...
+    |}];
+  check
+    {|
+{
+  let packed_ty = pack (Bool : Type)
+  bind T = packed_ty
+  pack T
+} : Pack Type
+      |};
+  [%expect
+    {|
+    error: Failed to find variable: Pack
+     --> <input>:6:5
+      |
+    6 | } : Pack Type
+      |     ^^^^
     |}]
 ;;
 
@@ -196,7 +365,7 @@ mod {
     let third = second
   }
       |};
-  [%expect {| sig { let first : Bool; let second : (= Bool); let third : (= Bool) } |}]
+  [%expect {| sig { let first : Bool; let second : (= Bool); let third : (= second) } |}]
 ;;
 
 let%expect_test "signatures" =

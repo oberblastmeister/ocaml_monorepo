@@ -75,6 +75,12 @@ let check_type_ignorable cx ty =
   | exception Type_not_ignorable part -> Error part
 ;;
 
+let create_singleton cx e ty (universe : Universe.t) =
+  match universe with
+  | Type -> e, ty
+  | _ -> Term_sing_in e, Value_ty_sing { identity = Context.eval cx e; ty }
+;;
+
 (* TODO: these should not unwrap types with exn *)
 let rec infer (cx : Context.t) (e : expr) : term * ty =
   match e with
@@ -91,20 +97,14 @@ let rec infer (cx : Context.t) (e : expr) : term * ty =
     let ty = Context.var_ty cx var in
     (* TODO: cache the universe in the context *)
     let universe = infer_value_universe cx.ty_env ty in
-    begin match universe with
-    | Type ->
-      (* Can't construct singletons for universe Type *)
-      Term_var var, ty
-    | _ ->
-      let term_var = Term_var var in
-      Term_sing_in term_var, Value_ty_sing { identity = Context.eval cx term_var; ty }
-    end
+    create_singleton cx (Term_var var) ty universe
   | Expr_ann { e; ty; span = _ } ->
     let ty, _ = check_universe cx ty in
     let ty = Context.eval cx ty in
     check cx e ty, ty
   | Expr_app { func; arg; span } ->
     let func, func_ty = infer cx func in
+    let is_transparent = unfold func_ty |> Uvalue.is_ty_sing in
     let func, func_ty = Unification.coerce_singleton (Context.size cx) func func_ty in
     let func_ty =
       match func_ty with
@@ -121,7 +121,14 @@ let rec infer (cx : Context.t) (e : expr) : term * ty =
           }
     in
     let arg = check cx arg func_ty.param_ty in
-    Term_app { func; arg }, eval_closure1 func_ty.body_ty (Context.eval cx arg)
+    let e = Term_app { func; arg } in
+    let ty = eval_closure1 func_ty.body_ty (Context.eval cx arg) in
+    if is_transparent
+    then begin
+      let universe = infer_value_universe cx.ty_env ty in
+      create_singleton cx e ty universe
+    end
+    else e, ty
   | Expr_abs { var; param_ty = Some param_ty; body; span = _ } ->
     let param_ty, _ = check_universe cx param_ty in
     let param_ty = Context.eval cx param_ty in
@@ -142,6 +149,7 @@ let rec infer (cx : Context.t) (e : expr) : term * ty =
       }
   | Expr_proj { mod_e; field; span } ->
     let mod_e, mod_ty = infer cx mod_e in
+    let is_transparent = unfold mod_ty |> Uvalue.is_ty_sing in
     let mod_e, mod_ty = Unification.coerce_singleton (Context.size cx) mod_e mod_ty in
     let mod_ty =
       match mod_ty with
@@ -158,11 +166,29 @@ let rec infer (cx : Context.t) (e : expr) : term * ty =
           }
     in
     let field_index, _ =
-      List.findi_exn mod_ty.ty_decls ~f:(fun _ ty_decl ->
-        String.equal ty_decl.var.name field)
+      match
+        List.findi mod_ty.ty_decls ~f:(fun _ ty_decl ->
+          String.equal ty_decl.var.name field)
+      with
+      | Some i -> i
+      | None ->
+        raise_error
+          { code = None
+          ; parts =
+              [ Diagnostic.Part.create
+                  ~snippet:(Context.snippet cx span)
+                  (Doc.string "Module does not have field " ^^ Doc.string field)
+              ]
+          }
     in
-    ( Term_proj { mod_e; field; field_index }
-    , eval_ty_mod_closure (Context.eval cx mod_e) mod_ty field_index )
+    let e = Term_proj { mod_e; field; field_index } in
+    let ty = eval_ty_mod_closure (Context.eval cx mod_e) mod_ty field_index in
+    if is_transparent
+    then begin
+      let universe = infer_value_universe cx.ty_env ty in
+      create_singleton cx e ty universe
+    end
+    else e, ty
   | Expr_mod { decls; span = _ } ->
     (*
       Elaborate a module into a bunch of lets and then a module expression at the end.
@@ -214,14 +240,24 @@ let rec infer (cx : Context.t) (e : expr) : term * ty =
     let body, body_ty = infer cx' body in
     ( Term_let { var; rhs; body }
     , eval (Env.push (Context.eval cx rhs) cx.value_env) (Context.quote cx' body_ty) )
-  | Expr_ty_sing { e; span = _ } ->
-    let e, ty = infer cx e in
-    let universe = infer_value_universe cx.ty_env ty in
+  | Expr_ty_sing { identity; span = _ } ->
+    let identity, identity_ty = infer cx identity in
+    let universe = infer_value_universe cx.ty_env identity_ty in
+    (* This creates the singleton of singleton types *)
     if Universe.equal universe Type
-    then Context.quote cx ty, Value_universe universe
-    else
-      ( Term_ty_sing { identity = e; ty = Context.quote cx ty }
-      , Value_universe (Universe.decr_exn universe) )
+    then begin
+      let e = Context.quote cx identity_ty in
+      Term_sing_in e, Value_ty_sing { identity = identity_ty; ty = Value_universe Type }
+    end
+    else begin
+      let e = Term_ty_sing { identity; ty = Context.quote cx identity_ty } in
+      ( Term_sing_in e
+      , Value_ty_sing
+          { identity =
+              Value_ty_sing { identity = Context.eval cx identity; ty = identity_ty }
+          ; ty = Value_universe Kind
+          } )
+    end
   | Expr_bool { value; span = _ } -> Term_bool { value }, Value_core_ty Bool
   | Expr_unit { span = _ } -> Term_unit, Value_core_ty Unit
   | Expr_core_ty { ty; span = _ } ->
@@ -381,9 +417,10 @@ and check (cx : Context.t) (e : expr) (ty : ty) : term =
                  ~kind:Note
                  ~snippet:(Context.snippet cx span)
                  (Doc.string "failed to coerce inferred type "
-                  ^^ Context.pp_value cx ty'
-                  ^^ Doc.string " when checking against type "
-                  ^^ Context.pp_value cx ty)
+                  ^^ Doc.indent 2 (Doc.break1 ^^ Context.pp_value cx ty')
+                  ^^ Doc.break1
+                  ^^ Doc.string "when checking against type"
+                  ^^ Doc.indent 2 (Doc.break1 ^^ Context.pp_value cx ty))
              ]
          })
 
@@ -405,6 +442,7 @@ and check_universe (cx : Context.t) (ty_expr : expr) : term * Universe.t =
 
 let infer source e =
   let cx = Context.create source in
-  try Ok (infer cx e) with
-  | Error diagnostic -> Error diagnostic
+  match infer cx e with
+  | r -> Ok r
+  | exception Error diagnostic -> Error diagnostic
 ;;

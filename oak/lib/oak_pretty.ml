@@ -72,7 +72,9 @@ struct
     | Value_ty_sing { identity; ty = _ } ->
       Doc.group (parens (Doc.string "=" ^^ Doc.break1 ^^ pp_atom names identity))
     | Value_sing_in e ->
-      Doc.group (Doc.string "in" ^^ Doc.indent 2 (Doc.break1 ^^ pp_atom names e))
+      if Config.show_singletons
+      then Doc.group (Doc.string "in" ^^ Doc.indent 2 (Doc.break1 ^^ pp_atom names e))
+      else pp_atom names e
     | Value_mod { fields } ->
       let decls =
         List.map fields ~f:(fun ({ name; e } : Syntax.value_field) ->
@@ -154,9 +156,9 @@ struct
 
   and pp_proj names ({ head; spine } : Syntax.neutral) field =
     let doc =
-      match spine with
-      | Empty | Snoc (_, Elim_proj _) -> pp_neutral names { head; spine }
-      | _ -> parens (Doc.group (pp_neutral names { head; spine }))
+      if is_spine_atom spine
+      then pp_neutral names { head; spine }
+      else parens (pp_neutral names { head; spine })
     in
     doc ^^ Doc.break0 ^^ Doc.char '.' ^^ Doc.string field
 

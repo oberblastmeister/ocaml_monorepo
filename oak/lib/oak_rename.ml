@@ -11,6 +11,7 @@ open struct
   module Diagnostic = Oak_diagnostic
   module Doc = Utility.Pp.Doc
   module Source = Oak_source
+  module Common = Oak_common
 end
 
 module Error = struct
@@ -95,9 +96,9 @@ let rec rename_expr st (expr : Surface.expr) : Syntax.expr =
     let ty_decls = rename_ty_decls st ty_decls in
     Expr_ty_mod { ty_decls; span }
   | Surface.Expr_block { decls; ret; span } -> rename_block st decls ret span
-  | Surface.Expr_ty_sing { e; span } ->
-    let e = rename_expr st e in
-    Expr_ty_sing { e; span }
+  | Surface.Expr_ty_sing { identity; span } ->
+    let identity = rename_expr st identity in
+    Expr_ty_sing { identity; span }
   | Surface.Expr_bool { value; span } -> Expr_bool { value; span }
   | Surface.Expr_unit { span } -> Expr_unit { span }
   | Surface.Expr_number { value = _; span = _ } -> failwith "todo: Expr_number"
@@ -134,16 +135,11 @@ and rename_ty_fun st params body_ty span =
   | [] -> rename_expr st body_ty
   | (var, ty) :: rest ->
     let param_ty = rename_expr st ty in
-    let make_node body_ty var_info =
-      Syntax.Expr_ty_fun { var = var_info; param_ty; body_ty; span }
+    let var = Option.value var ~default:{ Var.name = "_"; span } in
+    let body_ty =
+      State.with_var st var ~f:(fun () -> rename_ty_fun st rest body_ty span)
     in
-    (match var with
-     | Some var ->
-       State.with_var st var ~f:(fun () ->
-         make_node (rename_ty_fun st rest body_ty span) (var_info var))
-     | None ->
-       let underscore : Syntax.Var_info.t = { name = "_"; pos = 0 } in
-       make_node (rename_ty_fun st rest body_ty span) underscore)
+    Syntax.Expr_ty_fun { var = var_info var; param_ty; body_ty; span }
 
 and rename_block st decls ret span =
   match decls with

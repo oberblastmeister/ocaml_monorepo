@@ -159,7 +159,7 @@ type expr =
       }
     (* Also known as the singleton type, or the static extent.  *)
   | Expr_ty_sing of
-      { e : expr
+      { identity : expr
       ; span : Span.t
       }
   | Expr_bool of

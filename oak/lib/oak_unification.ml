@@ -256,7 +256,7 @@ let rec sub cx (e : term) (ty1 : ty) (ty2 : ty) : term option =
     end
   | Uvalue_ty_sing _, _ ->
     let e, ty1 = coerce_singleton (Context.size cx) e ty1 in
-    sub cx e (Uvalue.to_value ty1) ty2
+    Some (coerce cx e (Uvalue.to_value ty1) ty2)
   | _, Uvalue_ty_sing ty2 ->
     let e = coerce cx e ty1 ty2.ty in
     conv cx (Context.eval cx e) ty2.identity ty2.ty;
