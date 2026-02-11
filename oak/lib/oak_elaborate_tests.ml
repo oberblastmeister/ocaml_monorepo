@@ -5,7 +5,7 @@ module Pretty = Oak_pretty
 module Common = Oak_common
 module Diagnostic = Oak_diagnostic
 
-let check ?(print_term = false) ?(show_singletons = true) s =
+let check ?(print_term = false) ?(show_singletons = false) s =
   let file = "<input>" in
   let source, parse_diagnostics, expr = Oak_parse.parse ~file s in
   let files = String.Map.of_alist_exn [ file, Snippet.File.create s ] in
@@ -79,7 +79,7 @@ mod {
   }
 }
       |};
-  [%expect {| sig { let x : (= Bool); let y : x.out } |}];
+  [%expect {| sig { let x : (= Bool); let y : x } |}];
   check
     {|
   mod {
@@ -134,15 +134,7 @@ mod {
 }
       |};
   [%expect
-    {|
-    sig {
-      let x : (= Bool)
-      let y : (= x)
-      let f : (= in x) -> (= in x)
-      let r : (= f (in (in (in Bool))))
-      let b : r.out.out.out.out
-    }
-    |}];
+    {| sig { let x : (= Bool); let y : (= x); let f : (= x) -> (= x); let r : (= f (((Bool)))); let b : r } |}];
   check
     {|
 mod {
@@ -174,7 +166,7 @@ mod {
       let M2 : (= M1)
       let M3 : sig { let T : Type }
       let T1 : (= M1.T)
-      let T2 : (= M2.out.T)
+      let T2 : (= M2.T)
       let T3 : (= M3.T)
       let T4 : (= T3)
     }
@@ -211,7 +203,7 @@ mod {
       let M1 : sig { let M : sig { let M : sig { let T : Type } } }
       let M2 : (= M1)
       let T1 : (= M1.M.M.T)
-      let T2 : (= M2.out.M.M.T)
+      let T2 : (= M2.M.M.T)
       let T3 : Type
     }
     |}];
@@ -275,7 +267,7 @@ mod {
   m
 }
     |};
-  [%expect {| (= mod { let T = in Bool; let T' = Bool; let x = ignore }) |}];
+  [%expect {| (= mod { let T = Bool; let T' = Bool; let x = ignore }) |}];
   check
     {|
 (= mod {
@@ -283,7 +275,7 @@ mod {
   let T' = (T : Type)
 })
       |};
-  [%expect {| (= (= mod { let T = in Bool; let T' = Bool })) |}];
+  [%expect {| (= (= mod { let T = Bool; let T' = Bool })) |}];
   check
     {|
     (= (Bool : Type))
@@ -361,12 +353,13 @@ mod {
   check
     {|
 mod {
-  let f =
-    ((fun (T : Type) -> Bool) : (= fun (T : (= Bool)) -> T))
+  let ty = (= fun (T : (= Bool)) -> T)
+  let f = ((fun (T : Type) -> Bool) : ty)
   let T = f Bool
 }
       |};
-  [%expect {| sig { let f : (= fun T -> in T); let T : (= f.out (in (in Bool))) } |}];
+  [%expect
+    {| sig { let ty : (= (= fun T -> T)); let f : ty; let T : (= f ((Bool))) } |}];
   check
     {|
   mod {
@@ -428,7 +421,7 @@ mod {
       let Un : (= Unit)
       let M1 : sig { let T : (= Bool); let T' : (= T); let U : (= Int); let S : (= Un) }
       let M2 : sig { let T : (= Bool); let T' : (= Bool); let S : (= Unit) }
-      let M3 : (= in M2)
+      let M3 : (= M2)
     }
     |}];
   check
@@ -452,8 +445,21 @@ mod {
   
   let Monad = sig {
     let T : Type -> Type
-    let return : (A : Type) -> T A
-    let bind : (A B : Type) -> T A -> T B
+    let return : (A : Type) -> A -> T A
+    let bind : (A B : Type) -> T A -> (A -> T B) -> T B
+  }
+  
+  let List = sig {
+    let T : Type -> Type
+    let nil : (A : Type) -> T A
+    let cons : (A : Type) -> A -> T A -> T A
+  }
+  
+  let do_something = fun (A B : Type) (monad : Monad) (p : Pair (monad.T A) (monad.T B)) (x : monad.T A) (y : monad.T B) (list : List) -> {
+    let first = list.cons Unit () (list.nil Unit)
+    monad.bind A Unit x (fun x ->
+      monad.return Unit ()
+    )
   }
 }
       |};
@@ -476,10 +482,27 @@ mod {
         ( =
           sig {
             let T : Type -> Type
-            let return : (A : Type) -> T A
-            let bind : (A : Type) -> (B : Type) -> (T A) -> T B
+            let return : (A : Type) -> A -> T A
+            let bind : (A : Type) -> (B : Type) -> (T A) -> (A -> T B) -> T B
           }
         )
+      let List :
+        ( =
+          sig {
+            let T : Type -> Type
+            let nil : (A : Type) -> T A
+            let cons : (A : Type) -> A -> (T A) -> T A
+          }
+        )
+      let do_something :
+        (A : Type) ->
+        (B : Type) ->
+        (monad : Monad) ->
+        (p : Pair (monad.T A) (monad.T B)) ->
+        (x : monad.T A) ->
+        (y : monad.T B) ->
+        (list : List) ->
+        monad.T Unit
     }
     |}];
   check
@@ -488,7 +511,7 @@ mod {
   let f : (T : (= Bool)) -> T = fun x -> #t
 }
       |};
-  [%expect {| sig { let f : (T : (= in Bool)) -> T.out.out } |}]
+  [%expect {| sig { let f : (T : (= Bool)) -> T } |}]
 ;;
 
 let%expect_test "id" =
@@ -510,7 +533,7 @@ mod {
 }
     |};
   [%expect
-    {| sig { let first : Bool; let second : Type; let ty : (= Type); let b : ty.out } |}];
+    {| sig { let first : Bool; let second : Type; let ty : (= Type); let b : ty } |}];
   check
     {|
   mod {

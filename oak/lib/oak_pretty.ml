@@ -41,7 +41,7 @@ struct
   let rec pp_value (names : Name_list.t) (value : Syntax.value) =
     match value with
     | Value_ignore -> Doc.string "ignore"
-    | Value_neutral neutral -> pp_neutral names neutral
+    | Value_neutral neutral -> Doc.group (pp_neutral names neutral)
     | Value_core_ty ty -> Common.Core_ty.pp ty
     | Value_universe Type -> Doc.string "Type"
     | Value_universe Kind -> Doc.string "Kind"
@@ -144,7 +144,7 @@ struct
   and pp_atom (names : Name_list.t) (value : Syntax.value) =
     match value with
     | Value_neutral { head; spine } when is_spine_atom spine ->
-      pp_neutral names { head; spine }
+      Doc.group (pp_neutral names { head; spine })
     | Value_core_ty _ | Value_universe _ | Value_ty_sing _ -> pp_value names value
     | _ -> parens (pp_value names value)
 
@@ -162,7 +162,10 @@ struct
     match spine with
     | Snoc (spine, Elim_app arg) ->
       pp_neutral names { head; spine } ^^ Doc.break1 ^^ pp_atom names arg
-    | Snoc (spine, Elim_out { identity = _ }) -> pp_proj names { head; spine } "out"
+    | Snoc (spine, Elim_out { identity = _ }) ->
+      if Config.show_singletons
+      then pp_proj names { head; spine } "out"
+      else pp_neutral names { head; spine }
     | Snoc (spine, Elim_proj { field; field_index = _ }) ->
       pp_proj names { head; spine } field
     | Empty -> pp_var names head
