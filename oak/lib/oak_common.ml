@@ -8,11 +8,13 @@ module Core_ty = struct
   type t =
     | Bool
     | Unit
+    | Int
   [@@deriving sexp_of, equal, compare]
 
   let to_string = function
     | Bool -> "Bool"
     | Unit -> "Unit"
+    | Int -> "Int"
   ;;
 
   let pp t = Doc.string (to_string t)

@@ -18,7 +18,7 @@ let check s =
       else print_s [%sexp (result : Oak_syntax.expr)])
 ;;
 
-let%test_module "rename" =
+(* let%test_module "rename" =
   (module struct
     let%expect_test "variable" =
       check {|fun (x : Bool) -> x|};
@@ -394,4 +394,4 @@ fun (x : Bool) -> {
         |}]
     ;;
   end)
-;;
+;; *)

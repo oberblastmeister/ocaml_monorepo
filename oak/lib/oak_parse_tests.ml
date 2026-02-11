@@ -13,45 +13,48 @@ let check s =
   else print_s [%sexp (expr : Oak_surface.expr option)]
 ;;
 
-let%expect_test "simple function" =
+let bruh = (fun x -> x : int -> int)
+
+let%expect_test "smoke" =
   check
     {|
-fun x -> x : Fun (x : f Int) (g Bool) -> g Int
+(fun x -> x : f Int -> g Bool -> g Int)
     |};
   [%expect
     {|
-    ((Expr_abs
-      (params
-       (((vars (((name x) (span ((start 3) (stop 4)))))) (ann ())
-         (span ((start 3) (stop 4))))))
-      (ret_ty ())
-      (body
-       (Expr_ann (e (Expr_var ((name x) (span ((start 7) (stop 8))))))
-        (ty
-         (Expr_ty_fun
-          (param_tys
-           (((vars (((name x) (span ((start 14) (stop 15))))))
-             (ty
-              (Expr_app
-               (func (Expr_var ((name f) (span ((start 18) (stop 19))))))
-               (args ((Expr_var ((name Int) (span ((start 20) (stop 21)))))))
-               (span ((start 18) (stop 21)))))
-             (span ((start 14) (stop 21))))
-            ((vars ())
-             (ty
-              (Expr_app
-               (func (Expr_var ((name g) (span ((start 24) (stop 25))))))
-               (args ((Expr_core_ty (ty Bool) (span ((start 26) (stop 27))))))
-               (span ((start 24) (stop 27)))))
-             (span ((start 24) (stop 27))))))
-          (body_ty
-           (Expr_app (func (Expr_var ((name g) (span ((start 31) (stop 32))))))
-            (args ((Expr_var ((name Int) (span ((start 33) (stop 34)))))))
-            (span ((start 31) (stop 34)))))
-          (span ((start 11) (stop 34)))))
-        (span ((start 7) (stop 34)))))
-      (span ((start 1) (stop 34)))))
-    |}];
+    ((Expr_ann
+      (e
+       (Expr_abs
+        (params
+         (((vars (((name x) (span ((start 4) (stop 5)))))) (ann ())
+           (span ((start 4) (stop 5))))))
+        (ret_ty ()) (body (Expr_var ((name x) (span ((start 8) (stop 9))))))
+        (span ((start 2) (stop 9)))))
+      (ty
+       (Expr_ty_fun
+        (param_tys
+         (((vars ())
+           (ty
+            (Expr_app (func (Expr_var ((name f) (span ((start 12) (stop 13))))))
+             (args ((Expr_core_ty (ty Int) (span ((start 14) (stop 15))))))
+             (span ((start 12) (stop 15)))))
+           (span ((start 12) (stop 15))))
+          ((vars ())
+           (ty
+            (Expr_app (func (Expr_var ((name g) (span ((start 18) (stop 19))))))
+             (args ((Expr_core_ty (ty Bool) (span ((start 20) (stop 21))))))
+             (span ((start 18) (stop 21)))))
+           (span ((start 18) (stop 21))))))
+        (body_ty
+         (Expr_app (func (Expr_var ((name g) (span ((start 24) (stop 25))))))
+          (args ((Expr_core_ty (ty Int) (span ((start 26) (stop 27))))))
+          (span ((start 24) (stop 27)))))
+        (span ((start 12) (stop 27)))))
+      (span ((start 2) (stop 27)))))
+    |}]
+;;
+
+let%expect_test "simple function" =
   check
     {|
 fun x y z -> x
@@ -93,19 +96,28 @@ fun x y z -> x
     |}];
   check
     {|
-fun x y : Bool -> x
+(fun x y -> x : Bool -> x)
       |};
   [%expect
     {|
-    ((Expr_abs
-      (params
-       (((vars (((name x) (span ((start 3) (stop 4)))))) (ann ())
-         (span ((start 3) (stop 4))))
-        ((vars (((name y) (span ((start 5) (stop 6)))))) (ann ())
-         (span ((start 5) (stop 6))))))
-      (ret_ty ((Expr_core_ty (ty Bool) (span ((start 9) (stop 10))))))
-      (body (Expr_var ((name x) (span ((start 13) (stop 14))))))
-      (span ((start 1) (stop 14)))))
+    ((Expr_ann
+      (e
+       (Expr_abs
+        (params
+         (((vars (((name x) (span ((start 4) (stop 5)))))) (ann ())
+           (span ((start 4) (stop 5))))
+          ((vars (((name y) (span ((start 6) (stop 7)))))) (ann ())
+           (span ((start 6) (stop 7))))))
+        (ret_ty ()) (body (Expr_var ((name x) (span ((start 10) (stop 11))))))
+        (span ((start 2) (stop 11)))))
+      (ty
+       (Expr_ty_fun
+        (param_tys
+         (((vars ()) (ty (Expr_core_ty (ty Bool) (span ((start 14) (stop 15)))))
+           (span ((start 14) (stop 15))))))
+        (body_ty (Expr_var ((name x) (span ((start 18) (stop 19))))))
+        (span ((start 14) (stop 19)))))
+      (span ((start 2) (stop 19)))))
     |}]
 ;;
 
@@ -289,25 +301,25 @@ sig {
 let%expect_test "function types" =
   check
     {|
-Fun (a : Bool) (x y z: Bool) Bool -> x
+(a : Bool) -> (x y z : Bool) -> Bool -> x
     |};
   [%expect
     {|
     ((Expr_ty_fun
       (param_tys
-       (((vars (((name a) (span ((start 4) (stop 5))))))
-         (ty (Expr_core_ty (ty Bool) (span ((start 8) (stop 9)))))
-         (span ((start 4) (stop 9))))
+       (((vars (((name a) (span ((start 2) (stop 3))))))
+         (ty (Expr_core_ty (ty Bool) (span ((start 6) (stop 7)))))
+         (span ((start 2) (stop 7))))
         ((vars
           (((name x) (span ((start 12) (stop 13))))
            ((name y) (span ((start 14) (stop 15))))
            ((name z) (span ((start 16) (stop 17))))))
-         (ty (Expr_core_ty (ty Bool) (span ((start 19) (stop 20)))))
-         (span ((start 12) (stop 20))))
-        ((vars ()) (ty (Expr_core_ty (ty Bool) (span ((start 22) (stop 23)))))
-         (span ((start 22) (stop 23))))))
-      (body_ty (Expr_var ((name x) (span ((start 26) (stop 27))))))
-      (span ((start 1) (stop 27)))))
+         (ty (Expr_core_ty (ty Bool) (span ((start 20) (stop 21)))))
+         (span ((start 12) (stop 21))))
+        ((vars ()) (ty (Expr_core_ty (ty Bool) (span ((start 25) (stop 26)))))
+         (span ((start 25) (stop 26))))))
+      (body_ty (Expr_var ((name x) (span ((start 29) (stop 30))))))
+      (span ((start 2) (stop 30)))))
     |}]
 ;;
 
@@ -523,18 +535,6 @@ let%expect_test "error: sig missing brace" =
     |}]
 ;;
 
-let%expect_test "error: Fun missing arrow" =
-  check {|Fun Bool Bool|};
-  [%expect
-    {|
-    error[E0001]: Expected arrow
-     --> <input>:1:14
-      |
-    1 | Fun Bool Bool
-      |              ^
-    |}]
-;;
-
 let%expect_test "error: empty block" =
   check {|{}|};
   [%expect
@@ -647,36 +647,41 @@ let%expect_test "chained projections" =
 ;;
 
 let%expect_test "nested Fun" =
-  check {|Fun Bool -> Fun Bool -> Bool|};
+  check {|Bool -> Bool -> Bool|};
   [%expect
     {|
     ((Expr_ty_fun
       (param_tys
-       (((vars ()) (ty (Expr_core_ty (ty Bool) (span ((start 2) (stop 3)))))
-         (span ((start 2) (stop 3))))))
-      (body_ty
-       (Expr_ty_fun
-        (param_tys
-         (((vars ()) (ty (Expr_core_ty (ty Bool) (span ((start 8) (stop 9)))))
-           (span ((start 8) (stop 9))))))
-        (body_ty (Expr_core_ty (ty Bool) (span ((start 12) (stop 13)))))
-        (span ((start 6) (stop 13)))))
-      (span ((start 0) (stop 13)))))
+       (((vars ()) (ty (Expr_core_ty (ty Bool) (span ((start 0) (stop 1)))))
+         (span ((start 0) (stop 1))))
+        ((vars ()) (ty (Expr_core_ty (ty Bool) (span ((start 4) (stop 5)))))
+         (span ((start 4) (stop 5))))))
+      (body_ty (Expr_core_ty (ty Bool) (span ((start 8) (stop 9)))))
+      (span ((start 0) (stop 9)))))
     |}]
 ;;
 
 let%expect_test "fun with annotated return and body" =
-  check {|fun (x : Bool) : Bool -> x|};
+  check {|(fun (x : Bool) -> x : Bool -> x)|};
   [%expect
     {|
-    ((Expr_abs
-      (params
-       (((vars (((name x) (span ((start 3) (stop 4))))))
-         (ann ((Expr_core_ty (ty Bool) (span ((start 7) (stop 8))))))
-         (span ((start 3) (stop 8))))))
-      (ret_ty ((Expr_core_ty (ty Bool) (span ((start 12) (stop 13))))))
-      (body (Expr_var ((name x) (span ((start 16) (stop 17))))))
-      (span ((start 0) (stop 17)))))
+    ((Expr_ann
+      (e
+       (Expr_abs
+        (params
+         (((vars (((name x) (span ((start 4) (stop 5))))))
+           (ann ((Expr_core_ty (ty Bool) (span ((start 8) (stop 9))))))
+           (span ((start 4) (stop 9))))))
+        (ret_ty ()) (body (Expr_var ((name x) (span ((start 13) (stop 14))))))
+        (span ((start 1) (stop 14)))))
+      (ty
+       (Expr_ty_fun
+        (param_tys
+         (((vars ()) (ty (Expr_core_ty (ty Bool) (span ((start 17) (stop 18)))))
+           (span ((start 17) (stop 18))))))
+        (body_ty (Expr_var ((name x) (span ((start 21) (stop 22))))))
+        (span ((start 17) (stop 22)))))
+      (span ((start 1) (stop 22)))))
     |}]
 ;;
 

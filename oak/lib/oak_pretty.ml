@@ -60,17 +60,13 @@ struct
         collect_ty_fun_params names [] { var; param_ty; body_ty }
       in
       Doc.group
-        (Doc.string "Fun"
-         ^^ Doc.indent
-              2
-              (Doc.break1
-               ^^ Doc.concat params ~sep:Doc.break1
-               ^^ Doc.space
-               ^^ Doc.string "->"
-               ^^ Doc.break1
-               ^^ pp_value names' body_ty))
+        (Doc.concat params ~sep:(Doc.space ^^ Doc.string "->" ^^ Doc.break1)
+         ^^ Doc.space
+         ^^ Doc.string "->"
+         ^^ Doc.break1
+         ^^ pp_value names' body_ty)
     | Value_ty_sing { identity; ty = _ } ->
-      Doc.group (parens (Doc.string "=" ^^ Doc.break1 ^^ pp_atom names identity))
+      Doc.group (parens (Doc.string "=" ^^ Doc.break1 ^^ pp_value names identity))
     | Value_sing_in e ->
       if Config.show_singletons
       then Doc.group (Doc.string "in" ^^ Doc.indent 2 (Doc.break1 ^^ pp_atom names e))
@@ -149,7 +145,7 @@ struct
     match value with
     | Value_neutral { head; spine } when is_spine_atom spine ->
       pp_neutral names { head; spine }
-    | Value_core_ty _ | Value_universe _ -> pp_value names value
+    | Value_core_ty _ | Value_universe _ | Value_ty_sing _ -> pp_value names value
     | _ -> parens (pp_value names value)
 
   and pp_var names var = Doc.string (Name_list.get names var)

@@ -38,6 +38,7 @@ module List : sig
   val some : 'a t -> (unit -> 'b) -> 'b Non_empty_list.t
   val guard : env -> 'a t -> bool -> unit
   val one_of : 'a t -> (unit -> 'b) list -> 'b
+  val suceeds : 'a t -> f:(env -> unit) -> bool
   val run : 'a t -> f:(env -> 'b) -> 'b option
   val run_or_thunk : 'a t -> default:(unit -> 'b) -> f:(env -> 'b) -> 'b
   val run_exn : 'a t -> f:(env -> 'b) -> 'b

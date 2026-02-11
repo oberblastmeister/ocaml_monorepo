@@ -139,48 +139,85 @@ and parse_expr_group st (group : Shrub.group) : Surface.expr =
          (Shrub.Item.first_token item).index));
   expr
 
-and parse_expr st (items : Items.t) : Surface.expr =
+and parse_expr st (items : Items.t) : Surface.expr = parse_fun st items
+
+and parse_fun st (items : Items.t) : Surface.expr =
+  match Items.peek items with
+  | Some (Token { token = Ident "fun"; index = keyword_index }) ->
+    let _ = Items.next_exn items in
+    let params =
+      Items.run_or_index
+        items
+        ~default:(fun index -> error (Error.token "Expected a function parameter" index))
+        ~f:(fun h -> Fail.List.some items.items (fun () -> parse_param st h items))
+    in
+    let ret_ty = Items.run items ~f:(fun h -> parse_annotation_cont st h items) in
+    let _ =
+      Items.run_or_index
+        items
+        ~default:(fun index -> error (Error.token "Expected arrow" index))
+        ~f:(fun h -> Match.operator h "->" (Items.next h items))
+    in
+    let body = parse_expr st items in
+    Expr_abs
+      { params
+      ; ret_ty
+      ; body
+      ; span = Span.combine (Span.single keyword_index) (Surface.expr_span body)
+      }
+  | _ -> parse_fun_ty st items
+
+and parse_fun_ty st (items : Items.t) : Surface.expr =
+  let ty = parse_keyword st items in
+  parse_fun_ty_cont st items [ ty ]
+
+and parse_fun_ty_cont st items (tys : _ Non_empty_list.t) : Surface.expr =
+  match Items.peek items with
+  | Some (Token { token = Operator "->"; index = _ }) ->
+    let _ = Items.next_exn items in
+    let ty = parse_keyword st items in
+    parse_fun_ty_cont st items (Non_empty_list.cons ty tys)
+  | _ ->
+    let param_tys, ret_ty = List.rev (Non_empty_list.tl tys), Non_empty_list.hd tys in
+    (match Non_empty_list.of_list param_tys with
+     | None -> ret_ty
+     | Some param_tys ->
+       let span =
+         Span.combine
+           (Surface.expr_span (Non_empty_list.hd param_tys))
+           (Surface.expr_span ret_ty)
+       in
+       let param_tys = Non_empty_list.map param_tys ~f:(parse_param_ty_from_expr st) in
+       Surface.Expr_ty_fun { param_tys; body_ty = ret_ty; span })
+
+and parse_param_ty_from_expr st (expr : Surface.expr) : Surface.param_ty =
+  match expr with
+  | Expr_ann { e; ty; span } ->
+    let vars =
+      match e with
+      | Expr_app { func; args; span = _ } -> func :: args
+      | Expr_var _ -> [ e ]
+      | _ -> error (Error.create "invalid parameter syntax" (Surface.expr_span e))
+    in
+    let vars =
+      List.map vars ~f:(fun var ->
+        match var with
+        | Expr_var var -> var
+        | _ -> error (Error.create "invalid paramter syntax" (Surface.expr_span var)))
+    in
+    { vars; ty; span }
+  | e -> { vars = []; ty = e; span = Surface.expr_span e }
+
+and parse_keyword st items =
   Items.run_or_index
     items
+    ~f:(fun h -> parse_keyword_fail st h items)
     ~default:(fun index -> error (Error.token "Expected expression" index))
-    ~f:(fun h -> parse_expr_ann st h items)
 
-and parse_expr_ann st h (items : Items.t) : Surface.expr =
-  let e = parse_keyword st h items in
-  let ann = Items.run items ~f:(fun h -> parse_annotation_cont st h items) in
-  match ann with
-  | Some ty ->
-    Surface.Expr_ann
-      { e; ty; span = Span.combine (Surface.expr_span e) (Surface.expr_span ty) }
-  | None -> e
-
-and parse_keyword st h (items : Items.t) : Surface.expr =
+and parse_keyword_fail st h (items : Items.t) : Surface.expr =
   match Items.peek items with
   | Some (Token { token = Ident keyword; index = keyword_index }) -> begin
     match keyword with
-    | "fun" ->
-      let _ = Items.next_exn items in
-      let params =
-        Items.run_or_index
-          items
-          ~default:(fun index ->
-            error (Error.token "Expected a function parameter" index))
-          ~f:(fun h -> Fail.List.some items.items (fun () -> parse_param st h items))
-      in
-      let ret_ty = Items.run items ~f:(fun h -> parse_annotation_cont st h items) in
-      let _ =
-        Items.run_or_index
-          items
-          ~default:(fun index -> error (Error.token "Expected arrow" index))
-          ~f:(fun h -> Match.operator h "->" (Items.next h items))
-      in
-      let body = parse_expr st items in
-      Expr_abs
-        { params
-        ; ret_ty
-        ; body
-        ; span = Span.combine (Span.single keyword_index) (Surface.expr_span body)
-        }
     | "mod" ->
       let _ = Items.next_exn items in
       let block =
@@ -211,31 +248,16 @@ and parse_keyword st h (items : Items.t) : Surface.expr =
         Span.combine (Span.single keyword_index) (Span.single block.rdelim.index)
       in
       Expr_ty_mod { ty_decls; span }
-    | "Fun" ->
-      let _ = Items.next_exn items in
-      let param_tys =
-        Items.run_or_index
-          items
-          ~default:(fun index -> error (Error.token "Expected a type parameter" index))
-          ~f:(fun h -> Fail.List.some items.items (fun () -> parse_param_ty st h items))
-      in
-      let _ =
-        Items.run_or_index
-          items
-          ~default:(fun index -> error (Error.token "Expected arrow" index))
-          ~f:(fun h -> Match.operator h "->" (Items.next h items))
-      in
-      let body_ty = parse_expr st items in
-      Expr_ty_fun
-        { param_tys
-        ; body_ty
-        ; span = Span.combine (Span.single keyword_index) (Surface.expr_span body_ty)
-        }
     | "pack" ->
       let _ = Items.next_exn items in
       let e = parse_atom st items in
       Expr_pack
         { e; span = Span.combine (Span.single keyword_index) (Surface.expr_span e) }
+    | "Pack" ->
+      let _ = Items.next_exn items in
+      let ty = parse_atom st items in
+      Expr_ty_pack
+        { ty; span = Span.combine (Span.single keyword_index) (Surface.expr_span ty) }
     | _ -> parse_app st h items
   end
   | _ -> parse_app st h items
@@ -395,7 +417,7 @@ and parse_paren_param st (delim : Shrub.item_delim) : Surface.param =
 
 and parse_annotation_cont st h (items : Items.t) : Surface.expr =
   let _ = Match.colon h (Items.next h items) in
-  let ty = parse_keyword st h items in
+  let ty = parse_expr st items in
   ty
 
 and parse_app st h (items : Items.t) : Surface.expr =
@@ -448,6 +470,8 @@ and parse_atom_fail st h (items : Items.t) : Surface.expr =
     let span = Span.single index in
     match ident with
     | "Bool" -> Expr_core_ty { ty = Bool; span }
+    | "Int" -> Expr_core_ty { ty = Int; span }
+    | "Unit" -> Expr_core_ty { ty = Unit; span }
     | "Type" -> Expr_universe { universe = Type; span }
     | "Kind" -> Expr_universe { universe = Kind; span }
     | "#t" -> Expr_bool { value = true; span }
@@ -530,6 +554,15 @@ and parse_block_decl st (group : Shrub.group) : Surface.block_decl =
   | _ ->
     error (Error.token "Expected block declaration" (Shrub.Group.first_token group).index)
 
+and parse_expr_ann st (items : Items.t) : Surface.expr =
+  let e = parse_expr st items in
+  let ann = Items.run items ~f:(fun h -> parse_annotation_cont st h items) in
+  match ann with
+  | Some ty ->
+    Surface.Expr_ann
+      { e; ty; span = Span.combine (Surface.expr_span e) (Surface.expr_span ty) }
+  | None -> e
+
 and parse_paren st (parens : Shrub.item_delim) : Surface.expr =
   match parens.groups with
   | [] ->
@@ -543,7 +576,7 @@ and parse_paren st (parens : Shrub.item_delim) : Surface.expr =
       items
       ~f:(fun h ->
         let _ = Items.next h items |> Match.equal_sign h in
-        let identity = parse_expr st items in
+        let identity = parse_expr_ann st items in
         Expr_ty_sing
           { identity
           ; span =
@@ -551,7 +584,7 @@ and parse_paren st (parens : Shrub.item_delim) : Surface.expr =
                 (Span.single parens.ldelim.index)
                 (Span.single parens.rdelim.index)
           })
-      ~default:(fun () -> parse_expr st items)
+      ~default:(fun () -> parse_expr_ann st items)
   | _ ->
     error (Error.token "Unexpected comma in parenthesized expression" parens.ldelim.index)
 ;;

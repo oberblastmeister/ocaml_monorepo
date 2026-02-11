@@ -114,24 +114,21 @@ mod {
 }
 
       |};
+  [%expect {| Bool |}];
   check
     {|
   {
     let x = Bool
-    #t : x
+    (#t : x)
   }
       |};
-  [%expect
-    {|
-    Bool
-    Bool
-    |}];
+  [%expect {| Bool |}];
   check
     {|
 mod {
   let x = Bool
   let y = x
-  let f : Fun (= x) -> (= x) = fun x -> x
+  let f : (= x) -> (= x) = fun x -> x
   let r = f Bool
   let b : r = #t
 }
@@ -141,8 +138,8 @@ mod {
     sig {
       let x : (= Bool)
       let y : (= x)
-      let f : Fun ((= (in x))) -> (= (in x))
-      let r : (= (f (in (in (in Bool)))))
+      let f : (= in x) -> (= in x)
+      let r : (= f (in (in (in Bool))))
       let b : r.out.out.out.out
     }
     |}];
@@ -237,33 +234,33 @@ mod {
     |}];
   check
     {|
-Kind : Type
+(Kind : Type)
       |};
   [%expect
     {|
     error: Universes were not equal: Sig != Type
     note: failed to coerce inferred type  (= Kind) when checking against type Type
-     --> <input>:2:1
+     --> <input>:2:2
       |
-    2 | Kind : Type
-      | ^^^^
+    2 | (Kind : Type)
+      |  ^^^^
     |}];
   check
     {|
-Type : Type
+(Type : Type)
     |};
   [%expect
     {|
     error: Universes were not equal: Kind != Type
     note: failed to coerce inferred type  (= Type) when checking against type Type
-     --> <input>:2:1
+     --> <input>:2:2
       |
-    2 | Type : Type
-      | ^^^^
+    2 | (Type : Type)
+      |  ^^^^
     |}];
   check
     {|
-Bool : Type
+(Bool : Type)
       |};
   [%expect {| Type |}];
   check
@@ -278,7 +275,7 @@ Bool : Type
   m
 }
     |};
-  [%expect {| (= (mod { let T = in Bool; let T' = Bool; let x = ignore })) |}];
+  [%expect {| (= mod { let T = in Bool; let T' = Bool; let x = ignore }) |}];
   check
     {|
 (= mod {
@@ -286,12 +283,12 @@ Bool : Type
   let T' = (T : Type)
 })
       |};
-  [%expect {| (= ((= (mod { let T = in Bool; let T' = Bool })))) |}];
+  [%expect {| (= (= mod { let T = in Bool; let T' = Bool })) |}];
   check
     {|
     (= (Bool : Type))
     |};
-  [%expect {| (= ((= Bool))) |}];
+  [%expect {| (= (= Bool)) |}];
   check
     {|
 (= #t)
@@ -304,37 +301,194 @@ Bool : Type
   [%expect {| Bool |}];
   check
     {|
-{
+({
   let packed_ty = pack (Bool : Type)
   bind T = packed_ty
   T
-} : Type
+} : Type)
     |};
   [%expect
     {|
     error: Type was not ignorable: Type
     note: in bind expression
-     --> <input>:2:1
+     --> <input>:2:2
       |
-    2 | {
-      | ^...
+    2 | ({
+      |  ^...
     |}];
   check
     {|
-{
+({
   let packed_ty = pack (Bool : Type)
   bind T = packed_ty
   pack T
-} : Pack Type
+} : (Pack Type))
+      |};
+  [%expect {| Pack Type |}];
+  check
+    {|
+(mod {
+  let T = Bool
+  let x = #t
+} : sig {
+  let T : Type
+  let x : T
+})
+    |};
+  [%expect {| sig { let T : Type; let x : T } |}];
+  check
+    {|
+(mod {
+  let T = Unit
+  let x = #t
+} : sig {
+  let T : Type
+  let x : T
+})
+    |};
+  [%expect
+    {|
+    error: Core types were not equal: Bool != Unit
+    note: failed to coerce inferred type
+      sig { let T : (= Unit); let x : Bool }
+    when checking against type
+      sig { let T : Type; let x : T }
+     --> <input>:2:2
+      |
+    2 | (mod {
+      |  ^^^^^...
+    |}];
+  check
+    {|
+mod {
+  let f =
+    ((fun (T : Type) -> Bool) : (= fun (T : (= Bool)) -> T))
+  let T = f Bool
+}
+      |};
+  [%expect {| sig { let f : (= fun T -> in T); let T : (= f.out (in (in Bool))) } |}];
+  check
+    {|
+  mod {
+    let f =
+      ((fun (T : Type) -> Bool) : (= fun (T : (= Bool)) -> T))
+    let T = f Int
+  }
+        |};
+  [%expect
+    {|
+    error: Base types were not equal: Int != Bool
+    note: failed to coerce inferred type  (= Int) when checking against type (= Bool)
+     --> <input>:5:15
+      |
+    5 |     let T = f Int
+      |               ^^^
+    |}];
+  check
+    {|
+    mod {
+      let f =
+        ((fun (T : Type) -> Bool) : (= fun (T : (= Bool)) -> T))
+      let T = f Int
+    }
+          |};
+  [%expect
+    {|
+    error: Base types were not equal: Int != Bool
+    note: failed to coerce inferred type  (= Int) when checking against type (= Bool)
+     --> <input>:5:17
+      |
+    5 |       let T = f Int
+      |                 ^^^
+    |}];
+  check
+    {|
+    mod {
+      let Un = Unit
+      
+      let M1 = mod {
+        let T = Bool
+        let T' = T
+        let U = Int
+        let S = Un
+      }
+      
+      let M2 = mod {
+        let T = Bool
+        let T' = Bool
+        let S = Unit
+      }
+      
+      let M3 = (M1 : (= M2))
+    }
+    |};
+  [%expect
+    {|
+    sig {
+      let Un : (= Unit)
+      let M1 : sig { let T : (= Bool); let T' : (= T); let U : (= Int); let S : (= Un) }
+      let M2 : sig { let T : (= Bool); let T' : (= Bool); let S : (= Unit) }
+      let M3 : (= in M2)
+    }
+    |}];
+  check
+    {|
+mod {
+  let Pair : (a b : Type) -> Type  = fun A B -> Unit
+  
+  let Functor = sig {
+    let T : Type -> Type
+    
+    let map : (A B : Type) -> (A -> B) -> T A -> T B
+  }
+  
+  let Applicative = sig {
+    let T : Type -> Type
+    
+    let pure : (A : Type) -> T A
+    let map : (A B : Type) -> (A -> B) -> T A -> T B
+    let and : (A B : Type) -> T A -> T B -> T (Pair A B)
+  };
+  
+  let Monad = sig {
+    let T : Type -> Type
+    let return : (A : Type) -> T A
+    let bind : (A B : Type) -> T A -> T B
+  }
+}
       |};
   [%expect
     {|
-    error: Failed to find variable: Pack
-     --> <input>:6:5
-      |
-    6 | } : Pack Type
-      |     ^^^^
-    |}]
+    sig {
+      let Pair : (a : Type) -> (b : Type) -> Type
+      let Functor :
+        (= sig { let T : Type -> Type; let map : (A : Type) -> (B : Type) -> (A -> B) -> (T A) -> T B })
+      let Applicative :
+        ( =
+          sig {
+            let T : Type -> Type
+            let pure : (A : Type) -> T A
+            let map : (A : Type) -> (B : Type) -> (A -> B) -> (T A) -> T B
+            let and : (A : Type) -> (B : Type) -> (T A) -> (T B) -> T (Pair A B)
+          }
+        )
+      let Monad :
+        ( =
+          sig {
+            let T : Type -> Type
+            let return : (A : Type) -> T A
+            let bind : (A : Type) -> (B : Type) -> (T A) -> T B
+          }
+        )
+    }
+    |}];
+  check
+    {|
+mod {
+  let f : (T : (= Bool)) -> T = fun x -> #t
+}
+      |};
+  [%expect {| sig { let f : (T : (= in Bool)) -> T.out.out } |}]
 ;;
 
 let%expect_test "id" =
@@ -342,7 +496,7 @@ let%expect_test "id" =
     {|
 fun (x : Bool) -> x
     |};
-  [%expect {| Fun (x : Bool) -> Bool |}]
+  [%expect {| (x : Bool) -> Bool |}]
 ;;
 
 let%expect_test "modules" =
@@ -376,7 +530,7 @@ sig {
   let second : Bool 
 }
     |};
-  [%expect {| (= (sig { let first : Bool; let second : Bool })) |}]
+  [%expect {| (= sig { let first : Bool; let second : Bool }) |}]
 ;;
 
 let%expect_test "application" =

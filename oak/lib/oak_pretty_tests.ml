@@ -48,7 +48,7 @@ let%test_module "pretty print" =
           }
       in
       check ty;
-      [%expect {| Fun Bool -> Bool |}]
+      [%expect {| Bool -> Bool |}]
     ;;
 
     let%expect_test "named function type" =
@@ -61,7 +61,7 @@ let%test_module "pretty print" =
           }
       in
       check ty;
-      [%expect {| Fun (x : Bool) -> Bool |}]
+      [%expect {| (x : Bool) -> Bool |}]
     ;;
 
     let%expect_test "nested function type" =
@@ -80,7 +80,7 @@ let%test_module "pretty print" =
           }
       in
       check ty;
-      [%expect {| Fun Bool Bool -> Bool |}]
+      [%expect {| Bool -> Bool -> Bool |}]
     ;;
 
     let%expect_test "abstraction" =
@@ -184,14 +184,14 @@ let%test_module "pretty print" =
         sig {
           let name : Bool
           let value : Bool
-          let result : Fun Bool Bool -> Bool
+          let result : Bool -> Bool -> Bool
           let extra : Kind
         }
         --- width 40 ---
         sig {
           let name : Bool
           let value : Bool
-          let result : Fun Bool Bool -> Bool
+          let result : Bool -> Bool -> Bool
           let extra : Kind
         }
         --- width 20 ---
@@ -199,10 +199,9 @@ let%test_module "pretty print" =
           let name : Bool
           let value : Bool
           let result :
-            Fun
-              Bool
-              Bool ->
-              Bool
+            Bool ->
+            Bool ->
+            Bool
           let extra : Kind
         }
         |}]
@@ -317,19 +316,13 @@ let%test_module "pretty print" =
       [%expect
         {|
         --- width 80 ---
-        Fun (x : Fun Bool -> Bool) (y : Bool) -> Bool
+        (x : Bool -> Bool) -> (y : Bool) -> Bool
         --- width 40 ---
-        Fun
-          (x : Fun Bool -> Bool)
-          (y : Bool) ->
-          Bool
+        (x : Bool -> Bool) -> (y : Bool) -> Bool
         --- width 20 ---
-        Fun
-          ( x :
-            Fun Bool -> Bool
-          )
-          (y : Bool) ->
-          Bool
+        (x : Bool -> Bool) ->
+        (y : Bool) ->
+        Bool
         |}]
     ;;
   end)

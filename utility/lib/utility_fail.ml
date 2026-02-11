@@ -151,6 +151,15 @@ module List = struct
        | x -> x)
   ;;
 
+  let suceeds t ~f =
+    let saved = !t in
+    match f Env with
+    | exception Fail ->
+      t := saved;
+      false
+    | _ -> true
+  ;;
+
   let run t ~f =
     let saved = !t in
     match f Env with
