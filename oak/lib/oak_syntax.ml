@@ -9,6 +9,7 @@ module Core_ty = Common.Core_ty
 module Universe = Common.Universe
 module Index = Common.Index
 module Level = Common.Level
+module Literal = Common.Literal
 
 let index = Index.of_int
 let level = Level.of_int
@@ -166,11 +167,6 @@ type expr =
       { identity : expr
       ; span : Span.t
       }
-  | Expr_bool of
-      { value : bool
-      ; span : Span.t
-      }
-  | Expr_unit of { span : Span.t }
   | Expr_core_ty of
       { ty : Core_ty.t
       ; span : Span.t
@@ -197,6 +193,10 @@ type expr =
       { var : Var_info.t
       ; rhs : expr
       ; body : expr
+      ; span : Span.t
+      }
+  | Expr_literal of
+      { literal : Literal.t
       ; span : Span.t
       }
   | Expr_error of { span : Span.t }
@@ -265,10 +265,9 @@ and term =
       We would need to use some quantitative type theory to handle this properly
       so we can ensure that it stays irrelevant.
     *)
-  | Term_unit
+  | Term_literal of Literal.t
   | Term_ignore
     (* Cannot be written in the source syntax for now, can only be used in an irrelevant way *)
-  | Term_bool of { value : bool }
   | Term_if of
       { cond : term
       ; body1 : term
@@ -426,14 +425,13 @@ module Expr = struct
     | Expr_ty_mod { span; _ }
     | Expr_let { span; _ }
     | Expr_ty_sing { span; _ }
-    | Expr_bool { span; _ }
     | Expr_core_ty { span; _ }
     | Expr_universe { span; _ }
     | Expr_if { span; _ }
     | Expr_ty_pack { span; _ }
     | Expr_pack { span; _ }
-    | Expr_unit { span; _ }
     | Expr_alias { span; _ }
+    | Expr_literal { span; _ }
     | Expr_bind { span; _ } -> span
   ;;
 end

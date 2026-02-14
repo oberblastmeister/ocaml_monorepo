@@ -44,8 +44,7 @@ let rec eval (env : Env.t) (term : term) : value =
     let e = eval env e in
     unwrap_value identity e
   | Term_weaken term -> eval (Env.pop_exn env) term
-  | Term_unit | Term_pack _ | Term_bind _ | Term_ignore | Term_if _ | Term_bool _ ->
-    Value_ignore
+  | Term_literal _ | Term_pack _ | Term_bind _ | Term_ignore | Term_if _ -> Value_ignore
 
 and unwrap_value identity e =
   begin match e with

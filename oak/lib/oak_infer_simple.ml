@@ -75,3 +75,10 @@ let rec infer_value_universe (ty_env : Env.t) (e : value) : Universe.t =
     in
     universe
 ;;
+
+let infer_literal (lit : Literal.t) : Core_ty.t =
+  match lit with
+  | Unit -> Unit
+  | Bool _ -> Bool
+  | Int _ -> Int
+;;

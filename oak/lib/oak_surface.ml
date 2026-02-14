@@ -7,6 +7,7 @@ end
 
 module Core_ty = Common.Core_ty
 module Universe = Common.Universe
+module Literal = Common.Literal
 
 module Var = struct
   module T = struct
@@ -70,13 +71,8 @@ type expr =
       { identity : expr
       ; span : Span.t
       }
-  | Expr_bool of
-      { value : bool
-      ; span : Span.t
-      }
-  | Expr_unit of { span : Span.t }
-  | Expr_number of
-      { value : string
+  | Expr_literal of
+      { literal : Literal.t
       ; span : Span.t
       }
   | Expr_core_ty of
@@ -165,14 +161,12 @@ let expr_span (e : expr) : Span.t =
   | Expr_ty_mod { span; _ }
   | Expr_block { span; _ }
   | Expr_ty_sing { span; _ }
-  | Expr_bool { span; _ }
-  | Expr_unit { span; _ }
-  | Expr_number { span; _ }
   | Expr_core_ty { span; _ }
   | Expr_universe { span; _ }
   | Expr_if { span; _ }
   | Expr_ty_pack { span; _ }
   | Expr_alias { span; _ }
   | Expr_pack { span; _ }
+  | Expr_literal { span; _ }
   | Expr_bind { span; _ } -> span
 ;;

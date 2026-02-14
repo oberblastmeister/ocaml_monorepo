@@ -125,3 +125,11 @@ end = struct
 
   let size t = t.size
 end
+
+module Literal = struct
+  type t =
+    | Unit
+    | Bool of bool
+    | Int of int
+  [@@deriving sexp_of]
+end

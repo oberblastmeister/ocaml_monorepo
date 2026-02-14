@@ -252,7 +252,10 @@ and parse_keyword_fail st h (items : Items.t) : Surface.expr =
         Span.combine (Span.single keyword_index) (Span.single block.rdelim.index)
       in
       Expr_ty_mod { ty_decls; span }
-    | "alias" -> let _ = Items.next_exn items in let e = parse_atom st items in Expr_alias { e; span = Surface.expr_span e }
+    | "alias" ->
+      let _ = Items.next_exn items in
+      let e = parse_atom st items in
+      Expr_alias { e; span = Surface.expr_span e }
     | "pack" ->
       let _ = Items.next_exn items in
       let e = parse_atom st items in
@@ -483,12 +486,19 @@ and parse_atom_fail st h (items : Items.t) : Surface.expr =
     | "Unit" -> Expr_core_ty { ty = Unit; span }
     | "Type" -> Expr_universe { universe = Universe.type_; span }
     | "Kind" -> Expr_universe { universe = Universe.kind_; span }
-    | "#t" -> Expr_bool { value = true; span }
-    | "#f" -> Expr_bool { value = false; span }
+    | "#t" -> Expr_literal { literal = Bool true; span }
+    | "#f" -> Expr_literal { literal = Bool false; span }
     | _ -> Expr_var { name = ident; span }
   end
   | Token { token = Number n; index } ->
-    Expr_number { value = n; span = Span.single index }
+    Expr_literal
+      { literal =
+          Int
+            (Int.of_string_opt n
+             |> Option.value_or_thunk ~default:(fun () ->
+               error (Error.token "Invalid number" index)))
+      ; span = Span.single index
+      }
   | _ -> Fail.fail h
 
 and parse_atom st (items : Items.t) : Surface.expr =
@@ -582,7 +592,7 @@ and parse_paren st (parens : Shrub.item_delim) : Surface.expr =
     let span =
       Span.combine (Span.single parens.ldelim.index) (Span.single parens.rdelim.index)
     in
-    Expr_unit { span }
+    Expr_literal { literal = Unit; span }
   | [ { group; sep = _ } ] ->
     let items = Items.create group in
     Items.run_or_thunk

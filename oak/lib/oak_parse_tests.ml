@@ -217,16 +217,18 @@ let%expect_test "base types" =
     ((Expr_block
       (decls
        ((Block_decl_let (var ((name x) (span ((start 6) (stop 7))))) (ann ())
-         (is_alias false) (rhs (Expr_unit (span ((start 10) (stop 12)))))
+         (is_alias false)
+         (rhs (Expr_literal (literal Unit) (span ((start 10) (stop 12)))))
          (span ((start 4) (stop 12))))
         (Block_decl_let (var ((name y) (span ((start 17) (stop 18)))))
          (ann ((Expr_core_ty (ty Bool) (span ((start 21) (stop 22))))))
          (is_alias false)
-         (rhs (Expr_bool (value true) (span ((start 25) (stop 26)))))
+         (rhs (Expr_literal (literal (Bool true)) (span ((start 25) (stop 26)))))
          (span ((start 15) (stop 26))))
         (Block_decl_let (var ((name z) (span ((start 31) (stop 32))))) (ann ())
          (is_alias false)
-         (rhs (Expr_bool (value false) (span ((start 35) (stop 36)))))
+         (rhs
+          (Expr_literal (literal (Bool false)) (span ((start 35) (stop 36)))))
          (span ((start 29) (stop 36))))
         (Block_decl_let (var ((name another) (span ((start 41) (stop 42)))))
          (ann ()) (is_alias false)
@@ -235,7 +237,7 @@ let%expect_test "base types" =
            (mod_e (Expr_var ((name first) (span ((start 45) (stop 46))))))
            (field T#first) (span ((start 45) (stop 48)))))
          (span ((start 39) (stop 48))))))
-      (ret (Expr_unit (span ((start 51) (stop 53)))))
+      (ret (Expr_literal (literal Unit) (span ((start 51) (stop 53)))))
       (span ((start 1) (stop 55)))))
     |}]
 ;;
@@ -264,18 +266,20 @@ mod {
            (decls
             ((Block_decl_let (var ((name x) (span ((start 17) (stop 18)))))
               (ann ()) (is_alias false)
-              (rhs (Expr_number (value 1234) (span ((start 21) (stop 22)))))
+              (rhs
+               (Expr_literal (literal (Int 1234)) (span ((start 21) (stop 22)))))
               (span ((start 15) (stop 22))))
              (Block_decl_let (var ((name y) (span ((start 27) (stop 28)))))
               (ann ()) (is_alias false)
-              (rhs (Expr_number (value 234) (span ((start 31) (stop 32)))))
+              (rhs
+               (Expr_literal (literal (Int 234)) (span ((start 31) (stop 32)))))
               (span ((start 25) (stop 32))))))
-           (ret (Expr_unit (span ((start 35) (stop 37)))))
+           (ret (Expr_literal (literal Unit) (span ((start 35) (stop 37)))))
            (span ((start 12) (stop 40)))))
          (span ((start 6) (stop 40))))
         (Block_decl_let (var ((name second) (span ((start 47) (stop 48)))))
          (ann ()) (is_alias false)
-         (rhs (Expr_number (value 1324) (span ((start 51) (stop 52)))))
+         (rhs (Expr_literal (literal (Int 1324)) (span ((start 51) (stop 52)))))
          (span ((start 45) (stop 52))))))
       (span ((start 1) (stop 54)))))
     |}]
@@ -361,7 +365,7 @@ let%expect_test "paren exprs" =
              (field w) (span ((start 18) (stop 25)))))
            (span ((start 11) (stop 25)))))
          (span ((start 5) (stop 25))))))
-      (ret (Expr_unit (span ((start 29) (stop 31)))))
+      (ret (Expr_literal (literal Unit) (span ((start 29) (stop 31)))))
       (span ((start 2) (stop 34)))))
     |}]
 ;;
@@ -422,7 +426,7 @@ let%expect_test "function application" =
              (span ((start 24) (stop 48)))))
            (span ((start 11) (stop 48)))))
          (span ((start 5) (stop 48))))))
-      (ret (Expr_unit (span ((start 51) (stop 53)))))
+      (ret (Expr_literal (literal Unit) (span ((start 51) (stop 53)))))
       (span ((start 2) (stop 56)))))
     |}]
 ;;
@@ -729,7 +733,7 @@ let%expect_test "let with annotation" =
        ((Block_decl_let (var ((name x) (span ((start 6) (stop 7)))))
          (ann ((Expr_core_ty (ty Bool) (span ((start 10) (stop 11))))))
          (is_alias false)
-         (rhs (Expr_bool (value true) (span ((start 14) (stop 15)))))
+         (rhs (Expr_literal (literal (Bool true)) (span ((start 14) (stop 15)))))
          (span ((start 4) (stop 15))))))
       (ret (Expr_var ((name x) (span ((start 18) (stop 19))))))
       (span ((start 1) (stop 21)))))
@@ -750,7 +754,8 @@ f { let x = #t
          (decls
           ((Block_decl_let (var ((name x) (span ((start 7) (stop 8))))) (ann ())
             (is_alias false)
-            (rhs (Expr_bool (value true) (span ((start 11) (stop 12)))))
+            (rhs
+             (Expr_literal (literal (Bool true)) (span ((start 11) (stop 12)))))
             (span ((start 5) (stop 12))))))
          (ret (Expr_var ((name x) (span ((start 15) (stop 16))))))
          (span ((start 3) (stop 18))))))

@@ -120,9 +120,7 @@ let rec rename_expr st (expr : Surface.expr) : Syntax.expr =
   | Surface.Expr_ty_sing { identity; span } ->
     let identity = rename_expr st identity in
     Expr_ty_sing { identity; span }
-  | Surface.Expr_bool { value; span } -> Expr_bool { value; span }
-  | Surface.Expr_unit { span } -> Expr_unit { span }
-  | Surface.Expr_number { value = _; span = _ } -> failwith "todo: Expr_number"
+  | Surface.Expr_literal { literal; span } -> Expr_literal { literal; span }
   | Surface.Expr_core_ty { ty; span } -> Expr_core_ty { ty; span }
   | Surface.Expr_universe { universe; span } -> Expr_universe { universe; span }
   | Surface.Expr_if { cond; body1; body2; span } ->

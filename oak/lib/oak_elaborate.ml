@@ -228,8 +228,9 @@ let rec infer (cx : Context.t) (e : expr) : term * ty =
     let identity, identity_ty = infer cx identity in
     ( Term_sing_in identity
     , Value_ty_sing { identity = Context.eval cx identity; ty = identity_ty } )
-  | Expr_bool { value; span = _ } -> Term_bool { value }, Value_core_ty Bool
-  | Expr_unit { span = _ } -> Term_unit, Value_core_ty Unit
+  | Expr_literal { literal; span = _ } ->
+    let ty = Infer_simple.infer_literal literal in
+    Term_literal literal, Value_core_ty ty
   | Expr_core_ty { ty; span = _ } -> Term_core_ty ty, Value_universe Universe.type_
   | Expr_universe { universe; span = _ } ->
     Term_universe universe, Value_universe (Universe.incr universe)
