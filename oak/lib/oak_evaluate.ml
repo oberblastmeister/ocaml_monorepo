@@ -136,6 +136,7 @@ and proj_uvalue mod_e field field_index =
 let next_var_of_size size = Value.var (Level.of_int size)
 let next_var_of_env env = next_var_of_size (Env.size env)
 
+(* This should only be used in irrelevant contexts *)
 let rec quote context_size (e : value) : term =
   match e with
   | Value_ignore -> Term_ignore

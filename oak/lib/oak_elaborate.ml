@@ -1,7 +1,5 @@
 open Prelude
 open Oak_syntax
-open Oak_evaluate
-open Oak_infer_simple
 
 open struct
   module Spanned = Utility.Spanned
@@ -12,6 +10,8 @@ open struct
   module Pretty = Oak_pretty
   module Context = Oak_context
   module Universe = Common.Universe
+  module Infer_simple = Oak_infer_simple
+  module Evaluate = Oak_evaluate
 end
 
 exception Error of Diagnostic.t
@@ -37,14 +37,14 @@ let raise_type_not_ignorable e = raise_notrace (Type_not_ignorable e)
   This corresponds to the sealed at judgement in https://www.cs.cmu.edu/~rwh/papers/multiphase/mlw.pdf
 *)
 let rec check_ty_ignorable (cx : Context.t) (ty : ty) : unit =
-  match unfold ty with
+  match Evaluate.unfold ty with
   | Uvalue_ignore | Uvalue_mod _ | Uvalue_abs _ | Uvalue_sing_in _ ->
     raise_s [%message "Not a type" (ty : value)]
   | Uvalue_ty_pack _ | Uvalue_core_ty _ | Uvalue_ty_sing _ -> ()
   | Uvalue_neutral neutral ->
     let kind =
-      infer_neutral cx.ty_env (Uneutral.to_neutral neutral)
-      |> unfold
+      Infer_simple.infer_neutral cx.ty_env (Uneutral.to_neutral neutral)
+      |> Evaluate.unfold
       |> Uvalue.universe_val_exn
     in
     if not (Universe.equal kind Universe.type_)
@@ -55,11 +55,11 @@ let rec check_ty_ignorable (cx : Context.t) (ty : ty) : unit =
   | Uvalue_ty_fun ty ->
     check_ty_ignorable
       (Context.bind ty.var ty.param_ty cx)
-      (eval_closure1 ty.body_ty (Context.next_var cx))
+      (Evaluate.eval_closure1 ty.body_ty (Context.next_var cx))
   | Uvalue_ty_mod ty ->
     let _ =
       List.fold ty.ty_decls ~init:(cx, ty.env) ~f:(fun (cx, closure_env) ty_decl ->
-        let ty = eval closure_env ty_decl.ty in
+        let ty = Evaluate.eval closure_env ty_decl.ty in
         check_ty_ignorable cx ty;
         Context.bind ty_decl.var ty cx, Env.push (Context.next_var cx) closure_env)
     in
@@ -74,12 +74,6 @@ let check_type_ignorable cx ty =
   match check_ty_ignorable cx ty with
   | () -> Ok ()
   | exception Type_not_ignorable part -> Error part
-;;
-
-let create_singleton cx e ty (universe : Universe.t) =
-  if Universe.equal universe Universe.type_
-  then e, ty
-  else Term_sing_in e, Value_ty_sing { identity = Context.eval cx e; ty }
 ;;
 
 (* TODO: these should not unwrap types with exn *)
@@ -120,7 +114,7 @@ let rec infer (cx : Context.t) (e : expr) : term * ty =
     in
     let arg = check cx arg func_ty.param_ty in
     let e = Term_app { func; arg } in
-    let ty = eval_closure1 func_ty.body_ty (Context.eval cx arg) in
+    let ty = Evaluate.eval_closure1 func_ty.body_ty (Context.eval cx arg) in
     e, ty
   | Expr_abs { var; param_ty = Some param_ty; body; span = _ } ->
     let param_ty, _ = check_universe cx param_ty in
@@ -174,7 +168,7 @@ let rec infer (cx : Context.t) (e : expr) : term * ty =
           }
     in
     let e = Term_proj { mod_e; field; field_index } in
-    let ty = eval_ty_mod_closure (Context.eval cx mod_e) mod_ty field_index in
+    let ty = Evaluate.eval_ty_mod_closure (Context.eval cx mod_e) mod_ty field_index in
     e, ty
   | Expr_mod { decls; span = _ } ->
     (*
@@ -223,22 +217,17 @@ let rec infer (cx : Context.t) (e : expr) : term * ty =
     let cx' = Context.bind var rhs_ty cx in
     let body, body_ty = infer cx' body in
     ( Term_let { var; rhs; body }
-    , eval (Env.push (Context.eval cx rhs) cx.value_env) (Context.quote cx' body_ty) )
+    , Evaluate.eval
+        (Env.push (Context.eval cx rhs) cx.value_env)
+        (Context.quote cx' body_ty) )
   | Expr_ty_sing { identity; span = _ } ->
     let identity, identity_ty = infer cx identity in
-    let universe = infer_value_universe cx.ty_env identity_ty in
-    if Universe.equal universe Universe.type_
-    then begin
-      Context.quote cx identity_ty, Value_universe Universe.type_
-    end
-    else begin
-      ( Term_ty_sing { identity; ty = Context.quote cx identity_ty }
-      , Value_universe Universe.kind_ )
-    end
+    ( Term_ty_sing { identity; ty = Context.quote cx identity_ty }
+    , Value_universe Universe.kind_ )
   | Expr_alias { identity; span = _ } ->
     let identity, identity_ty = infer cx identity in
-    let universe = infer_value_universe cx.ty_env identity_ty in
-    create_singleton cx identity identity_ty universe
+    ( Term_sing_in identity
+    , Value_ty_sing { identity = Context.eval cx identity; ty = identity_ty } )
   | Expr_bool { value; span = _ } -> Term_bool { value }, Value_core_ty Bool
   | Expr_unit { span = _ } -> Term_unit, Value_core_ty Unit
   | Expr_core_ty { ty; span = _ } -> Term_core_ty ty, Value_universe Universe.type_
@@ -250,8 +239,8 @@ let rec infer (cx : Context.t) (e : expr) : term * ty =
     let cond = check cx cond (Value_core_ty Bool) in
     let body1, body1_ty = infer cx body1 in
     let body2, body2_ty = infer cx body2 in
-    let universe1 = infer_value_universe cx.ty_env body1_ty in
-    let universe2 = infer_value_universe cx.ty_env body2_ty in
+    let universe1 = Infer_simple.infer_value_universe cx.ty_env body1_ty in
+    let universe2 = Infer_simple.infer_value_universe cx.ty_env body2_ty in
     if not (Universe.equal universe1 Universe.type_)
     then
       raise_error
@@ -308,7 +297,7 @@ let rec infer (cx : Context.t) (e : expr) : term * ty =
       }
 
 and check (cx : Context.t) (e : expr) (ty : ty) : term =
-  match e, unfold ty with
+  match e, Evaluate.unfold ty with
   | Expr_abs { var; param_ty; body; span }, Uvalue_ty_fun ty ->
     (match param_ty with
      | Some param_ty ->
@@ -331,7 +320,7 @@ and check (cx : Context.t) (e : expr) (ty : ty) : term =
       check
         (Context.bind var ty.param_ty cx)
         body
-        (eval_closure1 ty.body_ty (Context.next_var cx))
+        (Evaluate.eval_closure1 ty.body_ty (Context.next_var cx))
     in
     Term_abs { var; body }
   | Expr_let { var; rhs; body; span = _ }, _ ->
@@ -362,7 +351,7 @@ and check (cx : Context.t) (e : expr) (ty : ty) : term =
          });
     let rhs, rhs_ty = infer cx rhs in
     let rhs_inner_ty =
-      match unfold rhs_ty with
+      match Evaluate.unfold rhs_ty with
       | Uvalue_ty_pack ty -> ty
       | _ ->
         raise_error

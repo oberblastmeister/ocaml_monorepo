@@ -19,18 +19,17 @@ let check ?(print_term = false) ?(show_singletons = false) s =
       if not (List.is_empty rename_diagnostics)
       then begin
         Diagnostic.print_many ~files ~color:false rename_diagnostics
-      end
-      else begin
-        match Oak_elaborate.infer source renamed with
-        | Ok (term, ty) ->
-          if print_term then print_s [%message (term : Syntax.term) (ty : Syntax.ty)];
-          Pp.render_to_stdout
-            ~color:false
-            (Pretty.pp_value ~show_singletons Common.Name_list.empty ty);
-          Out_channel.newline stdout
-        | Error diagnostic ->
-          Diagnostic.print ~color:false ~files diagnostic;
-          Out_channel.newline stdout
+      end;
+      begin match Oak_elaborate.infer source renamed with
+      | Ok (term, ty) ->
+        if print_term then print_s [%message (term : Syntax.term) (ty : Syntax.ty)];
+        Pp.render_to_stdout
+          ~color:false
+          (Pretty.pp_value ~show_singletons Common.Name_list.empty ty);
+        Out_channel.newline stdout
+      | Error diagnostic ->
+        Diagnostic.print ~color:false ~files diagnostic;
+        Out_channel.newline stdout
       end
   end
 ;;
@@ -102,6 +101,12 @@ mod {
       |
     2 |       Sig
       |       ^^^
+
+    error: Cannot infer error term
+     --> <input>:2:7
+      |
+    2 |       Sig
+      |       ^^^
     |}];
   check
     {|
@@ -122,7 +127,8 @@ mod {
     (#t : x)
   }
       |};
-  [%expect {|
+  [%expect
+    {|
     error: Types were not equal: Bool != x
     note: failed to coerce inferred type  Bool when checking against type x
      --> <input>:4:6
@@ -292,12 +298,12 @@ alias (= mod {
     {|
 alias (= #t)
     |};
-  [%expect {| (= Bool) |}];
+  [%expect {| (= (= ignore)) |}];
   check
     {|
 alias (#f : (= #t))
     |};
-  [%expect {| Bool |}];
+  [%expect {| (= ignore) |}];
   check
     {|
 ({
@@ -365,8 +371,7 @@ mod {
   let T := f Bool
 }
       |};
-  [%expect
-    {| sig { let ty : (= (= fun T -> T)); let f : ty; let T : (= f (Bool)) } |}];
+  [%expect {| sig { let ty : (= (= fun T -> T)); let f : ty; let T : (= f (Bool)) } |}];
   check
     {|
   mod {
@@ -450,7 +455,7 @@ mod {
     let and : (A B : Type) -> T A -> T B -> T (Pair A B)
   };
   
-  let Monad := sig {
+  let Monad : Kind := sig {
     let T : Type -> Type
     let return : (A : Type) -> A -> T A
     let bind : (A B : Type) -> T A -> (A -> T B) -> T B
@@ -572,4 +577,27 @@ let%expect_test "application" =
 (fun (x : Bool) -> x) #t
     |};
   [%expect {| Bool |}]
+;;
+
+let%expect_test "duplicate declarations record" =
+  check
+    {|
+mod {
+  let first = 1234
+  let first = 1234
+}
+    |};
+  [%expect {|
+    error: Duplicate variable in module
+     --> <input>:4:7
+      |
+    4 |   let first = 1234
+      |       ^^^^^
+
+    error: Cannot infer error term
+     --> <input>:2:1
+      |
+    2 | mod {
+      | ^^^^^...
+    |}]
 ;;

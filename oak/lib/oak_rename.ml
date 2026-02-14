@@ -98,7 +98,11 @@ let rec rename_expr st (expr : Surface.expr) : Syntax.expr =
         | Block_decl_let { var; _ } -> var
         | Block_decl_bind { var; _ } -> var
       in
-      duplicate := !duplicate || Hash_set.mem used_vars var;
+      if Hash_set.mem used_vars var
+      then begin
+        duplicate := true;
+        State.add_error st (Spanned.create "Duplicate variable in module" var.span)
+      end;
       Hash_set.add used_vars var);
     if !duplicate
     then Expr_error { span }

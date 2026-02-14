@@ -145,6 +145,7 @@ struct
 
   and pp_atom (names : Name_list.t) (value : Syntax.value) =
     match value with
+    | Value_ignore -> pp_value names value
     | Value_neutral { head; spine } when is_spine_atom spine ->
       Doc.group (pp_neutral names { head; spine })
     | Value_core_ty _ | Value_universe _ | Value_ty_sing _ -> pp_value names value
