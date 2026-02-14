@@ -36,6 +36,8 @@ let lex s =
       | '{' -> lex (Token.LBrace :: acc) (i + 1)
       | '}' -> lex (Token.RBrace :: acc) (i + 1)
       | ',' -> lex (Token.Comma :: acc) (i + 1)
+      | ':' when i + 1 < String.length s && Char.equal s.[i + 1] '=' ->
+        lex (Token.Colon_equal :: acc) (i + 2)
       | ':' when i + 1 >= String.length s || not (is_operator_char s.[i + 1]) ->
         lex (Token.Colon :: acc) (i + 1)
       | ';' -> lex (Token.Semi :: acc) (i + 1)

@@ -13,6 +13,7 @@ type t =
   | RBrack
   | Comma
   | Colon
+  | Colon_equal
   | Semi
   (* these are inserted by the layout calculator and never appear in the source code *)
   | VSemi
@@ -73,6 +74,7 @@ let length = function
   | Pipe
   | Dot
   | Newline -> 1
+  | Colon_equal -> 2
   | Operator s -> String.length s
   | Comment s -> 2 + String.length s
   | Whitespace n -> n
@@ -96,6 +98,7 @@ let to_string = function
   | RBrack -> "]"
   | Comma -> ","
   | Colon -> ":"
+  | Colon_equal -> ":="
   | Semi -> ";"
   | Equal -> "="
   | Pipe -> "|"
@@ -124,6 +127,7 @@ let sexp_of_t = function
   | RBrack -> Sexp.Atom "]"
   | Comma -> Sexp.Atom ","
   | Colon -> Sexp.Atom ":"
+  | Colon_equal -> Sexp.Atom ":="
   | Semi -> Sexp.Atom ";"
   | Equal -> Sexp.Atom "="
   | Pipe -> Sexp.Atom "|"

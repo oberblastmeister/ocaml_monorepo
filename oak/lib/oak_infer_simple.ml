@@ -9,6 +9,7 @@ open struct
   module Diagnostic = Oak_diagnostic
   module Pretty = Oak_pretty
   module Context = Oak_context
+  module Universe = Common.Universe
 end
 
 (* precondition: the neutral must be well typed, but it *doesn't* have to be an element of some universe. *)
@@ -39,15 +40,15 @@ let rec infer_value_universe (ty_env : Env.t) (e : value) : Universe.t =
   match e with
   | Value_mod _ | Value_abs _ | Value_ignore | Value_sing_in _ -> panic ()
   | Value_core_ty _ | Value_ty_pack _ ->
-    Universe.Type
+    Universe.type_
     (*
       We infer kind here because we don't want subtyping issues at kind Type,
       same reason ty_mod is inferred to be kind Kind
     *)
-  | Value_ty_sing _ -> Kind
+  | Value_ty_sing _ -> Universe.kind_
   | Value_neutral neutral ->
     infer_neutral ty_env neutral |> unfold |> Uvalue.universe_val_exn
-  | Value_universe u -> Universe.incr_exn u
+  | Value_universe u -> Universe.incr u
   | Value_ty_fun { var = _; param_ty; body_ty } ->
     let universe1 = infer_value_universe ty_env param_ty in
     let universe2 =
@@ -61,7 +62,7 @@ let rec infer_value_universe (ty_env : Env.t) (e : value) : Universe.t =
     let _, _, universe =
       List.fold
         ty_decls
-        ~init:(closure_env, ty_env, Universe.Kind)
+        ~init:(closure_env, ty_env, Universe.kind_)
         ~f:(fun (closure_env, ty_env, universe) ty_decl ->
           let ty = eval closure_env ty_decl.ty in
           let universe' = infer_value_universe ty_env ty in

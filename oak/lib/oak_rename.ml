@@ -90,12 +90,29 @@ let rec rename_expr st (expr : Surface.expr) : Syntax.expr =
     let mod_e = rename_expr st mod_e in
     Expr_proj { mod_e; field; span }
   | Surface.Expr_mod { decls; span } ->
-    let decls = rename_decls st decls in
-    Expr_mod { decls; span }
+    let used_vars = Surface.Var.Hash_set.create () in
+    let duplicate = ref false in
+    List.iter decls ~f:(fun decl ->
+      let var =
+        match decl with
+        | Block_decl_let { var; _ } -> var
+        | Block_decl_bind { var; _ } -> var
+      in
+      duplicate := !duplicate || Hash_set.mem used_vars var;
+      Hash_set.add used_vars var);
+    if !duplicate
+    then Expr_error { span }
+    else begin
+      let decls = rename_decls st decls in
+      Expr_mod { decls; span }
+    end
   | Surface.Expr_ty_mod { ty_decls; span } ->
     let ty_decls = rename_ty_decls st ty_decls in
     Expr_ty_mod { ty_decls; span }
   | Surface.Expr_block { decls; ret; span } -> rename_block st decls ret span
+  | Expr_alias { e; span } ->
+    let e = rename_expr st e in
+    Syntax.Expr_alias { identity = e; span }
   | Surface.Expr_ty_sing { identity; span } ->
     let identity = rename_expr st identity in
     Expr_ty_sing { identity; span }
@@ -144,7 +161,7 @@ and rename_ty_fun st params body_ty span =
 and rename_block st decls ret span =
   match decls with
   | [] -> rename_expr st ret
-  | Surface.Block_decl_let { var; ann; rhs; span = decl_span } :: rest ->
+  | Surface.Block_decl_let { var; ann; is_alias; rhs; span = decl_span } :: rest ->
     let rhs =
       match ann with
       | Some ty ->
@@ -152,6 +169,11 @@ and rename_block st decls ret span =
         let rhs = rename_expr st rhs in
         Syntax.Expr_ann { e = rhs; ty; span = decl_span }
       | None -> rename_expr st rhs
+    in
+    let rhs =
+      if is_alias
+      then Syntax.Expr_alias { identity = rhs; span = Syntax.Expr.span rhs }
+      else rhs
     in
     State.with_var st var ~f:(fun () ->
       let body = rename_block st rest ret span in
@@ -165,17 +187,30 @@ and rename_block st decls ret span =
 and rename_decls st decls =
   match decls with
   | [] -> []
-  | (decl : Surface.decl) :: rest ->
-    let e =
-      match decl.ann with
-      | Some ty ->
-        let ty = rename_expr st ty in
-        let rhs = rename_expr st decl.e in
-        Syntax.Expr_ann { e = rhs; ty; span = decl.span }
-      | None -> rename_expr st decl.e
-    in
-    let d : Syntax.expr_decl = { var = var_info decl.var; e; span = decl.span } in
-    State.with_var st decl.var ~f:(fun () -> d :: rename_decls st rest)
+  | (decl : Surface.block_decl) :: rest -> begin
+    match decl with
+    | Block_decl_let { var; ann; is_alias; rhs; span } ->
+      let rhs =
+        match ann with
+        | Some ty ->
+          let ty = rename_expr st ty in
+          let rhs = rename_expr st rhs in
+          Syntax.Expr_ann { e = rhs; ty; span }
+        | None -> rename_expr st rhs
+      in
+      let rhs =
+        if is_alias
+        then Syntax.Expr_alias { identity = rhs; span = Syntax.Expr.span rhs }
+        else rhs
+      in
+      let d : Syntax.expr_decl = { var = var_info var; e = rhs; span } in
+      State.with_var st var ~f:(fun () -> d :: rename_decls st rest)
+    | Block_decl_bind { span; _ } ->
+      State.add_error
+        st
+        (Spanned.create "Bind declarations are not allowed at the top level" span);
+      rename_decls st rest
+  end
 
 and rename_ty_decls st ty_decls =
   match ty_decls with

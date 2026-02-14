@@ -3,6 +3,7 @@ module Syntax = Oak_syntax
 module Name_list = Oak_common.Name_list
 module Pp = Utility.Pp
 module Bwd = Utility.Bwd
+module Universe = Oak_common.Universe
 
 let var name : Syntax.Var_info.t = { name; pos = 0 }
 let closure body : Syntax.value_closure = { env = Syntax.Env.empty; body }
@@ -27,9 +28,9 @@ let%test_module "pretty print" =
     ;;
 
     let%expect_test "universes" =
-      check (Value_universe Type);
-      check (Value_universe Kind);
-      check (Value_universe Sig);
+      check (Value_universe Universe.type_);
+      check (Value_universe Universe.kind_);
+      check (Value_universe Universe.sig_);
       [%expect
         {|
         Type
@@ -131,7 +132,7 @@ let%test_module "pretty print" =
         Value_mod
           { fields =
               [ { name = "x"; e = Value_core_ty Bool }
-              ; { name = "y"; e = Value_universe Type }
+              ; { name = "y"; e = Value_universe Universe.type_ }
               ]
           }
       in
@@ -145,7 +146,7 @@ let%test_module "pretty print" =
           { env = Syntax.Env.empty
           ; ty_decls =
               [ { var = var "x"; ty = Term_core_ty Bool }
-              ; { var = var "y"; ty = Term_universe Type }
+              ; { var = var "y"; ty = Term_universe Universe.type_ }
               ]
           }
       in
@@ -173,7 +174,7 @@ let%test_module "pretty print" =
                             }
                       }
                 }
-              ; { var = var "extra"; ty = Term_universe Kind }
+              ; { var = var "extra"; ty = Term_universe Universe.kind_ }
               ]
           }
       in
@@ -214,7 +215,8 @@ let%test_module "pretty print" =
 
     let%expect_test "singleton type (hidden)" =
       let v : Syntax.value =
-        Value_ty_sing { identity = Value_core_ty Bool; ty = Value_universe Type }
+        Value_ty_sing
+          { identity = Value_core_ty Bool; ty = Value_universe Universe.type_ }
       in
       check v;
       [%expect {| (= Bool) |}]
@@ -222,7 +224,8 @@ let%test_module "pretty print" =
 
     let%expect_test "singleton type (shown)" =
       let v : Syntax.value =
-        Value_ty_sing { identity = Value_core_ty Bool; ty = Value_universe Type }
+        Value_ty_sing
+          { identity = Value_core_ty Bool; ty = Value_universe Universe.type_ }
       in
       check ~show_singletons:true v;
       [%expect {| (= Bool) |}]

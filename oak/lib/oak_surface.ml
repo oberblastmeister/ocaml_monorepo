@@ -53,7 +53,7 @@ type expr =
       ; span : Span.t
       }
   | Expr_mod of
-      { decls : decl list
+      { decls : block_decl list
       ; span : Span.t
       }
   | Expr_ty_mod of
@@ -97,6 +97,10 @@ type expr =
       { ty : expr
       ; span : Span.t
       }
+  | Expr_alias of
+      { e : expr
+      ; span : Span.t
+      }
   | Expr_pack of
       { e : expr
       ; span : Span.t
@@ -112,6 +116,7 @@ and block_decl =
   | Block_decl_let of
       { var : Var.t
       ; ann : expr option
+      ; is_alias : bool
       ; rhs : expr
       ; span : Span.t
       }
@@ -124,6 +129,7 @@ and block_decl =
 and decl =
   { var : Var.t
   ; ann : expr option
+  ; is_alias : bool
   ; e : expr
   ; span : Span.t
   }
@@ -166,6 +172,7 @@ let expr_span (e : expr) : Span.t =
   | Expr_universe { span; _ }
   | Expr_if { span; _ }
   | Expr_ty_pack { span; _ }
+  | Expr_alias { span; _ }
   | Expr_pack { span; _ }
   | Expr_bind { span; _ } -> span
 ;;

@@ -10,6 +10,7 @@ open struct
   module Pretty = Oak_pretty
   module Context = Oak_context
   module Infer_simple = Oak_infer_simple
+  module Universe = Common.Universe
 end
 
 exception Type_mismatch of Diagnostic.Part.t
@@ -35,10 +36,8 @@ let rec conv (cx : Context.t) (e1 : value) (e2 : value) (ty : value) : unit =
       |> unfold
       |> Uvalue.universe_val_exn
     in
-    begin match universe with
-    (* abstract types can be ignored *)
-    | Type -> ()
-    | Kind | Sig ->
+    if not (Universe.equal universe Universe.type_)
+    then begin
       let ty1 = unfold e1 |> Uvalue.neutral_val_exn in
       let ty2 = unfold e2 |> Uvalue.neutral_val_exn in
       let _ = conv_neutral cx ty1 ty2 in

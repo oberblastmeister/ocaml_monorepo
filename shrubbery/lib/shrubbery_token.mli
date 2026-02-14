@@ -10,6 +10,7 @@ type t =
   | RBrack
   | Comma
   | Colon
+  | Colon_equal
   | Semi
   | VSemi
   | VLBrace

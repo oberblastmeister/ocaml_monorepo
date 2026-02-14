@@ -157,6 +157,10 @@ type expr =
       ; body : expr
       ; span : Span.t
       }
+  | Expr_alias of
+      { identity : expr
+      ; span : Span.t
+      }
     (* Also known as the singleton type, or the static extent.  *)
   | Expr_ty_sing of
       { identity : expr
@@ -429,6 +433,7 @@ module Expr = struct
     | Expr_ty_pack { span; _ }
     | Expr_pack { span; _ }
     | Expr_unit { span; _ }
+    | Expr_alias { span; _ }
     | Expr_bind { span; _ } -> span
   ;;
 end

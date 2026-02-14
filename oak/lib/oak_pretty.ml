@@ -1,8 +1,12 @@
 open Prelude
-module Name_list = Oak_common.Name_list
-module Syntax = Oak_syntax
-module Evaluate = Oak_evaluate
-module Common = Oak_common
+
+open struct
+  module Name_list = Oak_common.Name_list
+  module Syntax = Oak_syntax
+  module Evaluate = Oak_evaluate
+  module Common = Oak_common
+  module Universe = Common.Universe
+end
 
 module Make (Config : sig
     val show_singletons : bool
@@ -43,9 +47,7 @@ struct
     | Value_ignore -> Doc.string "ignore"
     | Value_neutral neutral -> Doc.group (pp_neutral names neutral)
     | Value_core_ty ty -> Common.Core_ty.pp ty
-    | Value_universe Type -> Doc.string "Type"
-    | Value_universe Kind -> Doc.string "Kind"
-    | Value_universe Sig -> Doc.string "Sig"
+    | Value_universe u -> Common.Universe.pp u
     | Value_abs abs ->
       let params, names, body = collect_abs_params names [ abs.var.name ] abs in
       Doc.group

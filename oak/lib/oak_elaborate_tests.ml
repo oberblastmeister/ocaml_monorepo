@@ -63,7 +63,7 @@ fun x -> x
   check
     {|
 {
-  let x = Bool
+  let x := Bool
   let y : x = #t
   y
 }
@@ -72,7 +72,7 @@ fun x -> x
   check
     {|
 mod {
-  let x = Bool
+  let x := Bool
   let y = {
     let y : x = #t
     y
@@ -83,10 +83,10 @@ mod {
   check
     {|
   mod {
-    let x = Type
-    let y = Type
-    let z = Type
-    let w = Kind
+    let x := Type
+    let y := Type
+    let z := Type
+    let w := Kind
   }
       |};
   [%expect
@@ -122,41 +122,48 @@ mod {
     (#t : x)
   }
       |};
-  [%expect {| Bool |}];
+  [%expect {|
+    error: Types were not equal: Bool != x
+    note: failed to coerce inferred type  Bool when checking against type x
+     --> <input>:4:6
+      |
+    4 |     (#t : x)
+      |      ^^
+    |}];
   check
     {|
 mod {
-  let x = Bool
-  let y = x
+  let x := Bool
+  let y := x
   let f : (= x) -> (= x) = fun x -> x
-  let r = f Bool
+  let r := f Bool
   let b : r = #t
 }
       |};
   [%expect
-    {| sig { let x : (= Bool); let y : (= x); let f : (= x) -> (= x); let r : (= f (((Bool)))); let b : r } |}];
+    {| sig { let x : (= Bool); let y : (= x); let f : (= x) -> (= x); let r : (= f ((Bool))); let b : r } |}];
   check
     {|
 mod {
   let M1 = mod {
-    let T = Bool
+    let T := Bool
   }
   
-  let M2 = M1
+  let M2 := M1
   
   let M3 : sig {
     let T : Type
   } = mod {
-    let T = Bool
+    let T := Bool
   }
   
-  let T1 = M1.T
+  let T1 := M1.T
   
-  let T2 = M2.T
+  let T2 := M2.T
   
-  let T3 = M3.T
+  let T3 := M3.T
   
-  let T4 = T3
+  let T4 := T3
 }
       |};
   [%expect
@@ -183,18 +190,18 @@ mod {
   } = mod {
     let M = mod {
       let M = mod {
-        let T = Bool
+        let T := Bool
       }
     }
   }
   
-  let M2 = M1
+  let M2 := M1
   
-  let T1 = M1.M.M.T
+  let T1 := M1.M.M.T
   
-  let T2 = M2.M.M.T
+  let T2 := M2.M.M.T
   
-  let T3 = (M2.M.M : sig { let T : Type }).T
+  let T3 := (M2.M.M : sig { let T : Type }).T
 }
       |};
   [%expect
@@ -204,7 +211,7 @@ mod {
       let M2 : (= M1)
       let T1 : (= M1.M.M.T)
       let T2 : (= M2.M.M.T)
-      let T3 : Type
+      let T3 : (= M2.M.M.T)
     }
     |}];
   check
@@ -231,7 +238,7 @@ mod {
   [%expect
     {|
     error: Universes were not equal: Sig != Type
-    note: failed to coerce inferred type  (= Kind) when checking against type Type
+    note: failed to coerce inferred type  Sig when checking against type Type
      --> <input>:2:2
       |
     2 | (Kind : Type)
@@ -244,7 +251,7 @@ mod {
   [%expect
     {|
     error: Universes were not equal: Kind != Type
-    note: failed to coerce inferred type  (= Type) when checking against type Type
+    note: failed to coerce inferred type  Kind when checking against type Type
      --> <input>:2:2
       |
     2 | (Type : Type)
@@ -260,35 +267,35 @@ mod {
 {
   let b = #t
   let m = mod {
-    let T = Bool
-    let T' = (T : Type)
+    let T := Bool
+    let T' := (T : Type)
     let x : T = #t
   }
   m
 }
     |};
-  [%expect {| (= mod { let T = Bool; let T' = Bool; let x = ignore }) |}];
+  [%expect {| sig { let T : (= Bool); let T' : (= T); let x : T } |}];
   check
     {|
-(= mod {
-  let T = Bool
-  let T' = (T : Type)
+alias (= mod {
+  let T := Bool
+  let T' := (T : Type)
 })
       |};
   [%expect {| (= (= mod { let T = Bool; let T' = Bool })) |}];
   check
     {|
-    (= (Bool : Type))
+    alias (= (Bool : Type))
     |};
   [%expect {| (= (= Bool)) |}];
   check
     {|
-(= #t)
+alias (= #t)
     |};
   [%expect {| (= Bool) |}];
   check
     {|
-(#f : (= #t))
+alias (#f : (= #t))
     |};
   [%expect {| Bool |}];
   check
@@ -342,7 +349,7 @@ mod {
     {|
     error: Core types were not equal: Bool != Unit
     note: failed to coerce inferred type
-      sig { let T : (= Unit); let x : Bool }
+      sig { let T : Type; let x : Bool }
     when checking against type
       sig { let T : Type; let x : T }
      --> <input>:2:2
@@ -353,29 +360,29 @@ mod {
   check
     {|
 mod {
-  let ty = (= fun (T : (= Bool)) -> T)
+  let ty := (= fun (T : (= Bool)) -> T)
   let f = ((fun (T : Type) -> Bool) : ty)
-  let T = f Bool
+  let T := f Bool
 }
       |};
   [%expect
-    {| sig { let ty : (= (= fun T -> T)); let f : ty; let T : (= f ((Bool))) } |}];
+    {| sig { let ty : (= (= fun T -> T)); let f : ty; let T : (= f (Bool)) } |}];
   check
     {|
   mod {
     let f =
       ((fun (T : Type) -> Bool) : (= fun (T : (= Bool)) -> T))
-    let T = f Int
+    let T := f Int
   }
         |};
   [%expect
     {|
     error: Base types were not equal: Int != Bool
-    note: failed to coerce inferred type  (= Int) when checking against type (= Bool)
-     --> <input>:5:15
+    note: failed to coerce inferred type  Type when checking against type (= Bool)
+     --> <input>:5:16
       |
-    5 |     let T = f Int
-      |               ^^^
+    5 |     let T := f Int
+      |                ^^^
     |}];
   check
     {|
@@ -388,7 +395,7 @@ mod {
   [%expect
     {|
     error: Base types were not equal: Int != Bool
-    note: failed to coerce inferred type  (= Int) when checking against type (= Bool)
+    note: failed to coerce inferred type  Type when checking against type (= Bool)
      --> <input>:5:17
       |
     5 |       let T = f Int
@@ -397,19 +404,19 @@ mod {
   check
     {|
     mod {
-      let Un = Unit
+      let Un := Unit
       
       let M1 = mod {
-        let T = Bool
-        let T' = T
-        let U = Int
-        let S = Un
+        let T := Bool
+        let T' := T
+        let U := Int
+        let S := Un
       }
       
       let M2 = mod {
-        let T = Bool
-        let T' = Bool
-        let S = Unit
+        let T := Bool
+        let T' := Bool
+        let S := Unit
       }
       
       let M3 = (M1 : (= M2))
@@ -427,15 +434,15 @@ mod {
   check
     {|
 mod {
-  let Pair : (a b : Type) -> Type  = fun A B -> Unit
+  let Pair : (a b : Type) -> Type = fun A B -> Unit
   
-  let Functor = sig {
+  let Functor := sig {
     let T : Type -> Type
     
     let map : (A B : Type) -> (A -> B) -> T A -> T B
   }
   
-  let Applicative = sig {
+  let Applicative := sig {
     let T : Type -> Type
     
     let pure : (A : Type) -> T A
@@ -443,13 +450,13 @@ mod {
     let and : (A B : Type) -> T A -> T B -> T (Pair A B)
   };
   
-  let Monad = sig {
+  let Monad := sig {
     let T : Type -> Type
     let return : (A : Type) -> A -> T A
     let bind : (A B : Type) -> T A -> (A -> T B) -> T B
   }
   
-  let List = sig {
+  let List := sig {
     let T : Type -> Type
     let nil : (A : Type) -> T A
     let cons : (A : Type) -> A -> T A -> T A
@@ -528,7 +535,7 @@ let%expect_test "modules" =
 mod {
   let first = #t
   let second : Type = Bool
-  let ty = Type
+  let ty := Type
   let b : ty = Bool
 }
     |};
@@ -538,8 +545,8 @@ mod {
     {|
   mod {
     let first = #t
-    let second = Bool
-    let third = second
+    let second := Bool
+    let third := second
   }
       |};
   [%expect {| sig { let first : Bool; let second : (= Bool); let third : (= second) } |}]
@@ -548,9 +555,12 @@ mod {
 let%expect_test "signatures" =
   check
     {|
-sig {
-  let first : Bool
-  let second : Bool 
+{
+  let S := sig {
+    let first : Bool
+    let second : Bool 
+  }
+  S
 }
     |};
   [%expect {| (= sig { let first : Bool; let second : Bool }) |}]

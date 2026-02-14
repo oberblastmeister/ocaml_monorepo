@@ -11,6 +11,9 @@ open struct
   module File_span = Utility.File_span
   module Diagnostic = Oak_diagnostic
   module Snippet = Utility.Diagnostic.Snippet
+  module Universe = Oak_common.Universe
+
+  let ( <|> ) = Fail.Syntax.( <|> )
 end
 
 module Error = struct
@@ -227,7 +230,8 @@ and parse_keyword_fail st h (items : Items.t) : Surface.expr =
           ~f:(fun h -> Match.brace h (Items.next h items))
       in
       let decls =
-        List.map block.groups ~f:(fun { Shrub.group; sep = _ } -> parse_mod_decl st group)
+        List.map block.groups ~f:(fun { Shrub.group; sep = _ } ->
+          parse_block_decl st group)
       in
       let span =
         Span.combine (Span.single keyword_index) (Span.single block.rdelim.index)
@@ -248,6 +252,7 @@ and parse_keyword_fail st h (items : Items.t) : Surface.expr =
         Span.combine (Span.single keyword_index) (Span.single block.rdelim.index)
       in
       Expr_ty_mod { ty_decls; span }
+    | "alias" -> let _ = Items.next_exn items in let e = parse_atom st items in Expr_alias { e; span = Surface.expr_span e }
     | "pack" ->
       let _ = Items.next_exn items in
       let e = parse_atom st items in
@@ -274,11 +279,15 @@ and parse_mod_decl st (group : Shrub.group) : Surface.decl =
         ~f:(fun h -> Match.var h (Items.next h items))
     in
     let ann = Items.run items ~f:(fun h -> parse_annotation_cont st h items) in
-    let _ =
-      Items.run_or_index
-        items
-        ~default:(fun index -> error (Error.token "Expected =" index))
-        ~f:(fun h -> Match.equal_sign h (Items.next h items))
+    let is_alias =
+      match Items.peek items with
+      | Some (Token { token = Equal; _ }) ->
+        let _ = Items.next_exn items in
+        false
+      | Some (Token { token = Colon_equal; _ }) ->
+        let _ = Items.next_exn items in
+        true
+      | _ -> error (Error.token "Expected = or :=" (Items.get_span items))
     in
     let e = parse_expr st items in
     Items.check items ~f:(fun item ->
@@ -287,7 +296,7 @@ and parse_mod_decl st (group : Shrub.group) : Surface.decl =
            "Unconsumed tokens in module declaration"
            (Shrub.Item.first_token item).index));
     let span = Span.combine (Span.single let_index) (Surface.expr_span e) in
-    { var; ann; e; span }
+    { var; ann; is_alias; e; span }
   | _ ->
     error
       (Error.token "Expected module declaration" (Shrub.Group.first_token group).index)
@@ -472,8 +481,8 @@ and parse_atom_fail st h (items : Items.t) : Surface.expr =
     | "Bool" -> Expr_core_ty { ty = Bool; span }
     | "Int" -> Expr_core_ty { ty = Int; span }
     | "Unit" -> Expr_core_ty { ty = Unit; span }
-    | "Type" -> Expr_universe { universe = Type; span }
-    | "Kind" -> Expr_universe { universe = Kind; span }
+    | "Type" -> Expr_universe { universe = Universe.type_; span }
+    | "Kind" -> Expr_universe { universe = Universe.kind_; span }
     | "#t" -> Expr_bool { value = true; span }
     | "#f" -> Expr_bool { value = false; span }
     | _ -> Expr_var { name = ident; span }
@@ -515,11 +524,15 @@ and parse_block_decl st (group : Shrub.group) : Surface.block_decl =
         ~f:(fun h -> Match.var h (Items.next h items))
     in
     let ann = Items.run items ~f:(fun h -> parse_annotation_cont st h items) in
-    let _ =
-      Items.run_or_index
-        items
-        ~default:(fun index -> error (Error.token "Expected =" index))
-        ~f:(fun h -> Match.equal_sign h (Items.next h items))
+    let is_alias =
+      match Items.peek items with
+      | Some (Token { token = Equal; _ }) ->
+        let _ = Items.next_exn items in
+        false
+      | Some (Token { token = Colon_equal; _ }) ->
+        let _ = Items.next_exn items in
+        true
+      | _ -> error (Error.token "Expected = or :=" (Items.get_span items))
     in
     let rhs_items = Items.take items in
     let rhs =
@@ -528,7 +541,7 @@ and parse_block_decl st (group : Shrub.group) : Surface.block_decl =
       | Some group -> parse_expr_group st group
     in
     let span = Span.combine (Span.single let_index) (Surface.expr_span rhs) in
-    Block_decl_let { var; ann; rhs; span }
+    Block_decl_let { var; ann; is_alias; rhs; span }
   | Some (Token { token = Ident "bind"; index = bind_index }) ->
     let _ = Items.next_exn items in
     let var =

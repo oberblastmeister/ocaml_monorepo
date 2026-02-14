@@ -143,10 +143,12 @@ let%expect_test "blocks" =
        (Expr_block
         (decls
          ((Block_decl_let (var ((name z) (span ((start 15) (stop 16)))))
-           (ann ()) (rhs (Expr_var ((name x) (span ((start 19) (stop 20))))))
+           (ann ()) (is_alias false)
+           (rhs (Expr_var ((name x) (span ((start 19) (stop 20))))))
            (span ((start 13) (stop 20))))
           (Block_decl_let (var ((name w) (span ((start 25) (stop 26)))))
-           (ann ()) (rhs (Expr_var ((name y) (span ((start 29) (stop 30))))))
+           (ann ()) (is_alias false)
+           (rhs (Expr_var ((name y) (span ((start 29) (stop 30))))))
            (span ((start 23) (stop 30))))))
         (ret (Expr_var ((name w) (span ((start 33) (stop 34))))))
         (span ((start 10) (stop 37)))))
@@ -179,12 +181,12 @@ fun x y z w -> {
        (Expr_block
         (decls
          ((Block_decl_let (var ((name w) (span ((start 18) (stop 19)))))
-           (ann ())
+           (ann ()) (is_alias false)
            (rhs
             (Expr_block
              (decls
               ((Block_decl_let (var ((name x) (span ((start 27) (stop 28)))))
-                (ann ())
+                (ann ()) (is_alias false)
                 (rhs (Expr_var ((name x) (span ((start 31) (stop 32))))))
                 (span ((start 25) (stop 32))))))
              (ret (Expr_var ((name x) (span ((start 35) (stop 36))))))
@@ -215,17 +217,19 @@ let%expect_test "base types" =
     ((Expr_block
       (decls
        ((Block_decl_let (var ((name x) (span ((start 6) (stop 7))))) (ann ())
-         (rhs (Expr_unit (span ((start 10) (stop 12)))))
+         (is_alias false) (rhs (Expr_unit (span ((start 10) (stop 12)))))
          (span ((start 4) (stop 12))))
         (Block_decl_let (var ((name y) (span ((start 17) (stop 18)))))
          (ann ((Expr_core_ty (ty Bool) (span ((start 21) (stop 22))))))
+         (is_alias false)
          (rhs (Expr_bool (value true) (span ((start 25) (stop 26)))))
          (span ((start 15) (stop 26))))
         (Block_decl_let (var ((name z) (span ((start 31) (stop 32))))) (ann ())
+         (is_alias false)
          (rhs (Expr_bool (value false) (span ((start 35) (stop 36)))))
          (span ((start 29) (stop 36))))
         (Block_decl_let (var ((name another) (span ((start 41) (stop 42)))))
-         (ann ())
+         (ann ()) (is_alias false)
          (rhs
           (Expr_proj
            (mod_e (Expr_var ((name first) (span ((start 45) (stop 46))))))
@@ -253,23 +257,25 @@ mod {
     {|
     ((Expr_mod
       (decls
-       (((var ((name first) (span ((start 8) (stop 9))))) (ann ())
-         (e
+       ((Block_decl_let (var ((name first) (span ((start 8) (stop 9)))))
+         (ann ()) (is_alias false)
+         (rhs
           (Expr_block
            (decls
             ((Block_decl_let (var ((name x) (span ((start 17) (stop 18)))))
-              (ann ())
+              (ann ()) (is_alias false)
               (rhs (Expr_number (value 1234) (span ((start 21) (stop 22)))))
               (span ((start 15) (stop 22))))
              (Block_decl_let (var ((name y) (span ((start 27) (stop 28)))))
-              (ann ())
+              (ann ()) (is_alias false)
               (rhs (Expr_number (value 234) (span ((start 31) (stop 32)))))
               (span ((start 25) (stop 32))))))
            (ret (Expr_unit (span ((start 35) (stop 37)))))
            (span ((start 12) (stop 40)))))
          (span ((start 6) (stop 40))))
-        ((var ((name second) (span ((start 47) (stop 48))))) (ann ())
-         (e (Expr_number (value 1324) (span ((start 51) (stop 52)))))
+        (Block_decl_let (var ((name second) (span ((start 47) (stop 48)))))
+         (ann ()) (is_alias false)
+         (rhs (Expr_number (value 1324) (span ((start 51) (stop 52)))))
          (span ((start 45) (stop 52))))))
       (span ((start 1) (stop 54)))))
     |}]
@@ -336,6 +342,7 @@ let%expect_test "paren exprs" =
     ((Expr_block
       (decls
        ((Block_decl_let (var ((name awe) (span ((start 7) (stop 8))))) (ann ())
+         (is_alias false)
          (rhs
           (Expr_abs
            (params
@@ -372,6 +379,7 @@ let%expect_test "function application" =
     ((Expr_block
       (decls
        ((Block_decl_let (var ((name app) (span ((start 7) (stop 8))))) (ann ())
+         (is_alias false)
          (rhs
           (Expr_abs
            (params
@@ -435,7 +443,7 @@ let%expect_test "awefaewf" =
     ((Expr_block
       (decls
        ((Block_decl_let (var ((name testing) (span ((start 6) (stop 7)))))
-         (ann ())
+         (ann ()) (is_alias false)
          (rhs
           (Expr_abs
            (params
@@ -592,7 +600,7 @@ let%expect_test "error: mod bad decl" =
   check {|mod { x }|};
   [%expect
     {|
-    error[E0001]: Expected module declaration
+    error[E0001]: Expected block declaration
      --> <input>:1:7
       |
     1 | mod { x }
@@ -720,6 +728,7 @@ let%expect_test "let with annotation" =
       (decls
        ((Block_decl_let (var ((name x) (span ((start 6) (stop 7)))))
          (ann ((Expr_core_ty (ty Bool) (span ((start 10) (stop 11))))))
+         (is_alias false)
          (rhs (Expr_bool (value true) (span ((start 14) (stop 15)))))
          (span ((start 4) (stop 15))))))
       (ret (Expr_var ((name x) (span ((start 18) (stop 19))))))
@@ -740,6 +749,7 @@ f { let x = #t
        ((Expr_block
          (decls
           ((Block_decl_let (var ((name x) (span ((start 7) (stop 8))))) (ann ())
+            (is_alias false)
             (rhs (Expr_bool (value true) (span ((start 11) (stop 12)))))
             (span ((start 5) (stop 12))))))
          (ret (Expr_var ((name x) (span ((start 15) (stop 16))))))

@@ -30,46 +30,44 @@ module Var_info = struct
   let generated = { name = "<generated>"; pos = 0 }
 end
 
-module Universe = struct
-  module T = struct
-    type t =
-      | Type
-      | Kind
-      | Sig
-    [@@deriving sexp, equal, compare]
-  end
+module Universe : sig
+  type t = private int [@@deriving sexp_of, compare, equal]
 
-  include T
-  include Base.Comparable.Make (T)
+  val minimum : t
+  val to_int : t -> int
+  val of_int : int -> t
+  val incr : t -> t
+  val decr : t -> t
+  val decr_exn : t -> t
+  val min : t -> t -> t
+  val max : t -> t -> t
+  val to_string : t -> string
+  val type_ : t
+  val kind_ : t
+  val sig_ : t
+  val pp : t -> Doc.t
+end = struct
+  include Int
 
-  let minimum = Type
-  let maximum = Sig
-
-  let to_int = function
-    | Type -> 0
-    | Kind -> 1
-    | Sig -> 2
-  ;;
-
-  let of_int_exn = function
-    | 0 -> Type
-    | 1 -> Kind
-    | 2 -> Sig
-    | _ -> failwith "invalid universe"
-  ;;
-
-  let lub u v = of_int_exn (Int.max (to_int u) (to_int v))
-  let incr_exn u = of_int_exn (to_int u + 1)
-  let decr_exn u = of_int_exn (to_int u - 1)
-  let decr u = of_int_exn (Int.max 0 (to_int u - 1))
+  let minimum = 0
+  let to_int t = t
+  let of_int_exn t = t
+  let incr u = u + 1
+  let decr_exn u = u - 1
+  let decr u = Int.max 0 (u - 1)
 
   let to_string = function
-    | Type -> "Type"
-    | Kind -> "Kind"
-    | Sig -> "Sig"
+    | 0 -> "Type"
+    | 1 -> "Kind"
+    | 2 -> "Sig"
+    | n -> sprintf "Sig%d" (n - 2)
   ;;
 
+  let sexp_of_t t = Sexp.Atom (to_string t)
   let pp t = Doc.string (to_string t)
+  let type_ = 0
+  let kind_ = 1
+  let sig_ = 2
 end
 
 module Level = struct

@@ -150,4 +150,6 @@ sig {
   alias second := 1324
   
   alias second : 234234 = 1324
+  
+  let second := first
 }
