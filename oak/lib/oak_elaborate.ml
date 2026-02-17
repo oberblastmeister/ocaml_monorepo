@@ -2,6 +2,7 @@ open Prelude
 open Oak_syntax
 
 open struct
+  module Span = Utility.Span
   module Spanned = Utility.Spanned
   module Common = Oak_common
   module Name_list = Common.Name_list
@@ -21,6 +22,38 @@ let raise_error diagnostic = raise_notrace (Error diagnostic)
 exception Type_not_ignorable of Diagnostic.Part.t
 
 let raise_type_not_ignorable e = raise_notrace (Type_not_ignorable e)
+
+module Meta_list = struct
+  (* type t = { mutable metas : (value_meta ref * term ref) list } *)
+
+  (* let create () = { metas = [] } *)
+
+  (* let fresh t (cx : Context.t) var =
+    let id = !(cx.next_meta_id) in
+    incr cx.next_meta_id;
+    let meta = ref (Meta_unsolved { var; id; context_size = Context.size cx }) in
+    let e = ref (Term_ty_meta meta) in
+    t.metas <- (meta, e) :: t.metas;
+    Term_mut e
+  ;;
+
+  let check_all_solved t cx =
+    List.iter t.metas ~f:(fun (meta, e) ->
+      match Evaluate.unfold (Value_ty_meta meta) with
+      | Uvalue_ty_meta meta ->
+        let meta = Meta.unsolved_val_exn !meta in
+        raise_error
+          { code = None
+          ; parts =
+              [ Diagnostic.Part.create
+                  ~snippet:(Context.snippet cx (Span.single meta.var.pos))
+                  (Doc.string "Unsolved meta: " ^^ Doc.string meta.var.name)
+              ]
+          }
+      | _ -> ())
+  ;; *)
+
+end
 
 (*
   The following function implements the ignorable judgement which is used in the following judgement.
@@ -95,37 +128,35 @@ let rec infer (cx : Context.t) (e : expr) : term * ty =
     let ty, _ = check_universe cx ty in
     let ty = Context.eval cx ty in
     check cx e ty, ty
-  | Expr_app { func; arg; span } ->
-    let func, func_ty = infer cx func in
-    let func, func_ty = Unification.coerce_singleton (Context.size cx) func func_ty in
-    let func_ty =
-      match func_ty with
-      | Uvalue_ty_fun t -> t
-      | other ->
+  | Expr_app _ | Expr_proj _ ->
+    let e, ty = infer_spine cx e in
+    e, ty
+  | Expr_abs { var; param_ty = Some param_ty; icit; body; span } ->
+    let param_ty, _ = check_universe cx param_ty in
+    let param_ty = Context.eval cx param_ty in
+    if Icit.equal icit Impl
+    then begin
+      match Unification.conv_ty cx param_ty (Value_universe Universe.type_) with
+      | Ok () -> ()
+      | Error part ->
         raise_error
           { code = None
           ; parts =
-              [ Diagnostic.Part.create
+              [ part
+              ; Diagnostic.Part.create
+                  ~kind:Note
                   ~snippet:(Context.snippet cx span)
-                  (Doc.string "Expected function type, got "
-                   ^^ Context.pp_value cx (Uvalue.to_value other))
+                  (Doc.string "Implicit parameter type annotation must be a type")
               ]
           }
-    in
-    let arg = check cx arg func_ty.param_ty in
-    let e = Term_app { func; arg } in
-    let ty = Evaluate.eval_closure1 func_ty.body_ty (Context.eval cx arg) in
-    e, ty
-  | Expr_abs { var; param_ty = Some param_ty; body; span = _ } ->
-    let param_ty, _ = check_universe cx param_ty in
-    let param_ty = Context.eval cx param_ty in
+    end;
     let cx' = Context.bind var param_ty cx in
     let body, body_ty = infer cx' body in
     let body_ty : value_closure =
       { env = cx.value_env; body = Context.quote cx' body_ty }
     in
-    Term_abs { var; body }, Value_ty_fun { var; param_ty; body_ty }
-  | Expr_abs { var = _; param_ty = None; body = _; span } ->
+    Term_abs { var; icit; body }, Value_ty_fun { var; param_ty; icit; body_ty }
+  | Expr_abs { var = _; param_ty = None; icit = _; body = _; span } ->
     raise_error
       { code = None
       ; parts =
@@ -134,42 +165,6 @@ let rec infer (cx : Context.t) (e : expr) : term * ty =
               (Doc.string "Cannot infer lambda without parameter type annotation")
           ]
       }
-  | Expr_proj { mod_e; field; span } ->
-    let mod_e, mod_ty = infer cx mod_e in
-    let mod_e, mod_ty = Unification.coerce_singleton (Context.size cx) mod_e mod_ty in
-    let mod_ty =
-      match mod_ty with
-      | Uvalue_ty_mod t -> t
-      | _ ->
-        raise_error
-          { code = None
-          ; parts =
-              [ Diagnostic.Part.create
-                  ~snippet:(Context.snippet cx span)
-                  (Doc.string "Expected mod type, got "
-                   ^^ Context.pp_value cx (Uvalue.to_value mod_ty))
-              ]
-          }
-    in
-    let field_index, _ =
-      match
-        List.findi mod_ty.ty_decls ~f:(fun _ ty_decl ->
-          String.equal ty_decl.var.name field)
-      with
-      | Some i -> i
-      | None ->
-        raise_error
-          { code = None
-          ; parts =
-              [ Diagnostic.Part.create
-                  ~snippet:(Context.snippet cx span)
-                  (Doc.string "Module does not have field " ^^ Doc.string field)
-              ]
-          }
-    in
-    let e = Term_proj { mod_e; field; field_index } in
-    let ty = Evaluate.eval_ty_mod_closure (Context.eval cx mod_e) mod_ty field_index in
-    e, ty
   | Expr_mod { decls; span = _ } ->
     (*
       Elaborate a module into a bunch of lets and then a module expression at the end.
@@ -194,12 +189,12 @@ let rec infer (cx : Context.t) (e : expr) : term * ty =
         Term_let { var; rhs; body })
     in
     res_term, res_ty
-  | Expr_ty_fun { var; param_ty; body_ty; span = _ } ->
+  | Expr_ty_fun { var; param_ty; icit; body_ty; span = _ } ->
     let param_ty, universe1 = check_universe cx param_ty in
     let body_ty, universe2 =
       check_universe (Context.bind var (Context.eval cx param_ty) cx) body_ty
     in
-    ( Term_ty_fun { var; param_ty; body_ty }
+    ( Term_ty_fun { var; param_ty; icit; body_ty }
     , Value_universe (Universe.max universe1 universe2) )
   | Expr_ty_mod { ty_decls; span = _ } ->
     let (_, universe), ty_decls =
@@ -299,7 +294,7 @@ let rec infer (cx : Context.t) (e : expr) : term * ty =
 
 and check (cx : Context.t) (e : expr) (ty : ty) : term =
   match e, Evaluate.unfold ty with
-  | Expr_abs { var; param_ty; body; span }, Uvalue_ty_fun ty ->
+  | Expr_abs { var; param_ty; icit; body; span }, Uvalue_ty_fun ty ->
     (match param_ty with
      | Some param_ty ->
        let param_ty, _ = check_universe cx param_ty in
@@ -317,13 +312,26 @@ and check (cx : Context.t) (e : expr) (ty : ty) : term =
                 ]
             })
      | None -> ());
+    if not (Icit.equal icit ty.icit)
+    then
+      raise_error
+        { code = None
+        ; parts =
+            [ Diagnostic.Part.create
+                ~kind:Note
+                ~snippet:(Context.snippet cx span)
+                (Doc.string "Expected "
+                 ^^ Doc.string (Icit.to_string ty.icit)
+                 ^^ Doc.string " binder")
+            ]
+        };
     let body =
       check
         (Context.bind var ty.param_ty cx)
         body
         (Evaluate.eval_closure1 ty.body_ty (Context.next_var cx))
     in
-    Term_abs { var; body }
+    Term_abs { var; icit; body }
   | Expr_let { var; rhs; body; span = _ }, _ ->
     let rhs, rhs_ty = infer cx rhs in
     let body = check (Context.bind var rhs_ty cx) body ty in
@@ -386,6 +394,74 @@ and check (cx : Context.t) (e : expr) (ty : ty) : term =
                   ^^ Doc.indent 2 (Doc.break1 ^^ Context.pp_value cx ty))
              ]
          })
+
+and coerce_implicits (cx : Context.t) (e : term) (ty : ty) : term * ty =
+  match Evaluate.unfold ty with
+  | Uvalue_ty_fun { var; icit = Impl } ->
+    (* let meta = Meta_list.fresh meta_list cx var in *)
+    failwith ""
+  | _ -> e, ty
+
+and infer_spine (cx : Context.t) (e : expr) : term * ty =
+  match e with
+  | Expr_app { func; arg; icit; span } ->
+    let func, func_ty = infer_spine cx func in
+    let func, func_ty = Unification.coerce_singleton (Context.size cx) func func_ty in
+    let func_ty =
+      match func_ty with
+      | Uvalue_ty_fun t -> t
+      | other ->
+        raise_error
+          { code = None
+          ; parts =
+              [ Diagnostic.Part.create
+                  ~snippet:(Context.snippet cx span)
+                  (Doc.string "Expected function type, got "
+                   ^^ Context.pp_value cx (Uvalue.to_value other))
+              ]
+          }
+    in
+    let arg = check cx arg func_ty.param_ty in
+    let e = Term_app { func; icit; arg } in
+    let ty = Evaluate.eval_closure1 func_ty.body_ty (Context.eval cx arg) in
+    e, ty
+  | Expr_proj { mod_e; field; span } ->
+    let mod_e, mod_ty = infer_spine cx mod_e in
+    let mod_e, mod_ty = Unification.coerce_singleton (Context.size cx) mod_e mod_ty in
+    let mod_ty =
+      match mod_ty with
+      | Uvalue_ty_mod t -> t
+      | _ ->
+        raise_error
+          { code = None
+          ; parts =
+              [ Diagnostic.Part.create
+                  ~snippet:(Context.snippet cx span)
+                  (Doc.string "Expected mod type, got "
+                   ^^ Context.pp_value cx (Uvalue.to_value mod_ty))
+              ]
+          }
+    in
+    let field_index, _ =
+      match
+        List.findi mod_ty.ty_decls ~f:(fun _ ty_decl ->
+          String.equal ty_decl.var.name field)
+      with
+      | Some i -> i
+      | None ->
+        raise_error
+          { code = None
+          ; parts =
+              [ Diagnostic.Part.create
+                  ~snippet:(Context.snippet cx span)
+                  (Doc.string "Module does not have field " ^^ Doc.string field)
+              ]
+          }
+    in
+    let e = Term_proj { mod_e; field; field_index } in
+    let ty = Evaluate.eval_ty_mod_closure (Context.eval cx mod_e) mod_ty field_index in
+    e, ty
+  | _ -> infer cx e
 
 and check_universe (cx : Context.t) (ty_expr : expr) : term * Universe.t =
   let ty, kind = infer cx ty_expr in

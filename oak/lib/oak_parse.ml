@@ -195,21 +195,31 @@ and parse_fun_ty_cont st items (tys : _ Non_empty_list.t) : Surface.expr =
 
 and parse_param_ty_from_expr st (expr : Surface.expr) : Surface.param_ty =
   match expr with
-  | Expr_ann { e; ty; span } ->
-    let vars =
-      match e with
-      | Expr_app { func; args; span = _ } -> func :: args
-      | Expr_var _ -> [ e ]
-      | _ -> error (Error.create "invalid parameter syntax" (Surface.expr_span e))
-    in
-    let vars =
-      List.map vars ~f:(fun var ->
-        match var with
-        | Expr_var var -> var
-        | _ -> error (Error.create "invalid paramter syntax" (Surface.expr_span var)))
-    in
-    { vars; ty; span }
-  | e -> { vars = []; ty = e; span = Surface.expr_span e }
+  | Expr_paren { e = Expr_ann { e; ty; span = _ }; span } ->
+    let vars = parse_expr_vars st e in
+    { vars; ty = Some ty; icit = Expl; span }
+  | Expr_brack { e = Expr_ann { e; ty; span = _ }; span } ->
+    let vars = parse_expr_vars st e in
+    { vars; ty = Some ty; icit = Impl; span }
+  | Expr_brack { e; span } ->
+    let vars = parse_expr_vars st e in
+    { vars; ty = None; icit = Impl; span }
+  | e -> { vars = []; ty = Some e; icit = Expl; span = Surface.expr_span e }
+
+and parse_expr_vars st (e : Surface.expr) : Surface.Var.t list =
+  let vars =
+    match e with
+    | Expr_app { func; args; span = _ } -> func :: args
+    | Expr_var _ -> [ e ]
+    | _ -> error (Error.create "invalid parameter syntax" (Surface.expr_span e))
+  in
+  let vars =
+    List.map vars ~f:(fun var ->
+      match var with
+      | Expr_var var -> var
+      | _ -> error (Error.create "invalid parameter syntax" (Surface.expr_span var)))
+  in
+  vars
 
 and parse_keyword st items =
   Items.run_or_index
@@ -332,72 +342,13 @@ and parse_sig_decl st (group : Shrub.group) : Surface.ty_decl =
     error
       (Error.token "Expected signature declaration" (Shrub.Group.first_token group).index)
 
-and parse_param_ty st h (items : Items.t) : Surface.param_ty =
-  match Items.peek items with
-  | Some (Delim delim) ->
-    let _ = Items.next_exn items in
-    parse_paren_param_ty st delim
-  | _ ->
-    let ty =
-      Items.run_or_index
-        items
-        ~default:(fun _index -> Fail.fail h)
-        ~f:(fun h -> parse_dot st h items)
-    in
-    { vars = []; ty; span = Surface.expr_span ty }
-
-and has_colon (group : Shrub.group) : bool =
-  Non_empty_list.exists group ~f:(fun item ->
-    match item with
-    | Shrub.Token { token = Colon; _ } -> true
-    | _ -> false)
-
-and parse_paren_param_ty st (delim : Shrub.item_delim) : Surface.param_ty =
-  let group =
-    run_or_error
-      (lazy
-        (Error.token
-           "Invalid type parameter syntax, did not expect comma"
-           delim.ldelim.index))
-      (fun h -> Match.Item_delim.single_group h delim)
-  in
-  if has_colon group
-  then begin
-    let items = Items.create group in
-    let vars =
-      Items.run_or_index
-        items
-        ~default:(fun index -> error (Error.token "Expected variable name" index))
-        ~f:(fun h ->
-          Fail.List.some items.items (fun () -> Match.var h (Items.next h items))
-          |> Non_empty_list.to_list)
-    in
-    let ty =
-      Items.run_or_index
-        items
-        ~default:(fun index -> error (Error.token "Expected :" index))
-        ~f:(fun h -> parse_annotation_cont st h items)
-    in
-    Items.check items ~f:(fun item ->
-      error
-        (Error.token
-           "Unconsumed tokens in type parameter"
-           (Shrub.Item.first_token item).index));
-    let span = Span.combine (List.hd_exn vars).span (Surface.expr_span ty) in
-    { vars; ty; span }
-  end
-  else begin
-    let ty = parse_paren st delim in
-    { vars = []; ty; span = Surface.expr_span ty }
-  end
-
 and parse_param st h (items : Items.t) : Surface.param =
   match Items.next h items with
   | Delim delim -> parse_paren_param st delim
   | Token { token = Ident var; index = var_index } ->
     let span = Span.single var_index in
     let var = Surface.Var.create var span in
-    { vars = [ var ]; ann = None; span }
+    { vars = [ var ]; ann = None; icit = Expl; span }
   | _ -> Fail.fail h
 
 and parse_paren_param st (delim : Shrub.item_delim) : Surface.param =
@@ -409,6 +360,13 @@ and parse_paren_param st (delim : Shrub.item_delim) : Surface.param =
               "Invalid parameter syntax, did not expect comma"
               delim.ldelim.index))
          (fun h -> Match.Item_delim.single_group h delim))
+  in
+  let icit =
+    if Token.equal delim.ldelim.token LParen
+    then Surface.Icit.Expl
+    else if Token.equal delim.ldelim.token LBrack
+    then Impl
+    else error (Error.token "invalid param syntax" delim.ldelim.index)
   in
   let vars =
     Items.run_or_index
@@ -425,7 +383,7 @@ and parse_paren_param st (delim : Shrub.item_delim) : Surface.param =
   Items.check items ~f:(fun item ->
     error
       (Error.token "Unconsumed tokens in parameters" (Shrub.Item.first_token item).index));
-  { vars; ann; span = Span.combine (Non_empty_list.hd vars).span ann_span }
+  { vars; ann; span = Span.combine (Non_empty_list.hd vars).span ann_span; icit }
 
 and parse_annotation_cont st h (items : Items.t) : Surface.expr =
   let _ = Match.colon h (Items.next h items) in
@@ -476,6 +434,7 @@ and parse_atom_fail st h (items : Items.t) : Surface.expr =
     match delim.ldelim.token with
     | LBrace -> parse_block st delim
     | LParen -> parse_paren st delim
+    | LBrack -> parse_brack st delim
     | _ -> error (Error.token "Unexpected delimiter" delim.ldelim.index)
   end
   | Token { token = Ident ident; index } -> begin
@@ -600,16 +559,26 @@ and parse_paren st (parens : Shrub.item_delim) : Surface.expr =
       ~f:(fun h ->
         let _ = Items.next h items |> Match.equal_sign h in
         let identity = parse_expr_ann st items in
-        Expr_ty_sing
+        Surface.Expr_ty_sing
           { identity
           ; span =
               Span.combine
                 (Span.single parens.ldelim.index)
                 (Span.single parens.rdelim.index)
           })
-      ~default:(fun () -> parse_expr_ann st items)
+      ~default:(fun () ->
+        let e = parse_expr_ann st items in
+        Surface.Expr_paren { e; span = Surface.expr_span e })
   | _ ->
     error (Error.token "Unexpected comma in parenthesized expression" parens.ldelim.index)
+
+and parse_brack st (brack : Shrub.item_delim) : Surface.expr =
+  match brack.groups with
+  | [ { group; sep = _ } ] ->
+    let items = Items.create group in
+    let e = parse_expr_ann st items in
+    Surface.Expr_brack { e; span = Surface.expr_span e }
+  | _ -> error (Error.token "Invalid bracket expression" brack.ldelim.index)
 ;;
 
 let parse_root st (root : Shrub.root) =

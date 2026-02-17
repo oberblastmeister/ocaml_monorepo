@@ -16,10 +16,16 @@ type t =
   ; ty_env : Env.t
   ; name_list : Name_list.t
   ; source : Source.t
+  ; next_meta_id : int ref
   }
 
 let create (source : Source.t) =
-  { value_env = Env.empty; ty_env = Env.empty; name_list = Name_list.empty; source }
+  { value_env = Env.empty
+  ; ty_env = Env.empty
+  ; name_list = Name_list.empty
+  ; source
+  ; next_meta_id = ref 0
+  }
 ;;
 
 let bind (var : Var_info.t) ty cx =

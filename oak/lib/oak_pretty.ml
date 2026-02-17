@@ -4,15 +4,13 @@ open struct
   module Name_list = Oak_common.Name_list
   module Syntax = Oak_syntax
   module Evaluate = Oak_evaluate
-  module Common = Oak_common
-  module Universe = Common.Universe
 end
 
 module Make (Config : sig
     val show_singletons : bool
   end) =
 struct
-  let next_var_of_size size = Syntax.Value.var (Common.Level.of_int size)
+  let next_var_of_size size = Syntax.Value.var (Syntax.Level.of_int size)
 
   let parens doc =
     Doc.group
@@ -21,6 +19,15 @@ struct
        ^^ Doc.indent 2 doc
        ^^ Doc.break0
        ^^ Doc.char ')')
+  ;;
+
+  let bracks doc =
+    Doc.group
+      (Doc.char '['
+       ^^ Doc.when_expanded Doc.space
+       ^^ Doc.indent 2 doc
+       ^^ Doc.break0
+       ^^ Doc.char ']')
   ;;
 
   let block docs =
@@ -46,10 +53,10 @@ struct
     match value with
     | Value_ignore -> Doc.string "ignore"
     | Value_neutral neutral -> Doc.group (pp_neutral names neutral)
-    | Value_core_ty ty -> Common.Core_ty.pp ty
-    | Value_universe u -> Common.Universe.pp u
+    | Value_core_ty ty -> Syntax.Core_ty.pp ty
+    | Value_universe u -> Syntax.Universe.pp u
     | Value_abs abs ->
-      let params, names, body = collect_abs_params names [ abs.var.name ] abs in
+      let params, names, body = collect_abs_params names [] abs in
       Doc.group
         (Doc.string "fun"
          ^^ Doc.break1
@@ -57,9 +64,9 @@ struct
          ^^ Doc.break1
          ^^ Doc.string "->"
          ^^ Doc.indent 2 (Doc.break1 ^^ pp_value names body))
-    | Syntax.Value_ty_fun { var; param_ty; body_ty } ->
+    | Syntax.Value_ty_fun { var; param_ty; icit; body_ty } ->
       let params, names', body_ty =
-        collect_ty_fun_params names [] { var; param_ty; body_ty }
+        collect_ty_fun_params names [] { var; param_ty; icit; body_ty }
       in
       Doc.group
         (Doc.concat params ~sep:(Doc.space ^^ Doc.string "->" ^^ Doc.break1)
@@ -87,6 +94,8 @@ struct
       Doc.group (Doc.string "mod" ^^ Doc.space ^^ block decls)
     | Value_ty_mod ty_mod -> pp_ty_mod names ty_mod
     | Value_ty_pack ty -> Doc.group (Doc.string "Pack" ^^ Doc.break1 ^^ pp_atom names ty)
+    (* TODO *)
+    | Value_ty_meta _ -> failwith "TODO"
 
   and pp_ty_mod names (ty_mod : Syntax.value_ty_mod_closure) =
     let _, decls =
@@ -111,31 +120,42 @@ struct
     in
     Doc.group (Doc.string "sig" ^^ Doc.space ^^ block decls)
 
-  and collect_abs_params names acc_names ({ var; body } : Syntax.value_abs) =
+  and collect_abs_params
+        names
+        (docs : Doc.t list)
+        ({ var; body; icit } : Syntax.value_abs)
+    =
+    let param_doc =
+      if Syntax.Icit.equal icit Impl
+      then bracks (Doc.string var.name)
+      else Doc.string var.name
+    in
+    let docs = param_doc :: docs in
     let arg = next_var_of_size (Name_list.size names) in
     let names = Name_list.push var.name names in
     let body = Evaluate.eval_closure1 body arg in
     match body with
-    | Syntax.Value_abs abs -> collect_abs_params names (var.name :: acc_names) abs
-    | _ ->
-      let params = List.rev_map acc_names ~f:Doc.string in
-      params, names, body
+    | Syntax.Value_abs abs -> collect_abs_params names docs abs
+    | _ -> List.rev docs, names, body
 
-  and collect_ty_fun_params names acc_params (tf : Syntax.value_ty_fun) =
+  and collect_ty_fun_params names acc_params (ty : Syntax.value_ty_fun) =
     let param_doc =
-      if String.equal tf.var.name "_"
-      then pp_atom names tf.param_ty
-      else
-        parens
-          (Doc.string tf.var.name
-           ^^ Doc.space
-           ^^ Doc.string ":"
-           ^^ Doc.break1
-           ^^ pp_value names tf.param_ty)
+      if String.equal ty.var.name "_"
+      then pp_atom names ty.param_ty
+      else begin
+        let param =
+          Doc.string ty.var.name
+          ^^ Doc.space
+          ^^ Doc.string ":"
+          ^^ Doc.break1
+          ^^ pp_value names ty.param_ty
+        in
+        if Syntax.Icit.equal ty.icit Impl then bracks param else parens param
+      end
     in
     let arg = next_var_of_size (Name_list.size names) in
-    let names' = Name_list.push tf.var.name names in
-    let body_ty = Evaluate.eval_closure1 tf.body_ty arg in
+    let names' = Name_list.push ty.var.name names in
+    let body_ty = Evaluate.eval_closure1 ty.body_ty arg in
     match body_ty with
     | Syntax.Value_ty_fun tf' ->
       collect_ty_fun_params names' (param_doc :: acc_params) tf'
@@ -161,10 +181,13 @@ struct
     in
     doc ^^ Doc.break0 ^^ Doc.char '.' ^^ Doc.string field
 
+  and pp_icit names arg icit =
+    if Syntax.Icit.equal icit Expl then pp_atom names arg else bracks (pp_value names arg)
+
   and pp_neutral names ({ head; spine } : Syntax.neutral) =
     match spine with
-    | Snoc (spine, Elim_app arg) ->
-      pp_neutral names { head; spine } ^^ Doc.break1 ^^ pp_atom names arg
+    | Snoc (spine, Elim_app { arg; icit }) ->
+      pp_neutral names { head; spine } ^^ Doc.break1 ^^ pp_icit names arg icit
     | Snoc (spine, Elim_out { identity = _ }) ->
       if Config.show_singletons
       then pp_proj names { head; spine } "out"
@@ -175,7 +198,7 @@ struct
 
   and pp_elim names (elim : Syntax.elim) =
     match elim with
-    | Elim_app arg -> Doc.break1 ^^ pp_atom names arg
+    | Elim_app { arg; icit } -> Doc.break1 ^^ pp_icit names arg icit
     | Elim_proj { field; field_index = _ } ->
       Doc.break0 ^^ Doc.char '.' ^^ Doc.string field
     | Elim_out { identity = _ } ->

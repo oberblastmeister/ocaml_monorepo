@@ -133,3 +133,15 @@ module Literal = struct
     | Int of int
   [@@deriving sexp_of]
 end
+
+module Icit = struct
+  type t =
+    | Impl
+    | Expl
+  [@@deriving sexp_of, equal, compare]
+
+  let to_string = function
+    | Impl -> "implicit"
+    | Expl -> "explicit"
+  ;;
+end

@@ -20,7 +20,7 @@ let rec infer_neutral (ty_env : Env.t) (e : neutral) : value =
     ~f:(fun (spine, ty) elim ->
       let ty =
         match elim with
-        | Elim_app arg ->
+        | Elim_app { arg; icit = _ } ->
           let func_ty = unfold ty |> Uvalue.ty_fun_val_exn in
           eval_closure1 func_ty.body_ty arg
         | Elim_proj { field = _; field_index } ->
@@ -39,7 +39,8 @@ let rec infer_value_universe (ty_env : Env.t) (e : value) : Universe.t =
   let panic () = raise_s [%message "value was not in a universe" (e : value)] in
   match e with
   | Value_mod _ | Value_abs _ | Value_ignore | Value_sing_in _ -> panic ()
-  | Value_core_ty _ | Value_ty_pack _ ->
+  (* meta variables can only range over values of kind Type for now *)
+  | Value_ty_meta _ | Value_core_ty _ | Value_ty_pack _ ->
     Universe.type_
     (*
       We infer kind here because we don't want subtyping issues at kind Type,
@@ -49,7 +50,7 @@ let rec infer_value_universe (ty_env : Env.t) (e : value) : Universe.t =
   | Value_neutral neutral ->
     infer_neutral ty_env neutral |> unfold |> Uvalue.universe_val_exn
   | Value_universe u -> Universe.incr u
-  | Value_ty_fun { var = _; param_ty; body_ty } ->
+  | Value_ty_fun { var = _; param_ty; icit = _; body_ty } ->
     let universe1 = infer_value_universe ty_env param_ty in
     let universe2 =
       infer_value_universe

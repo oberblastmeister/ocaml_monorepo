@@ -23,7 +23,7 @@ let rec conv (cx : Context.t) (e1 : value) (e2 : value) (ty : value) : unit =
   | Uvalue_ignore | Uvalue_mod _ | Uvalue_abs _ | Uvalue_sing_in _ ->
     raise_s [%message "Not a type" (ty : value)]
   (* These have kind Type, so can be ignored *)
-  | Uvalue_ty_pack _ | Uvalue_core_ty _ -> ()
+  | Uvalue_ty_meta _ | Uvalue_ty_pack _ | Uvalue_core_ty _ -> ()
   (* Singletons can be immediately eliminated using unwrap, and since both values have the same singleton type they must be equal. *)
   | Uvalue_ty_sing _ -> ()
   | Uvalue_universe _ ->
@@ -47,8 +47,8 @@ let rec conv (cx : Context.t) (e1 : value) (e2 : value) (ty : value) : unit =
     let var_value = Context.next_var cx in
     conv
       (Context.bind ty.var ty.param_ty cx)
-      (app_value e1 var_value)
-      (app_value e2 var_value)
+      (app_value e1 var_value ty.icit)
+      (app_value e2 var_value ty.icit)
       (eval_closure1 ty.body_ty var_value)
   | Uvalue_ty_mod ty ->
     let closure_env = ty.env in
@@ -179,7 +179,9 @@ and conv_neutral (cx : Context.t) (ty1 : uneutral) (ty2 : uneutral) : value =
     ~f:(fun (spine, ty) (elim1, elim2) ->
       let ty =
         match elim1, elim2 with
-        | Uelim_app arg1, Uelim_app arg2 ->
+        | Uelim_app { arg = arg1; icit = icit1 }, Uelim_app { arg = arg2; icit = icit2 }
+          ->
+          assert (Icit.equal icit1 icit2);
           let func_kind = unfold ty |> Uvalue.ty_fun_val_exn in
           conv cx arg1 arg2 func_kind.param_ty;
           eval_closure1 func_kind.body_ty arg1
@@ -271,21 +273,21 @@ let rec sub cx (e : term) (ty1 : ty) (ty2 : ty) : term option =
       let body =
         sub
           cx
-          (Term_app { func = Term_weaken e; arg = arg_var_term })
+          (Term_app { func = Term_weaken e; arg = arg_var_term; icit = ty1.icit })
           (eval_closure1 ty1.body_ty arg_var_value)
           (eval_closure1 ty2.body_ty arg_var_value)
       in
-      Option.map body ~f:(fun body -> Term_abs { var; body })
+      Option.map body ~f:(fun body -> Term_abs { var; body; icit = ty2.icit })
     | Some arg ->
       let arg_value = Context.eval cx arg in
       let body =
         coerce
           cx
-          (Term_app { func = Term_weaken e; arg })
+          (Term_app { func = Term_weaken e; arg; icit = ty1.icit })
           (eval_closure1 ty1.body_ty arg_value)
           (eval_closure1 ty2.body_ty arg_value)
       in
-      Some (Term_abs { var; body })
+      Some (Term_abs { var; body; icit = ty2.icit })
     end
   | Uvalue_ty_mod ty1, Uvalue_ty_mod ty2 ->
     let value = Context.eval cx e in

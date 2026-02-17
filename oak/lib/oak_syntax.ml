@@ -10,6 +10,7 @@ module Universe = Common.Universe
 module Index = Common.Index
 module Level = Common.Level
 module Literal = Common.Literal
+module Icit = Common.Icit
 
 let index = Index.of_int
 let level = Level.of_int
@@ -125,17 +126,20 @@ type expr =
   | Expr_app of
       { func : expr
       ; arg : expr
+      ; icit : Icit.t
       ; span : Span.t
       }
   | Expr_abs of
       { var : Var_info.t
       ; param_ty : expr option
+      ; icit : Icit.t
       ; body : expr
       ; span : Span.t
       }
   | Expr_ty_fun of
       { var : Var_info.t
       ; param_ty : expr
+      ; icit : Icit.t
       ; body_ty : expr
       ; span : Span.t
       }
@@ -219,14 +223,18 @@ and term =
   | Term_app of
       { func : term
       ; arg : term
+      ; icit : Icit.t (* implicit applications are irrelevant *)
       }
   | Term_abs of
       { var : Var_info.t
       ; body : term
+      ; icit : Icit.t (* implicit applications are irrelevant *)
       }
+  (* | Term_ty_meta of value_meta ref *)
   | Term_ty_fun of
       { var : Var_info.t
       ; param_ty : term_ty
+      ; icit : Icit.t
       ; body_ty : term_ty
       }
   | Term_proj of
@@ -260,12 +268,12 @@ and term =
       }
   | Term_universe of Universe.t
   | Term_core_ty of Core_ty.t
+  | Term_literal of Literal.t
   (*
       This is not present in the surface language.
       We would need to use some quantitative type theory to handle this properly
       so we can ensure that it stays irrelevant.
     *)
-  | Term_literal of Literal.t
   | Term_ignore
     (* Cannot be written in the source syntax for now, can only be used in an irrelevant way *)
   | Term_if of
@@ -273,6 +281,8 @@ and term =
       ; body1 : term
       ; body2 : term
       }
+  | Term_ty_meta of meta
+  | Term_mut of term ref
 
 and term_ty = term
 
@@ -291,7 +301,7 @@ and term_ty_decl =
 [@@deriving sexp_of]
 
 (* values *)
-type value =
+and value =
   (*
     Value_ignore is similar to declval in c++.
     It is okay to come up with a garbage value if it is only for the sake of typechecking.
@@ -304,6 +314,7 @@ type value =
   | Value_core_ty of Core_ty.t
   | Value_neutral of neutral
   | Value_universe of Universe.t
+  | Value_ty_meta of meta
   | Value_ty_sing of value_ty_sing
   | Value_ty_mod of value_ty_mod_closure
   | Value_ty_fun of value_ty_fun
@@ -312,7 +323,10 @@ type value =
 and ty = value
 
 and elim =
-  | Elim_app of value
+  | Elim_app of
+      { arg : value
+      ; icit : Icit.t
+      }
   | Elim_proj of
       { field : string
       ; field_index : int
@@ -321,7 +335,10 @@ and elim =
 
 (* It's elim without sing_out *)
 and uelim =
-  | Uelim_app of value
+  | Uelim_app of
+      { arg : value
+      ; icit : Icit.t
+      }
   | Uelim_proj of
       { field : string
       ; field_index : int
@@ -339,6 +356,19 @@ and uneutral =
 
 and spine = elim Bwd.t
 and uspine = uelim Bwd.t
+and meta = { mutable state : meta_state }
+
+(* Can only range over values of kind Type for now *)
+and meta_state =
+  | Meta_unsolved of meta_state_unsolved
+  | Meta_link of ty
+  | Meta_solved of ty
+
+and meta_state_unsolved =
+  { var : Var_info.t
+  ; id : int
+  ; context_size : int
+  }
 
 (*
   These is an ordered tuple.
@@ -350,6 +380,7 @@ and value_mod = { fields : value_field list }
 and value_abs =
   { var : Var_info.t
   ; body : value_closure
+  ; icit : Icit.t
   }
 
 and value_ty_sing =
@@ -365,6 +396,7 @@ and value_ty_mod_closure =
 and value_ty_fun =
   { var : Var_info.t
   ; param_ty : ty
+  ; icit : Icit.t
   ; body_ty : value_closure
   }
 
@@ -406,6 +438,7 @@ type uvalue =
   | Uvalue_core_ty of Core_ty.t
   | Uvalue_neutral of uneutral
   | Uvalue_universe of Universe.t
+  | Uvalue_ty_meta of meta
   | Uvalue_ty_sing of value_ty_sing
   | Uvalue_ty_mod of value_ty_mod_closure
   | Uvalue_ty_fun of value_ty_fun
@@ -478,7 +511,7 @@ module Uelim = struct
   type t = uelim
 
   let to_elim = function
-    | Uelim_app v -> Elim_app v
+    | Uelim_app { arg; icit } -> Elim_app { arg; icit }
     | Uelim_proj { field; field_index } -> Elim_proj { field; field_index }
   ;;
 end
@@ -545,6 +578,7 @@ module Uvalue = struct
     | Uvalue_ty_sing v -> Value_ty_sing v
     | Uvalue_ty_mod v -> Value_ty_mod v
     | Uvalue_ty_fun v -> Value_ty_fun v
+    | Uvalue_ty_meta meta -> Value_ty_meta meta
     | Uvalue_ty_pack ty -> Value_ty_pack ty
   ;;
 
@@ -566,3 +600,11 @@ module Index_subst = Make_subst (struct
     let apply = apply_subst_index
     let of_index () i = Index.of_int i
   end)
+
+module Meta = struct
+  let unsolved_val_exn t =
+    match t with
+    | Meta_unsolved unsolved -> unsolved
+    | _ -> failwith "meta was not unsolved"
+  ;;
+end

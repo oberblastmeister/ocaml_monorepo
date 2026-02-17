@@ -65,25 +65,40 @@ let rec rename_expr st (expr : Surface.expr) : Syntax.expr =
   | Surface.Expr_app { func; args; span = _ } ->
     let func = rename_expr st func in
     List.fold args ~init:func ~f:(fun func arg ->
-      let arg = rename_expr st arg in
+      let icit, arg =
+        match arg with
+        | Surface.Expr_brack { e; _ } -> Syntax.Icit.Impl, rename_expr st e
+        | _ -> Syntax.Icit.Expl, rename_expr st arg
+      in
       Syntax.Expr_app
-        { func; arg; span = Span.combine (Syntax.Expr.span func) (Syntax.Expr.span arg) })
+        { func
+        ; arg
+        ; icit
+        ; span = Span.combine (Syntax.Expr.span func) (Syntax.Expr.span arg)
+        })
+  | Surface.Expr_brack { e = _; span } ->
+    State.add_error st (Spanned.create "Invalid bracket expression" span);
+    Expr_error { span }
   | Surface.Expr_abs { params; ret_ty = _; body; span } ->
     let all_vars =
       Non_empty_list.to_list params
       |> List.concat_map ~f:(fun (param : Surface.param) ->
-        let ann = param.ann in
-        Non_empty_list.to_list param.vars |> List.map ~f:(fun var -> var, ann))
+        Non_empty_list.to_list param.vars
+        |> List.map ~f:(fun var -> var, param.ann, param.icit))
     in
     rename_abs st all_vars body span
   | Surface.Expr_ty_fun { param_tys; body_ty; span } ->
     let all_params =
       Non_empty_list.to_list param_tys
       |> List.concat_map ~f:(fun (param_ty : Surface.param_ty) ->
-        let ty = param_ty.ty in
+        let ty =
+          Option.value
+            param_ty.ty
+            ~default:(Expr_universe { universe = Syntax.Universe.type_; span })
+        in
         match param_ty.vars with
-        | [] -> [ None, ty ]
-        | vars -> List.map vars ~f:(fun var -> Some var, ty))
+        | [] -> [ None, ty, param_ty.icit ]
+        | vars -> List.map vars ~f:(fun var -> Some var, ty, param_ty.icit))
     in
     rename_ty_fun st all_params body_ty span
   | Surface.Expr_proj { mod_e; field; span } ->
@@ -139,26 +154,27 @@ let rec rename_expr st (expr : Surface.expr) : Syntax.expr =
     State.with_var st var ~f:(fun () ->
       let body = rename_expr st body in
       Syntax.Expr_bind { var = var_info var; rhs; body; span })
+  | Surface.Expr_paren { e; span = _ } -> rename_expr st e
 
 and rename_abs st vars body span =
   match vars with
   | [] -> rename_expr st body
-  | (var, ann) :: rest ->
+  | (var, ann, icit) :: rest ->
     let param_ty = Option.map ann ~f:(rename_expr st) in
     State.with_var st var ~f:(fun () ->
       let body = rename_abs st rest body span in
-      Syntax.Expr_abs { var = var_info var; param_ty; body; span })
+      Syntax.Expr_abs { var = var_info var; param_ty; icit; body; span })
 
 and rename_ty_fun st params body_ty span =
   match params with
   | [] -> rename_expr st body_ty
-  | (var, ty) :: rest ->
+  | (var, ty, icit) :: rest ->
     let param_ty = rename_expr st ty in
     let var = Option.value var ~default:{ Var.name = "_"; span } in
     let body_ty =
       State.with_var st var ~f:(fun () -> rename_ty_fun st rest body_ty span)
     in
-    Syntax.Expr_ty_fun { var = var_info var; param_ty; body_ty; span }
+    Syntax.Expr_ty_fun { var = var_info var; param_ty; icit; body_ty; span }
 
 and rename_block st decls ret span =
   match decls with

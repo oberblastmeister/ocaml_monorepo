@@ -7,14 +7,14 @@ open Oak_syntax
 let rec eval (env : Env.t) (term : term) : value =
   match term with
   | Term_var var -> Env.find_exn env var
-  | Term_app { func; arg } ->
+  | Term_app { func; arg; icit } ->
     let func = eval env func in
     let arg = eval env arg in
-    app_value func arg
-  | Term_abs { var; body } -> Value_abs { var; body = { env; body } }
-  | Term_ty_fun { var; param_ty; body_ty } ->
+    app_value func arg icit
+  | Term_abs { var; body; icit } -> Value_abs { var; body = { env; body }; icit }
+  | Term_ty_fun { var; param_ty; icit; body_ty } ->
     let param_ty = eval env param_ty in
-    Value_ty_fun { var; param_ty; body_ty = { env; body = body_ty } }
+    Value_ty_fun { var; param_ty; icit; body_ty = { env; body = body_ty } }
   | Term_proj { mod_e; field; field_index } ->
     let mod_e = eval env mod_e in
     proj_value mod_e field field_index
@@ -45,6 +45,12 @@ let rec eval (env : Env.t) (term : term) : value =
     unwrap_value identity e
   | Term_weaken term -> eval (Env.pop_exn env) term
   | Term_literal _ | Term_pack _ | Term_bind _ | Term_ignore | Term_if _ -> Value_ignore
+  | Term_ty_meta meta -> 
+    begin match meta.state with
+    | _ -> failwith ""
+    end
+    (* Value_ty_meta meta *)
+  | Term_mut term -> eval env !term
 
 and unwrap_value identity e =
   begin match e with
@@ -55,11 +61,12 @@ and unwrap_value identity e =
   | _ -> assert false
   end
 
-and app_value func arg =
+and app_value func arg icit =
   begin match func with
   | Value_ignore -> Value_ignore
   | Value_abs func -> app_abs func arg
-  | Value_neutral { head; spine } -> Value_neutral { head; spine = spine <: Elim_app arg }
+  | Value_neutral { head; spine } ->
+    Value_neutral { head; spine = spine <: Elim_app { arg; icit } }
   | _ -> assert false
   end
 
@@ -100,6 +107,12 @@ let rec unfold (e : value) : uvalue =
   | Value_core_ty ty -> Uvalue_core_ty ty
   | Value_neutral neutral -> unfold_neutral neutral
   | Value_universe u -> Uvalue_universe u
+  | Value_ty_meta meta -> begin
+    (* match !meta with
+    | Meta_link ty -> unfold ty
+    | _ -> Uvalue_ty_meta meta *)
+    failwith ""
+  end
   | Value_ty_sing sing -> Uvalue_ty_sing sing
   | Value_ty_mod ty_mod -> Uvalue_ty_mod ty_mod
   | Value_ty_fun ty_fun -> Uvalue_ty_fun ty_fun
@@ -111,15 +124,15 @@ and unfold_neutral (e : neutral) : uvalue =
     ~init:(Uvalue_neutral { head = e.head; spine = Empty })
     ~f:(fun e elim ->
       match elim with
-      | Elim_app arg -> app_uvalue e arg
+      | Elim_app { arg; icit } -> app_uvalue e arg icit
       | Elim_proj { field; field_index } -> proj_uvalue e field field_index
       | Elim_out { identity } -> unfold identity)
 
-and app_uvalue func arg =
+and app_uvalue func arg icit =
   begin match func with
   | Uvalue_abs func -> unfold (app_abs func arg)
   | Uvalue_neutral { head; spine } ->
-    Uvalue_neutral { head; spine = spine <: Uelim_app arg }
+    Uvalue_neutral { head; spine = spine <: Uelim_app { arg; icit } }
   | _ -> assert false
   end
 
@@ -146,11 +159,11 @@ let rec quote context_size (e : value) : term =
         ({ name; e } : term_field))
     in
     Term_mod { fields }
-  | Value_abs { var; body } ->
+  | Value_abs { var; body; icit } ->
     let body =
       quote (context_size + 1) (eval_closure1 body (next_var_of_size context_size))
     in
-    Term_abs { var; body }
+    Term_abs { var; body; icit }
   | Value_sing_in e ->
     let e = quote context_size e in
     Term_sing_in e
@@ -161,12 +174,12 @@ let rec quote context_size (e : value) : term =
     let identity = quote context_size identity in
     let ty = quote context_size ty in
     Term_ty_sing { identity; ty }
-  | Value_ty_fun { var; param_ty; body_ty } ->
+  | Value_ty_fun { var; param_ty; icit; body_ty } ->
     let param_ty = quote context_size param_ty in
     let body_ty =
       quote (context_size + 1) (eval_closure1 body_ty (next_var_of_size context_size))
     in
-    Term_ty_fun { var; param_ty; body_ty }
+    Term_ty_fun { var; param_ty; icit; body_ty }
   | Value_ty_mod ty ->
     let _, ty_decls =
       List.fold_map
@@ -181,6 +194,11 @@ let rec quote context_size (e : value) : term =
   | Value_ty_pack ty ->
     let ty = quote context_size ty in
     Term_ty_pack ty
+  | Value_ty_meta meta -> begin
+    match meta.state with
+    | Meta_unsolved _ | Meta_link _ -> Term_ty_meta meta
+    | Meta_solved e -> quote context_size e
+  end
 
 and quote_neutral context_size (e : neutral) : term =
   Bwd.fold_left
@@ -189,9 +207,9 @@ and quote_neutral context_size (e : neutral) : term =
     ~f:(fun e elim ->
       match elim with
       | Elim_proj { field; field_index } -> Term_proj { mod_e = e; field; field_index }
-      | Elim_app arg ->
+      | Elim_app { arg; icit } ->
         let arg = quote context_size arg in
-        Term_app { func = e; arg }
+        Term_app { func = e; arg; icit }
       | Elim_out { identity } ->
         let identity = quote context_size identity in
         Term_sing_out { identity; e })

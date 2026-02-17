@@ -587,7 +587,8 @@ mod {
   let first = 1234
 }
     |};
-  [%expect {|
+  [%expect
+    {|
     error: Duplicate variable in module
      --> <input>:4:7
       |
@@ -600,4 +601,22 @@ mod {
     2 | mod {
       | ^^^^^...
     |}]
+;;
+
+let%expect_test "icit" =
+  check
+    {|
+alias ([A B : Type] -> A -> B -> B)
+    |};
+  [%expect {| (= [A : Type] -> [B : Type] -> A -> B -> B) |}];
+  check
+    {|
+fun [a b c : Type] -> a
+    |};
+  [%expect {| [a : Type] -> [b : Type] -> [c : Type] -> Type |}];
+  check
+    {|
+(fun [A B C : Type] -> A : [A B C : Type] -> Type)
+      |};
+  [%expect {| [A : Type] -> [B : Type] -> [C : Type] -> Type |}]
 ;;

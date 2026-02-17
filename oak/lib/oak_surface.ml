@@ -8,6 +8,7 @@ end
 module Core_ty = Common.Core_ty
 module Universe = Common.Universe
 module Literal = Common.Literal
+module Icit = Common.Icit
 
 module Var = struct
   module T = struct
@@ -107,6 +108,14 @@ type expr =
       ; body : expr
       ; span : Span.t
       }
+  | Expr_paren of
+      { e : expr
+      ; span : Span.t
+      }
+  | Expr_brack of
+      { e : expr
+      ; span : Span.t
+      }
 
 and block_decl =
   | Block_decl_let of
@@ -140,12 +149,14 @@ and ty_decl =
 and param =
   { vars : Var.t Non_empty_list.t
   ; ann : expr option
+  ; icit : Icit.t
   ; span : Span.t
   }
 
 and param_ty =
   { vars : Var.t list
-  ; ty : expr
+  ; ty : expr option (* can only be none when icit is Impl *)
+  ; icit : Icit.t
   ; span : Span.t
   }
 
@@ -168,5 +179,7 @@ let expr_span (e : expr) : Span.t =
   | Expr_alias { span; _ }
   | Expr_pack { span; _ }
   | Expr_literal { span; _ }
-  | Expr_bind { span; _ } -> span
+  | Expr_bind { span; _ }
+  | Expr_brack { span; _ }
+  | Expr_paren { span; _ } -> span
 ;;
