@@ -25,91 +25,44 @@ module Var_info = struct
   let generated = { name = "<generated>"; pos = 0 }
 end
 
-type 'a subst =
-  | Shift of { amount : int }
-  | Push of
-      { times : int
-      ; value : 'a
-      ; subst : 'a subst
-      }
-[@@deriving sexp_of]
+(* Substitutes free variables into bound variables *)
+module Close = struct
+  type t =
+    { map : int Int.Map.t
+    ; lift : int
+    }
+  [@@deriving sexp_of]
 
-let rec apply_subst_index subst (var : Index.t) =
-  match subst, var with
-  | Push { times; value; subst }, { index; _ } ->
-    assert (times > 0);
-    assert (index >= 0);
-    if index = 0 then value else apply_subst_index subst (Index.of_int (index - 1))
-  | Shift { amount }, { index; _ } -> Index.of_int (index + amount)
-;;
+  let empty = { map = Int.Map.empty; lift = 0 }
+  let lift n (close : t) = { close with lift = close.lift + n }
 
-module Make_subst (Value : sig
-    type t
-
-    module Info : sig
-      type t
-    end
-
-    val apply : t subst -> t -> t
-    val of_index : Info.t -> int -> t
-  end) =
-struct
-  type t = Value.t subst
-
-  let push times value subst =
-    assert (times >= 0);
-    if times = 0 then subst else Push { times; value; subst }
+  let singleton (level : Level.t) (index : Index.t) : t =
+    { map = Int.Map.singleton level.level index.index; lift = 0 }
   ;;
 
-  let shift amount =
-    assert (amount >= 0);
-    Shift { amount }
+  let add_exn (level : Level.t) (index : Index.t) (close : t) =
+    { close with
+      map = Map.add_exn close.map ~key:level.level ~data:(index.index - close.lift)
+    }
   ;;
 
-  let id = shift 0
-
-  let rec compose ~first ~second =
-    match first, second with
-    | Push { times; value; subst }, subst' ->
-      push times (Value.apply subst' value) (compose ~first:subst ~second:subst')
-    | Shift { amount = i }, Shift { amount = j } -> Shift { amount = i + j }
-    | Shift { amount = i }, Push { times; value; subst } ->
-      if i < 0
-      then assert false
-      else if i = 0
-      then second
-      else begin
-        if times < 0
-        then assert false
-        else if i > times
-        then compose ~first:(Shift { amount = i - times }) ~second:subst
-        else push (times - i) value subst
-      end
-  ;;
-
-  let under info times subst =
-    assert (times >= 0);
-    let subst = compose ~first:subst ~second:(Shift { amount = times }) in
-    let rec loop times subst =
-      if times = 0
-      then subst
-      else
-        loop
-          (times - 1)
-          (Push { times = 1; value = Value.of_index info (times - 1); subst })
+  let compose ~(second : t) ~(first : t) =
+    let map =
+      Map.merge first.map second.map ~f:(fun ~key:_ e ->
+        Some
+          (match e with
+           | `Right v -> v - first.lift + second.lift
+           | `Left v -> v
+           | `Both (v1, _v2) -> v1))
     in
-    loop times subst
+    { first with map }
   ;;
 
-  let under1 info subst =
-    Push
-      { times = 1
-      ; value = Value.of_index info 0
-      ; subst = compose ~first:subst ~second:(Shift { amount = 1 })
-      }
+  let find (close : t) (level : Level.t) =
+    Option.map
+      ~f:(fun i -> Index.of_int (i + close.lift))
+      (Map.find close.map level.level)
   ;;
-
-  let apply = Value.apply
 end
 
 (* raw syntax *)
@@ -218,8 +171,9 @@ and expr_ty_decl =
   }
 
 (* internal syntax *)
-and term =
-  | Term_var of Index.t
+type term =
+  | Term_bound of Index.t
+  | Term_free of Level.t
   | Term_app of
       { func : term
       ; arg : term
@@ -254,11 +208,7 @@ and term =
       ; ty : term
       }
   | Term_sing_in of term
-  | Term_weaken of term (* Used for subtyping coercions. See sub and eval functions. *)
-  | Term_sing_out of
-      { identity : term
-      ; e : term
-      }
+  | Term_sing_out of term
   | Term_ty_pack of term_ty
   | Term_pack of term
   | Term_bind of
@@ -282,7 +232,12 @@ and term =
       ; body2 : term
       }
   | Term_ty_meta of meta
-  | Term_mut of term ref
+  | Term_close of term_close
+
+and term_close =
+  { e : term
+  ; close : Close.t
+  }
 
 and term_ty = term
 
@@ -301,26 +256,32 @@ and term_ty_decl =
 [@@deriving sexp_of]
 
 (* values *)
-and value =
+and ('neutral, 'meta) value_gen =
   (*
     Value_ignore is similar to declval in c++.
     It is okay to come up with a garbage value if it is only for the sake of typechecking.
-    See the * value and the static lock in https://arxiv.org/pdf/2010.08599
+    See the * value and the static lock in https://arxiv.org/pdf/2010.08599.
+    
+    TODO: need to keep track of the type here for singletons.
+    
+    If type is not None, then it may contain singletons.
   *)
   | Value_ignore
   | Value_mod of value_mod
   | Value_abs of value_abs
   | Value_sing_in of value
   | Value_core_ty of Core_ty.t
-  | Value_neutral of neutral
+  | Value_neutral of 'neutral
   | Value_universe of Universe.t
-  | Value_ty_meta of meta
+  | Value_ty_meta of 'meta
   | Value_ty_sing of value_ty_sing
   | Value_ty_mod of value_ty_mod_closure
   | Value_ty_fun of value_ty_fun
   | Value_ty_pack of ty (* no value pack, because it will be ignored *)
 
+and value = (neutral, meta) value_gen
 and ty = value
+and whnf = (whnf_neutral, meta_unsolved) value_gen
 
 and elim =
   | Elim_app of
@@ -331,15 +292,15 @@ and elim =
       { field : string
       ; field_index : int
       }
-  | Elim_out of { identity : value }
+  | Elim_out
 
 (* It's elim without sing_out *)
-and uelim =
-  | Uelim_app of
+and whnf_elim =
+  | Whnf_elim_app of
       { arg : value
       ; icit : Icit.t
       }
-  | Uelim_proj of
+  | Whnf_elim_proj of
       { field : string
       ; field_index : int
       }
@@ -349,13 +310,13 @@ and neutral =
   ; spine : spine
   }
 
-and uneutral =
+and whnf_neutral =
   { head : Level.t
-  ; spine : uspine
+  ; spine : whnf_spine
   }
 
 and spine = elim Bwd.t
-and uspine = uelim Bwd.t
+and whnf_spine = whnf_elim Bwd.t
 and meta = { mutable state : meta_state }
 
 (* Can only range over values of kind Type for now *)
@@ -369,6 +330,8 @@ and meta_state_unsolved =
   ; id : int
   ; context_size : int
   }
+
+and meta_unsolved = { meta : meta }
 
 (*
   These is an ordered tuple.
@@ -429,21 +392,72 @@ and env =
   ; list : env_list
   }
 
-(* The u stands for unfolded *)
-type uvalue =
-  | Uvalue_ignore
-  | Uvalue_mod of value_mod
-  | Uvalue_abs of value_abs
-  | Uvalue_sing_in of value
-  | Uvalue_core_ty of Core_ty.t
-  | Uvalue_neutral of uneutral
-  | Uvalue_universe of Universe.t
-  | Uvalue_ty_meta of meta
-  | Uvalue_ty_sing of value_ty_sing
-  | Uvalue_ty_mod of value_ty_mod_closure
-  | Uvalue_ty_fun of value_ty_fun
-  | Uvalue_ty_pack of ty
-[@@deriving sexp_of]
+let term_close e close = Term_close { e; close }
+
+let term_push_close ({ e; close } : term_close) =
+  match e with
+  | Term_bound v -> Term_bound v
+  | Term_free i ->
+    Close.find close i |> Option.value_map ~default:e ~f:(fun v -> Term_bound v)
+  | Term_app { func; arg; icit } ->
+    Term_app { func = term_close func close; arg = term_close arg close; icit }
+  | Term_abs { var; body; icit } ->
+    Term_abs { var; body = term_close body (Close.lift 1 close); icit }
+  | Term_ty_fun { var; param_ty; icit; body_ty } ->
+    Term_ty_fun
+      { var
+      ; param_ty = term_close param_ty close
+      ; icit
+      ; body_ty = term_close body_ty (Close.lift 1 close)
+      }
+  | Term_proj { mod_e; field; field_index } ->
+    Term_proj { mod_e = term_close mod_e close; field; field_index }
+  | Term_mod { fields } ->
+    Term_mod
+      { fields = List.map fields ~f:(fun { name; e } -> { name; e = term_close e close })
+      }
+  | Term_ty_mod { ty_decls } ->
+    let _, ty_decls =
+      List.fold_map ty_decls ~init:0 ~f:(fun under { var; ty } ->
+        under + 1, { var; ty = term_close ty (Close.lift under close) })
+    in
+    Term_ty_mod { ty_decls }
+  | Term_let { var; rhs; body } ->
+    Term_let
+      { var; rhs = term_close rhs close; body = term_close body (Close.lift 1 close) }
+  | Term_ty_sing { identity; ty } ->
+    Term_ty_sing { identity = term_close identity close; ty = term_close ty close }
+  | Term_sing_in e -> Term_sing_in (term_close e close)
+  | Term_sing_out e -> Term_sing_out (term_close e close)
+  | Term_ty_pack ty -> Term_ty_pack (term_close ty close)
+  | Term_pack e -> Term_pack (term_close e close)
+  | Term_bind { var; rhs; body } ->
+    Term_bind
+      { var; rhs = term_close rhs close; body = term_close body (Close.lift 1 close) }
+  | Term_universe u -> Term_universe u
+  | Term_core_ty ty -> Term_core_ty ty
+  | Term_literal lit -> Term_literal lit
+  | Term_ignore -> Term_ignore
+  | Term_if { cond; body1; body2 } ->
+    Term_if
+      { cond = term_close cond close
+      ; body1 = term_close body1 close
+      ; body2 = term_close body2 close
+      }
+  | Term_ty_meta meta -> Term_ty_meta meta
+  | Term_close { e; close = close' } ->
+    term_close e (Close.compose ~second:close ~first:close')
+;;
+
+module Term = struct
+  let push_close = term_push_close
+
+  let close_single (level : Level.t) e =
+    term_close e (Close.singleton level (Index.of_int 0))
+  ;;
+
+  let close c e = term_close e c
+end
 
 module Expr = struct
   let span = function
@@ -469,10 +483,101 @@ module Expr = struct
   ;;
 end
 
+module Meta_unsolved = struct
+  type t = meta_unsolved
+
+  let to_meta (t : t) = t.meta
+end
+
+module Whnf_elim = struct
+  type t = whnf_elim
+
+  let to_elim = function
+    | Whnf_elim_app { arg; icit } -> Elim_app { arg; icit }
+    | Whnf_elim_proj { field; field_index } -> Elim_proj { field; field_index }
+  ;;
+end
+
+module Whnf_neutral = struct
+  type t = whnf_neutral
+
+  let rec to_neutral ({ head; spine } : t) =
+    { head; spine = Bwd.map ~f:Whnf_elim.to_elim spine }
+  ;;
+end
+
+module Value_gen = struct
+  type ('neutral, 'meta) t = ('neutral, 'meta) value_gen [@@deriving sexp_of]
+
+  let map ~map_neutral ~map_meta t =
+    match t with
+    | Value_ignore -> Value_ignore
+    | Value_mod m -> Value_mod m
+    | Value_abs abs -> Value_abs abs
+    | Value_sing_in v -> Value_sing_in v
+    | Value_core_ty ct -> Value_core_ty ct
+    | Value_neutral n -> Value_neutral (map_neutral n)
+    | Value_universe u -> Value_universe u
+    | Value_ty_meta m -> Value_ty_meta (map_meta m)
+    | Value_ty_sing s -> Value_ty_sing s
+    | Value_ty_mod m -> Value_ty_mod { env = m.env; ty_decls = m.ty_decls }
+    | Value_ty_fun f -> Value_ty_fun f
+    | Value_ty_pack ty -> Value_ty_pack ty
+  ;;
+end
+
 module Value = struct
   type t = value
 
-  let var v = Value_neutral { head = v; spine = Empty }
+  let free v = Value_neutral { head = v; spine = Empty }
+end
+
+module Whnf = struct
+  type t = whnf
+
+  let to_value t =
+    Value_gen.map ~map_neutral:Whnf_neutral.to_neutral ~map_meta:Meta_unsolved.to_meta t
+  ;;
+
+  let abs_val_exn = function
+    | Value_abs v -> v
+    | _ -> failwith "not an abs value"
+  ;;
+
+  let ty_fun_val_exn = function
+    | Value_ty_fun v -> v
+    | _ -> failwith "not a ty fun value"
+  ;;
+
+  let ty_mod_val_exn = function
+    | Value_ty_mod v -> v
+    | _ -> failwith "not a ty mod value"
+  ;;
+
+  let mod_val_exn = function
+    | Value_mod v -> v
+    | _ -> failwith "not a mod value"
+  ;;
+
+  let neutral_val_exn = function
+    | Value_neutral v -> v
+    | _ -> failwith "not a neutral value"
+  ;;
+
+  let var_val_exn = function
+    | Value_neutral { head = var; spine = Empty } -> var
+    | _ -> failwith "not a neutral var"
+  ;;
+
+  let ty_sing_val_exn = function
+    | Value_ty_sing sing -> sing
+    | _ -> failwith "not a ty sing"
+  ;;
+
+  let universe_val_exn = function
+    | Value_universe u -> u
+    | _ -> failwith "not a universe value"
+  ;;
 end
 
 (* might want to change this to use random access lists, they allow pushing i values in O(log(n)) and indexing in O(log(n)) *)
@@ -499,112 +604,11 @@ module Env = struct
       if index = 0 then value else find_exn_list rest (Index.of_int (index - 1))
   ;;
 
-  let find_exn env index = find_exn_list env.list index
-  let next_var t = Value.var (Level.of_int t.size)
-end
+  let find_index_exn env index = find_exn_list env.list index
 
-module Neutral = struct
-  type t = neutral
-end
-
-module Uelim = struct
-  type t = uelim
-
-  let to_elim = function
-    | Uelim_app { arg; icit } -> Elim_app { arg; icit }
-    | Uelim_proj { field; field_index } -> Elim_proj { field; field_index }
-  ;;
-end
-
-module Uneutral = struct
-  type t = uneutral
-
-  let rec to_neutral ({ head; spine } : t) =
-    { head; spine = Bwd.map ~f:Uelim.to_elim spine }
-  ;;
-end
-
-module Uvalue = struct
-  type t = uvalue
-
-  let abs_val_exn = function
-    | Uvalue_abs v -> v
-    | _ -> failwith "not an abs value"
+  let find_level_exn env (level : Level.t) =
+    find_index_exn env (Index.of_int (env.size - level.level - 1))
   ;;
 
-  let ty_fun_val_exn = function
-    | Uvalue_ty_fun v -> v
-    | _ -> failwith "not a ty fun value"
-  ;;
-
-  let ty_mod_val_exn = function
-    | Uvalue_ty_mod v -> v
-    | _ -> failwith "not a ty mod value"
-  ;;
-
-  let mod_val_exn = function
-    | Uvalue_mod v -> v
-    | _ -> failwith "not a mod value"
-  ;;
-
-  let neutral_val_exn = function
-    | Uvalue_neutral v -> v
-    | _ -> failwith "not a neutral value"
-  ;;
-
-  let var_val_exn = function
-    | Uvalue_neutral { head = var; spine = Empty } -> var
-    | _ -> failwith "not a neutral var"
-  ;;
-
-  let ty_sing_val_exn = function
-    | Uvalue_ty_sing sing -> sing
-    | _ -> failwith "not a ty sing"
-  ;;
-
-  let universe_val_exn = function
-    | Uvalue_universe u -> u
-    | _ -> failwith "not a universe value"
-  ;;
-
-  let to_value = function
-    | Uvalue_ignore -> Value_ignore
-    | Uvalue_mod v -> Value_mod v
-    | Uvalue_abs v -> Value_abs v
-    | Uvalue_sing_in e -> Value_sing_in e
-    | Uvalue_core_ty ty -> Value_core_ty ty
-    | Uvalue_neutral n -> Value_neutral (Uneutral.to_neutral n)
-    | Uvalue_universe u -> Value_universe u
-    | Uvalue_ty_sing v -> Value_ty_sing v
-    | Uvalue_ty_mod v -> Value_ty_mod v
-    | Uvalue_ty_fun v -> Value_ty_fun v
-    | Uvalue_ty_meta meta -> Value_ty_meta meta
-    | Uvalue_ty_pack ty -> Value_ty_pack ty
-  ;;
-
-  let is_ty_sing = function
-    | Uvalue_ty_sing _ -> true
-    | _ -> false
-  ;;
-end
-
-module Value_abs = struct
-  type t = value_abs
-end
-
-module Index_subst = Make_subst (struct
-    type t = Index.t
-
-    module Info = Unit
-
-    let apply = apply_subst_index
-    let of_index () i = Index.of_int i
-  end)
-
-module Meta = struct
-  let unsolved_val_exn t =
-    match t with
-    | Meta_unsolved unsolved -> unsolved
-    | _ -> failwith "meta was not unsolved"
-  ;;
+  let next_free t = Value.free (Level.of_int t.size)
 end

@@ -10,7 +10,7 @@ module Make (Config : sig
     val show_singletons : bool
   end) =
 struct
-  let next_var_of_size size = Syntax.Value.var (Syntax.Level.of_int size)
+  let next_free_of_size size = Syntax.Value.free (Syntax.Level.of_int size)
 
   let parens doc =
     Doc.group
@@ -45,7 +45,7 @@ struct
 
   let is_spine_atom (spine : Syntax.spine) =
     match spine with
-    | Empty | Snoc (_, (Elim_proj _ | Elim_out _)) -> true
+    | Empty | Snoc (_, (Elim_proj _ | Elim_out)) -> true
     | Snoc (_, Elim_app _) -> false
   ;;
 
@@ -115,7 +115,7 @@ struct
                ^^ Doc.indent 2 (Doc.break1 ^^ pp_value names ty))
           in
           ( ( Name_list.push name names
-            , Syntax.Env.push (next_var_of_size (Name_list.size names)) closure_env )
+            , Syntax.Env.push (next_free_of_size (Name_list.size names)) closure_env )
           , doc ))
     in
     Doc.group (Doc.string "sig" ^^ Doc.space ^^ block decls)
@@ -131,7 +131,7 @@ struct
       else Doc.string var.name
     in
     let docs = param_doc :: docs in
-    let arg = next_var_of_size (Name_list.size names) in
+    let arg = next_free_of_size (Name_list.size names) in
     let names = Name_list.push var.name names in
     let body = Evaluate.eval_closure1 body arg in
     match body with
@@ -153,7 +153,7 @@ struct
         if Syntax.Icit.equal ty.icit Impl then bracks param else parens param
       end
     in
-    let arg = next_var_of_size (Name_list.size names) in
+    let arg = next_free_of_size (Name_list.size names) in
     let names' = Name_list.push ty.var.name names in
     let body_ty = Evaluate.eval_closure1 ty.body_ty arg in
     match body_ty with
@@ -188,7 +188,7 @@ struct
     match spine with
     | Snoc (spine, Elim_app { arg; icit }) ->
       pp_neutral names { head; spine } ^^ Doc.break1 ^^ pp_icit names arg icit
-    | Snoc (spine, Elim_out { identity = _ }) ->
+    | Snoc (spine, Elim_out) ->
       if Config.show_singletons
       then pp_proj names { head; spine } "out"
       else pp_neutral names { head; spine }
@@ -201,7 +201,7 @@ struct
     | Elim_app { arg; icit } -> Doc.break1 ^^ pp_icit names arg icit
     | Elim_proj { field; field_index = _ } ->
       Doc.break0 ^^ Doc.char '.' ^^ Doc.string field
-    | Elim_out { identity = _ } ->
+    | Elim_out ->
       if Config.show_singletons
       then Doc.break0 ^^ Doc.char '.' ^^ Doc.string "out"
       else Doc.empty

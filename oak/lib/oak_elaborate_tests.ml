@@ -620,3 +620,58 @@ fun [a b c : Type] -> a
       |};
   [%expect {| [A : Type] -> [B : Type] -> [C : Type] -> Type |}]
 ;;
+
+let%expect_test "reordering fields" =
+  check
+    {|
+mod {
+  let T1 := sig {
+    let x : Int
+    let y : Int
+  }
+  
+  let T2 := sig {
+    let x : Int
+    let y : Int
+  }
+  
+  let M1 = mod {
+    let x = 134
+    let y = 234
+  }
+  
+  let M2 : T1 = M1
+  
+  let M3 : T2 = M1
+}
+    |};
+  [%expect
+    {|
+    sig {
+      let T1 : (= sig { let x : Int; let y : Int })
+      let T2 : (= sig { let x : Int; let y : Int })
+      let M1 : sig { let x : Int; let y : Int }
+      let M2 : T1
+      let M3 : T2
+    }
+    |}]
+;;
+
+let%expect_test "singleton type not ignorable" =
+  check
+    {|
+({
+  bind x = pack 1324
+  alias Int
+} : (= Int))
+    |};
+  [%expect
+    {|
+    error: Type was not ignorable: (= Int)
+    note: in bind expression
+     --> <input>:2:2
+      |
+    2 | ({
+      |  ^...
+    |}]
+;;

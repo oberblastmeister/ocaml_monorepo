@@ -6,7 +6,9 @@ open Oak_syntax
 *)
 let rec eval (env : Env.t) (term : term) : value =
   match term with
-  | Term_var var -> Env.find_exn env var
+  | Term_bound var -> Env.find_index_exn env var
+  | Term_free var -> Value.free var
+  | Term_close close -> eval env (Term.push_close close)
   | Term_app { func; arg; icit } ->
     let func = eval env func in
     let arg = eval env arg in
@@ -39,27 +41,34 @@ let rec eval (env : Env.t) (term : term) : value =
   | Term_sing_in e ->
     let e = eval env e in
     Value_sing_in e
-  | Term_sing_out { identity; e } ->
-    let identity = eval env identity in
+  | Term_sing_out e ->
     let e = eval env e in
-    unwrap_value identity e
-  | Term_weaken term -> eval (Env.pop_exn env) term
-  | Term_literal _ | Term_pack _ | Term_bind _ | Term_ignore | Term_if _ -> Value_ignore
-  | Term_ty_meta meta -> 
-    begin match meta.state with
-    | _ -> failwith ""
-    end
-    (* Value_ty_meta meta *)
-  | Term_mut term -> eval env !term
+    out_value e
+  | Term_literal _ | Term_pack _ | Term_ignore | Term_if _ | Term_bind _ -> Value_ignore
+  | Term_ty_meta _meta -> failwith "TODO"
 
-and unwrap_value identity e =
-  begin match e with
-  | Value_ignore -> identity
-  | Value_sing_in e -> e
-  | Value_neutral { head; spine } ->
-    Value_neutral { head; spine = spine <: Elim_out { identity } }
-  | _ -> assert false
-  end
+and eval_closure1 closure arg = eval (Env.push arg closure.env) closure.body
+
+and proj_mod_ty (mod_e : value) (ty : value_ty_mod_closure) field_index =
+  let ty_decl = List.drop ty.ty_decls field_index |> List.hd_exn in
+  let env =
+    List.take ty.ty_decls field_index
+    |> List.foldi ~init:ty.env ~f:(fun field_index env ty_decl ->
+      Env.push (proj_value mod_e ty_decl.var.name field_index) env)
+  in
+  eval env ty_decl.ty
+
+and proj_ty (ty_env : Env.t) (mod_e : value) (ty : ty) field_index =
+  proj_mod_ty mod_e (Whnf.ty_mod_val_exn (unfold ty_env ty)) field_index
+
+and app_fun_ty (ty : value_ty_fun) arg = eval_closure1 ty.body_ty arg
+
+and app_ty (ty_env : Env.t) (ty : ty) arg =
+  app_fun_ty (Whnf.ty_fun_val_exn (unfold ty_env ty)) arg
+
+and out_ty ty_env ty =
+  let ty = unfold ty_env ty |> Whnf.ty_sing_val_exn in
+  ty.ty
 
 and app_value func arg icit =
   begin match func with
@@ -70,7 +79,7 @@ and app_value func arg icit =
   | _ -> assert false
   end
 
-and proj_value mod_e field field_index =
+and proj_value (mod_e : value) (field : string) (field_index : int) =
   begin match mod_e with
   | Value_ignore -> Value_ignore
   | Value_mod mod_e -> proj_mod mod_e field_index
@@ -79,74 +88,74 @@ and proj_value mod_e field field_index =
   | _ -> assert false
   end
 
+and out_value e =
+  begin match e with
+  | Value_ignore -> failwith "singleton cannot be ignored for implementation simplicity"
+  | Value_sing_in e -> e
+  | Value_neutral { head; spine } -> Value_neutral { head; spine = spine <: Elim_out }
+  | _ -> assert false
+  end
+
+and unfold ty_env (e : value) : whnf =
+  match e with
+  | Value_ignore -> Value_ignore
+  | Value_mod { fields } -> Value_mod { fields }
+  | Value_abs abs -> Value_abs abs
+  | Value_sing_in e -> Value_sing_in e
+  | Value_core_ty ty -> Value_core_ty ty
+  | Value_neutral neutral -> unfold_neutral ty_env neutral
+  | Value_universe u -> Value_universe u
+  | Value_ty_meta meta -> failwith "TODO"
+  | Value_ty_sing sing -> Value_ty_sing sing
+  | Value_ty_mod ty_mod -> Value_ty_mod ty_mod
+  | Value_ty_fun ty_fun -> Value_ty_fun ty_fun
+  | Value_ty_pack ty -> Value_ty_pack ty
+
+and unfold_neutral ty_env (e : neutral) : whnf =
+  let e, _ty =
+    Bwd.fold_left
+      e.spine
+      ~init:
+        (Value_neutral { head = e.head; spine = Empty }, Env.find_level_exn ty_env e.head)
+      ~f:(fun (e, (ty : ty)) elim ->
+        match elim with
+        | Elim_app { arg; icit } -> app_whnf ty_env e arg icit, app_ty ty_env ty arg
+        | Elim_proj { field; field_index } ->
+          ( proj_whnf ty_env e field field_index
+          , proj_ty ty_env (Whnf.to_value e) ty field_index )
+        | Elim_out ->
+          let ty = Whnf.ty_sing_val_exn (unfold ty_env ty) in
+          unfold ty_env ty.identity, ty.ty)
+  in
+  e
+
 and app_abs (abs : value_abs) arg = eval_closure1 abs.body arg
 
-and proj_mod (mod_e : value_mod) index =
+and proj_mod (mod_e : value_mod) (index : int) : value =
   let field = List.drop mod_e.fields index |> List.hd_exn in
   field.e
 
-and eval_closure1 closure arg = eval (Env.push arg closure.env) closure.body
-
-and eval_ty_mod_closure e (ty : value_ty_mod_closure) field_index =
-  let ty_decl = List.drop ty.ty_decls field_index |> List.hd_exn in
-  let env =
-    List.take ty.ty_decls field_index
-    |> List.foldi ~init:ty.env ~f:(fun field_index env ty_decl ->
-      Env.push (proj_value e ty_decl.var.name field_index) env)
-  in
-  eval env ty_decl.ty
-;;
-
-(* Apply singleton extension rule to remove Neutral_sing_out.*)
-let rec unfold (e : value) : uvalue =
-  match e with
-  | Value_ignore -> Uvalue_ignore
-  | Value_mod { fields } -> Uvalue_mod { fields }
-  | Value_abs abs -> Uvalue_abs abs
-  | Value_sing_in e -> Uvalue_sing_in e
-  | Value_core_ty ty -> Uvalue_core_ty ty
-  | Value_neutral neutral -> unfold_neutral neutral
-  | Value_universe u -> Uvalue_universe u
-  | Value_ty_meta meta -> begin
-    (* match !meta with
-    | Meta_link ty -> unfold ty
-    | _ -> Uvalue_ty_meta meta *)
-    failwith ""
-  end
-  | Value_ty_sing sing -> Uvalue_ty_sing sing
-  | Value_ty_mod ty_mod -> Uvalue_ty_mod ty_mod
-  | Value_ty_fun ty_fun -> Uvalue_ty_fun ty_fun
-  | Value_ty_pack ty -> Uvalue_ty_pack ty
-
-and unfold_neutral (e : neutral) : uvalue =
-  Bwd.fold_left
-    e.spine
-    ~init:(Uvalue_neutral { head = e.head; spine = Empty })
-    ~f:(fun e elim ->
-      match elim with
-      | Elim_app { arg; icit } -> app_uvalue e arg icit
-      | Elim_proj { field; field_index } -> proj_uvalue e field field_index
-      | Elim_out { identity } -> unfold identity)
-
-and app_uvalue func arg icit =
+and app_whnf ty_env func arg icit : whnf =
   begin match func with
-  | Uvalue_abs func -> unfold (app_abs func arg)
-  | Uvalue_neutral { head; spine } ->
-    Uvalue_neutral { head; spine = spine <: Uelim_app { arg; icit } }
+  | Value_ignore -> Value_ignore
+  | Value_abs func -> unfold ty_env (app_abs func arg)
+  | Value_neutral { head; spine } ->
+    Value_neutral { head; spine = spine <: Whnf_elim_app { arg; icit } }
   | _ -> assert false
   end
 
-and proj_uvalue mod_e field field_index =
+and proj_whnf ty_env mod_e field field_index : whnf =
   begin match mod_e with
-  | Uvalue_mod mod_e -> unfold (proj_mod mod_e field_index)
-  | Uvalue_neutral { head; spine } ->
-    Uvalue_neutral { head; spine = spine <: Uelim_proj { field; field_index } }
+  | Value_ignore -> Value_ignore
+  | Value_mod mod_e -> unfold ty_env (proj_mod mod_e field_index)
+  | Value_neutral { head; spine } ->
+    Value_neutral { head; spine = spine <: Whnf_elim_proj { field; field_index } }
   | _ -> assert false
   end
 ;;
 
-let next_var_of_size size = Value.var (Level.of_int size)
-let next_var_of_env env = next_var_of_size (Env.size env)
+let next_free_of_size size = Value.free (Level.of_int size)
+let next_free_of_env env = next_free_of_size (Env.size env)
 
 (* This should only be used in irrelevant contexts *)
 let rec quote context_size (e : value) : term =
@@ -161,7 +170,9 @@ let rec quote context_size (e : value) : term =
     Term_mod { fields }
   | Value_abs { var; body; icit } ->
     let body =
-      quote (context_size + 1) (eval_closure1 body (next_var_of_size context_size))
+      eval_closure1 body (next_free_of_size context_size)
+      |> quote (context_size + 1)
+      |> Term.close_single (Level.of_int context_size)
     in
     Term_abs { var; body; icit }
   | Value_sing_in e ->
@@ -177,40 +188,63 @@ let rec quote context_size (e : value) : term =
   | Value_ty_fun { var; param_ty; icit; body_ty } ->
     let param_ty = quote context_size param_ty in
     let body_ty =
-      quote (context_size + 1) (eval_closure1 body_ty (next_var_of_size context_size))
+      eval_closure1 body_ty (next_free_of_size context_size)
+      |> quote (context_size + 1)
+      |> Term.close_single (Level.of_int context_size)
     in
     Term_ty_fun { var; param_ty; icit; body_ty }
   | Value_ty_mod ty ->
     let _, ty_decls =
       List.fold_map
         ty.ty_decls
-        ~init:(context_size, ty.env)
-        ~f:(fun (context_size, closure_env) { var; ty } ->
-          let ty = quote context_size (eval closure_env ty) in
-          ( (context_size + 1, Env.push (next_var_of_size context_size) closure_env)
+        ~init:(context_size, ty.env, Close.empty)
+        ~f:(fun (context_size, closure_env, (close : Close.t)) { var; ty } ->
+          let ty = eval closure_env ty |> quote context_size |> Term.close close in
+          ( ( context_size + 1
+            , Env.push (next_free_of_size context_size) closure_env
+            , Close.add_exn (Level.of_int context_size) Index.zero (Close.lift 1 close) )
           , ({ var; ty } : term_ty_decl) ))
     in
     Term_ty_mod { ty_decls }
   | Value_ty_pack ty ->
     let ty = quote context_size ty in
     Term_ty_pack ty
-  | Value_ty_meta meta -> begin
-    match meta.state with
-    | Meta_unsolved _ | Meta_link _ -> Term_ty_meta meta
-    | Meta_solved e -> quote context_size e
-  end
+  | Value_ty_meta meta -> failwith "TODO"
 
 and quote_neutral context_size (e : neutral) : term =
-  Bwd.fold_left
-    e.spine
-    ~init:(Term_var (Index.of_level context_size e.head))
-    ~f:(fun e elim ->
-      match elim with
-      | Elim_proj { field; field_index } -> Term_proj { mod_e = e; field; field_index }
-      | Elim_app { arg; icit } ->
-        let arg = quote context_size arg in
-        Term_app { func = e; arg; icit }
-      | Elim_out { identity } ->
-        let identity = quote context_size identity in
-        Term_sing_out { identity; e })
+  Bwd.fold_left e.spine ~init:(Term_free e.head) ~f:(fun e elim ->
+    match elim with
+    | Elim_proj { field; field_index } -> Term_proj { mod_e = e; field; field_index }
+    | Elim_app { arg; icit } ->
+      let arg = quote context_size arg in
+      Term_app { func = e; arg; icit }
+    | Elim_out -> Term_sing_out e)
 ;;
+
+module Mod = struct
+  let proj = proj_mod
+end
+
+module Mod_ty = struct
+  let proj = proj_mod_ty
+end
+
+module Abs = struct
+  let app = app_abs
+end
+
+module Fun_ty = struct
+  let app = app_fun_ty
+end
+
+module Value = struct
+  let proj = proj_value
+  let app = app_value
+  let out = out_value
+end
+
+module Ty = struct
+  let proj = proj_ty
+  let app = app_ty
+  let out = out_ty
+end

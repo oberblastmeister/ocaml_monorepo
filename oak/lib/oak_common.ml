@@ -82,6 +82,8 @@ end
 module Index = struct
   type t = { index : int } [@@unboxed] [@@deriving sexp_of, equal, compare]
 
+  let zero = { index = 0 }
+
   let of_int index =
     assert (index >= 0);
     { index }
