@@ -19,6 +19,36 @@ exception Error of Diagnostic.t
 
 let raise_error diagnostic = raise_notrace (Error diagnostic)
 
+module Meta_list = struct
+  type t = { mutable metas : meta list }
+
+  let create () = { metas = [] }
+
+  let fresh t (cx : Context.t) var =
+    let id = !(cx.next_meta_id) in
+    incr cx.next_meta_id;
+    let meta = { state = Meta_unsolved { var; id; context_size = Context.size cx } } in
+    t.metas <- meta :: t.metas;
+    Term_ty_meta meta
+  ;;
+
+  let check_all_solved t (cx : Context.t) =
+    List.iter t.metas ~f:(fun meta ->
+      match meta.state with
+      | Meta_solved _ -> failwith "Meta cannot be solved yet"
+      | Meta_link ty -> meta.state <- Meta_solved ty
+      | Meta_unsolved meta ->
+        raise_error
+          { code = None
+          ; parts =
+              [ Diagnostic.Part.create
+                  ~snippet:(Context.snippet cx (Span.single meta.var.pos))
+                  (Doc.string "Unsolved meta: " ^^ Doc.string meta.var.name)
+              ]
+          })
+  ;;
+end
+
 exception Type_not_ignorable of Diagnostic.Part.t
 
 let raise_type_not_ignorable e = raise_notrace (Type_not_ignorable e)
@@ -373,7 +403,7 @@ and check (cx : Context.t) (e : expr) (ty : ty) : term =
              ; Diagnostic.Part.create
                  ~kind:Note
                  ~snippet:(Context.snippet cx span)
-                 (Doc.string "failed to coerce inferred type "
+                 (Doc.string "failed to coerce inferred type"
                   ^^ Doc.indent 2 (Doc.break1 ^^ Context.pp_value cx ty')
                   ^^ Doc.break1
                   ^^ Doc.string "when checking against type"

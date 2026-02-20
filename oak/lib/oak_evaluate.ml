@@ -8,7 +8,6 @@ let rec eval (env : Env.t) (term : term) : value =
   match term with
   | Term_bound var -> Env.find_index_exn env var
   | Term_free var -> Value.free var
-  | Term_close close -> eval env (Term.push_close close)
   | Term_app { func; arg; icit } ->
     let func = eval env func in
     let arg = eval env arg in

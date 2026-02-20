@@ -232,7 +232,6 @@ type term =
       ; body2 : term
       }
   | Term_ty_meta of meta
-  | Term_close of term_close
 
 and term_close =
   { e : term
@@ -392,9 +391,7 @@ and env =
   ; list : env_list
   }
 
-let term_close e close = Term_close { e; close }
-
-let term_push_close ({ e; close } : term_close) =
+let rec term_close e close =
   match e with
   | Term_bound v -> Term_bound v
   | Term_free i ->
@@ -445,18 +442,14 @@ let term_push_close ({ e; close } : term_close) =
       ; body2 = term_close body2 close
       }
   | Term_ty_meta meta -> Term_ty_meta meta
-  | Term_close { e; close = close' } ->
-    term_close e (Close.compose ~second:close ~first:close')
 ;;
 
 module Term = struct
-  let push_close = term_push_close
+  let close c e = term_close e c
 
   let close_single (level : Level.t) e =
     term_close e (Close.singleton level (Index.of_int 0))
   ;;
-
-  let close c e = term_close e c
 end
 
 module Expr = struct
@@ -487,6 +480,10 @@ module Meta_unsolved = struct
   type t = meta_unsolved
 
   let to_meta (t : t) = t.meta
+
+  (* let get (t : t) = match t.meta.state with
+      | Meta_unsolved t -> t
+      | _ -> failwith "should be meta unsolved" *)
 end
 
 module Whnf_elim = struct

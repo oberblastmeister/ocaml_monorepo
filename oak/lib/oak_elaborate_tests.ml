@@ -130,7 +130,7 @@ mod {
   [%expect
     {|
     error: Types were not equal: Bool != x
-    note: failed to coerce inferred type  Bool when checking against type x
+    note: failed to coerce inferred type Bool when checking against type x
      --> <input>:4:6
       |
     4 |     (#t : x)
@@ -244,7 +244,7 @@ mod {
   [%expect
     {|
     error: Universes were not equal: Sig != Type
-    note: failed to coerce inferred type  Sig when checking against type Type
+    note: failed to coerce inferred type Sig when checking against type Type
      --> <input>:2:2
       |
     2 | (Kind : Type)
@@ -257,7 +257,7 @@ mod {
   [%expect
     {|
     error: Universes were not equal: Kind != Type
-    note: failed to coerce inferred type  Kind when checking against type Type
+    note: failed to coerce inferred type Kind when checking against type Type
      --> <input>:2:2
       |
     2 | (Type : Type)
@@ -383,7 +383,7 @@ mod {
   [%expect
     {|
     error: Base types were not equal: Int != Bool
-    note: failed to coerce inferred type  Type when checking against type (= Bool)
+    note: failed to coerce inferred type Type when checking against type (= Bool)
      --> <input>:5:16
       |
     5 |     let T := f Int
@@ -400,7 +400,7 @@ mod {
   [%expect
     {|
     error: Base types were not equal: Int != Bool
-    note: failed to coerce inferred type  Type when checking against type (= Bool)
+    note: failed to coerce inferred type Type when checking against type (= Bool)
      --> <input>:5:17
       |
     5 |       let T = f Int
@@ -643,6 +643,20 @@ mod {
   let M2 : T1 = M1
   
   let M3 : T2 = M1
+  
+  let M4 = mod {
+    let y = #t
+    let T := Bool
+    let x : T = #t
+  }
+  
+  let T3 := sig {
+    let x : Bool
+    let T : Type
+    let y : T
+  }
+  
+  let M5 : T3 = M4
 }
     |};
   [%expect
@@ -653,6 +667,9 @@ mod {
       let M1 : sig { let x : Int; let y : Int }
       let M2 : T1
       let M3 : T2
+      let M4 : sig { let y : Bool; let T : (= Bool); let x : T }
+      let T3 : (= sig { let x : Bool; let T : Type; let y : T })
+      let M5 : T3
     }
     |}]
 ;;
@@ -674,4 +691,240 @@ let%expect_test "singleton type not ignorable" =
     2 | ({
       |  ^...
     |}]
+;;
+
+let%expect_test "ignore equality" =
+  check
+    {|
+mod {
+  let f : Int -> Type -> sig {
+    let T : Type
+    let x : T
+  } = fun x y -> mod {
+    let T = Unit
+    let x = ()
+  }
+  
+  let m1 := f 123 Int
+  let x1 = m1.x
+  let x2 : (f ({ bind x = pack 123; 132 } : Int) Int).T = m1.x
+}
+    |};
+  [%expect
+    {|
+    sig {
+      let f : Int -> Type -> sig { let T : Type; let x : T }
+      let m1 : (= f ignore Int)
+      let x1 : m1.T
+      let x2 : (f ignore Int).T
+    }
+    |}];
+  check
+    {|
+mod {
+  let f : Int -> Type -> sig {
+    let T : Type
+    let x : T
+  } = fun x y -> mod {
+    let T = Unit
+    let x = ()
+  }
+  
+  let m1 := f 123 Int
+  let x1 = m1.x
+  let x2 : (f 123 Bool).T = m1.x
+}
+    |};
+  [%expect
+    {|
+    error: Base types were not equal: Int != Bool
+    note: failed to coerce inferred type m1.T when checking against type (f ignore Bool).T
+      --> <input>:13:29
+       |
+    13 |   let x2 : (f 123 Bool).T = m1.x
+       |                             ^^^^
+    |}];
+  check
+    {|
+  mod {
+    let f = fun (x : Int) (y : Type) -> (mod {
+      let T = Unit
+      let x = ()
+    } : sig {
+      let T : Type
+      let x : T
+    })
+    
+    let m1 := f 123 Int
+    let x1 = m1.x
+    let x2 : (f ({ bind x = pack 123; let y = 23; 132 } : Int) Int).T = m1.x
+  }
+      |};
+  [%expect
+    {|
+    sig {
+      let f : (x : Int) -> (y : Type) -> sig { let T : Type; let x : T }
+      let m1 : (= f ignore Int)
+      let x1 : m1.T
+      let x2 : (f ignore Int).T
+    }
+    |}];
+  check
+    {|
+mod {
+  let S := sig {
+    let T : Type
+    let x : T
+  }
+  
+  let M : sig {
+    let T : Type
+    let x : T
+    let y : T
+  } = mod {
+    let T = Unit
+    let x := ()
+    let y = x
+  }
+  
+  let F = fun (T : Type) (x : T) -> (mod {
+    let T = Unit
+    let x = ()
+  } : S)
+  
+  let x1 : (F M.T M.x).T := (F M.T M.x).x
+  let x2 : (F M.T M.y).T = x1
+}
+    |};
+  [%expect
+    {|
+    sig {
+      let S : (= sig { let T : Type; let x : T })
+      let M : sig { let T : Type; let x : T; let y : T }
+      let F : (T : Type) -> (x : T) -> S
+      let x1 : (= (F M.T M.x).x)
+      let x2 : (F M.T M.y).T
+    }
+    |}];
+  check
+    {|
+  mod {
+    let S := sig {
+      let T : Type
+      let x : T
+    }
+    
+    let M : sig {
+      let T : Kind
+      let x : T
+      let y : T
+    } = mod {
+      let T = Type
+      let x = Int
+      let y = Bool
+    }
+    
+    let F = fun (T : Kind) (x : T) -> (mod {
+      let T = Unit
+      let x = ()
+    } : S)
+    
+    let x1 : (F M.T M.x).T := (F M.T M.x).x
+    let x2 : (F M.T M.y).T := x1
+  }
+      |};
+  [%expect
+    {|
+    error: Fields were not equal in a projection: x != y
+    note: failed to coerce inferred type (= (F M.T M.x).x) when checking against type (F M.T M.y).T
+      --> <input>:24:31
+       |
+    24 |     let x2 : (F M.T M.y).T := x1
+       |                               ^^
+    |}]
+;;
+
+let%expect_test "unify signatures slightly different" =
+  check
+    {|
+mod {
+  let S : (= sig {
+    let T : (= Bool)
+    let U : (= T)
+  }) = sig {
+    let T : (= Bool)
+    let U : (= Bool)
+  }
+}
+  |};
+  [%expect
+    {|
+    error: Types were not equal: Type != (= Bool)
+    note: failed to coerce inferred type
+      Kind
+    when checking against type
+      (= sig { let T : (= Bool); let U : (= T) })
+     --> <input>:6:8
+      |
+    6 |   }) = sig {
+      |        ^^^^^...
+    |}];
+  check
+    {|
+  mod {
+    let S : (= sig {
+      let T : (= Bool)
+      let U : (= T : Type)
+    }) = sig {
+      let T : (= Bool)
+      let U : (= Bool)
+    }
+  }
+    |};
+  [%expect {| sig { let S : (= sig { let T : (= Bool); let U : (= T) }) } |}]
+;;
+
+let%expect_test "universe" =
+  check
+    {|
+  sig {}
+    |};
+  [%expect {| Kind |}];
+  check {|(= Bool)|};
+  [%expect {| Kind |}];
+  check
+    {|
+    sig { let T : Type }
+    |};
+  [%expect {| Kind |}];
+  check
+    {|
+    sig { let T : Kind }
+    |};
+  [%expect {| Sig |}];
+  check
+    {|
+    Int -> Int
+    |};
+  [%expect {| Type |}];
+  check
+    {|
+    Type -> Int
+    |};
+  [%expect {| Kind |}];
+  check
+    {|
+    sig {} -> Int
+    |};
+  [%expect {| Kind |}];
+  check
+    {|
+    sig { let T : Kind } -> Int
+    |};
+  [%expect {| Sig |}];
+  check
+    {|
+    Int -> sig { let T : Kind }
+    |};
+  [%expect {| Sig |}]
 ;;

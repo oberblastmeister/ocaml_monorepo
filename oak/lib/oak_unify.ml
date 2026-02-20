@@ -66,6 +66,7 @@ let rec unify (cx : Context.t) (e1 : value) (e2 : value) (ty : value) : unit =
 *)
 and unify_ty (cx : Context.t) (ty1 : ty) (ty2 : ty) : unit =
   match Context.unfold cx ty1, Context.unfold cx ty2 with
+  | Value_ty_meta _, _ -> failwith ""
   | Value_ty_sing ty1, Value_ty_sing ty2 ->
     unify_ty cx ty1.ty ty2.ty;
     (* we now know that ty1 = ty2 *)
