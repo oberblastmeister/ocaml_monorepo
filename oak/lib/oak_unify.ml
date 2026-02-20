@@ -105,6 +105,7 @@ let solve_meta (cx : Context.t) (meta : meta_unsolved) (ty : ty) =
 ;;
 
 (* precondition: e1 and e2 must have type ty. ty must be an element of some universe. *)
+(* TODO: implement approximate conversion checking *)
 let rec unify (cx : Context.t) (e1 : value) (e2 : value) (ty : value) : unit =
   match Context.unfold cx ty with
   | Value_ignore | Value_mod _ | Value_abs _ | Value_sing_in _ ->

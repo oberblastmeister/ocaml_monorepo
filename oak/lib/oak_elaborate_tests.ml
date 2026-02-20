@@ -986,8 +986,42 @@ mod {
       let const = fun [B A : Type] (x : A) (y : B) -> x
       
       let w = const [Int] #t
+      
+      let x = const [Int] [Bool] #t
     }
           |};
   [%expect
-    {| sig { let const : [B : Type] -> [A : Type] -> (x : A) -> (y : B) -> A; let w : (y : Int) -> Bool } |}]
+    {|
+    sig {
+      let const : [B : Type] -> [A : Type] -> (x : A) -> (y : B) -> A
+      let w : (y : Int) -> Bool
+      let x : (y : Int) -> Bool
+    }
+    |}];
+  check
+    {|
+      [A : Type -> Type] -> Unit
+      |};
+  [%expect
+    {|
+    error: Types were not equal: Type -> Type != Type
+    note: Implicit paramters only work for kind Type
+     --> <input>:2:12
+      |
+    2 |       [A : Type -> Type] -> Unit
+      |            ^^^^^^^^^^^^
+    |}];
+  check
+    {|
+    fun [A : Type -> Type] -> Unit
+    |};
+  [%expect
+    {|
+    error: Types were not equal: Type -> Type != Type
+    note: Implicit paramters only work for kind Type
+     --> <input>:2:14
+      |
+    2 |     fun [A : Type -> Type] -> Unit
+      |              ^^^^^^^^^^^^
+    |}]
 ;;

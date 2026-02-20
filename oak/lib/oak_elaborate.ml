@@ -116,6 +116,22 @@ let check_type_ignorable cx ty =
   | exception Type_not_ignorable part -> Error part
 ;;
 
+let check_implicit_param_ty cx span ty =
+  match Unify.unify_ty cx ty (Value_universe Universe.type_) with
+  | Ok () -> ()
+  | Error part ->
+    raise_error
+      { code = None
+      ; parts =
+          [ part
+          ; Diagnostic.Part.create
+              ~kind:Note
+              ~snippet:(Context.snippet cx span)
+              (Doc.string "Implicit paramters only work for kind Type")
+          ]
+      }
+;;
+
 (* TODO: these should not unwrap types with exn *)
 let rec infer (cx : Context.t) (e : expr) : term * ty =
   match e with
@@ -139,25 +155,11 @@ let rec infer (cx : Context.t) (e : expr) : term * ty =
     let e, ty = infer_spine cx meta_list e in
     Meta_list.check_all_solved meta_list cx;
     e, ty
-  | Expr_abs { var; param_ty = Some param_ty; icit; body; span } ->
+  | Expr_abs { var; param_ty = Some param_ty; icit; body; span = _ } ->
+    let param_ty_span = Expr.span param_ty in
     let param_ty, _ = check_universe cx param_ty in
     let param_ty = Evaluate.eval Env.empty param_ty in
-    if Icit.equal icit Impl
-    then begin
-      match Unify.unify_ty cx param_ty (Value_universe Universe.type_) with
-      | Ok () -> ()
-      | Error part ->
-        raise_error
-          { code = None
-          ; parts =
-              [ part
-              ; Diagnostic.Part.create
-                  ~kind:Note
-                  ~snippet:(Context.snippet cx span)
-                  (Doc.string "Implicit parameter type annotation must be a type")
-              ]
-          }
-    end;
+    if Icit.equal icit Impl then check_implicit_param_ty cx param_ty_span param_ty;
     let cx' = Context.bind var param_ty cx in
     let body, body_ty = infer cx' body in
     let body_ty : value_closure =
@@ -206,10 +208,11 @@ let rec infer (cx : Context.t) (e : expr) : term * ty =
     in
     res_term, res_ty
   | Expr_ty_fun { var; param_ty; icit; body_ty; span = _ } ->
+    let param_ty_span = Expr.span param_ty in
     let param_ty, universe1 = check_universe cx param_ty in
-    let body_ty, universe2 =
-      check_universe (Context.bind var (Evaluate.eval Env.empty param_ty) cx) body_ty
-    in
+    let param_ty_val = Evaluate.eval Env.empty param_ty in
+    if Icit.equal icit Impl then check_implicit_param_ty cx param_ty_span param_ty_val;
+    let body_ty, universe2 = check_universe (Context.bind var param_ty_val cx) body_ty in
     ( Term_ty_fun
         { var
         ; param_ty
