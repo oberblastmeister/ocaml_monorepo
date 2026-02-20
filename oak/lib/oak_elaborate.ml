@@ -110,7 +110,7 @@ let rec check_ty_ignorable (cx : Context.t) (ty : ty) : unit =
          (Doc.string "Type was not ignorable: " ^^ Pretty.pp_value Name_list.empty ty))
 ;;
 
-let check_type_ignorable cx ty =
+let check_ty_ignorable cx ty =
   match check_ty_ignorable cx ty with
   | () -> Ok ()
   | exception Type_not_ignorable part -> Error part
@@ -132,7 +132,6 @@ let check_implicit_param_ty cx span ty =
       }
 ;;
 
-(* TODO: these should not unwrap types with exn *)
 let rec infer (cx : Context.t) (e : expr) : term * ty =
   match e with
   | Expr_error { span } ->
@@ -319,6 +318,7 @@ let rec infer (cx : Context.t) (e : expr) : term * ty =
       }
 
 and check (cx : Context.t) (e : expr) (ty : ty) : term =
+  (* TODO: need to handle some singleton cases here *)
   match e, Context.unfold cx ty with
   | Expr_abs { var; param_ty; icit; body; span }, Value_ty_fun ty ->
     (match param_ty with
@@ -371,19 +371,20 @@ and check (cx : Context.t) (e : expr) (ty : ty) : term =
     let e = check cx e ty in
     Term_pack e
   | Expr_bind { var; rhs; body; span }, _ ->
-    (match check_type_ignorable cx ty with
-     | Ok () -> ()
-     | Error part ->
-       raise_error
-         { code = None
-         ; parts =
-             [ part
-             ; Diagnostic.Part.create
-                 ~kind:Note
-                 ~snippet:(Context.snippet cx span)
-                 (Doc.string "in bind expression")
-             ]
-         });
+    begin match check_ty_ignorable cx ty with
+    | Ok () -> ()
+    | Error part ->
+      raise_error
+        { code = None
+        ; parts =
+            [ part
+            ; Diagnostic.Part.create
+                ~kind:Note
+                ~snippet:(Context.snippet cx span)
+                (Doc.string "in bind expression")
+            ]
+        }
+    end;
     let rhs, rhs_ty = infer cx rhs in
     let rhs_inner_ty =
       match Context.unfold cx rhs_ty with
@@ -400,6 +401,37 @@ and check (cx : Context.t) (e : expr) (ty : ty) : term =
     in
     let body = check (Context.bind var rhs_inner_ty cx) body ty in
     Term_bind { var; rhs; body = Evaluate.close_single (Context.next_level cx) body }
+  | (Expr_app _ | Expr_proj _), _ ->
+    (*
+      We have this extra case because infer will call infer_spine which will check that all meta variables have been solved.
+      But this is without the info that we are checking at type ty!
+      Thus we should have the ability to solve some extra metavariables in checking mode.
+    *)
+    let span = Expr.span e in
+    let meta_list = Meta_list.create () in
+    let e, ty' = infer_spine cx meta_list e in
+    let e =
+      (* TODO: deduplicate these error messages *)
+      match Unify.coerce cx e ty' ty with
+      | Ok term -> term
+      | Error part ->
+        raise_error
+          { code = None
+          ; parts =
+              [ part
+              ; Diagnostic.Part.create
+                  ~kind:Note
+                  ~snippet:(Context.snippet cx span)
+                  (Doc.string "failed to coerce inferred type"
+                   ^^ Doc.indent 2 (Doc.break1 ^^ Context.pp_value cx ty')
+                   ^^ Doc.break1
+                   ^^ Doc.string "when checking against type"
+                   ^^ Doc.indent 2 (Doc.break1 ^^ Context.pp_value cx ty))
+              ]
+          }
+    in
+    Meta_list.check_all_solved meta_list cx;
+    e
   | _ ->
     let span = Expr.span e in
     let e, ty' = infer cx e in
@@ -473,6 +505,12 @@ and extract_mod_ty cx span mod_e mod_ty =
         }
   in
   mod_e, mod_ty
+
+and infer_spine_enter (cx : Context.t) (e : expr) : term * ty =
+  let meta_list = Meta_list.create () in
+  let e, ty = infer_spine cx meta_list e in
+  Meta_list.check_all_solved meta_list cx;
+  e, ty
 
 and infer_spine (cx : Context.t) (meta_list : Meta_list.t) (e : expr) : term * ty =
   match e with

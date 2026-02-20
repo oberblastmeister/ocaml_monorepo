@@ -180,6 +180,7 @@ and rename_block st decls ret span =
   match decls with
   | [] -> rename_expr st ret
   | Surface.Block_decl_let { var; ann; is_alias; rhs; span = decl_span } :: rest ->
+    (* Important that the annotation goes first, before the alias. *)
     let rhs =
       match ann with
       | Some ty ->

@@ -444,34 +444,48 @@ mod {
   let Functor := sig {
     let T : Type -> Type
     
-    let map : (A B : Type) -> (A -> B) -> T A -> T B
+    let map : [A B : Type] -> (A -> B) -> T A -> T B
   }
   
   let Applicative := sig {
     let T : Type -> Type
     
-    let pure : (A : Type) -> T A
-    let map : (A B : Type) -> (A -> B) -> T A -> T B
-    let and : (A B : Type) -> T A -> T B -> T (Pair A B)
+    let pure : [A : Type] -> T A
+    let map : [A B : Type] -> (A -> B) -> T A -> T B
+    let and : [A B : Type] -> T A -> T B -> T (Pair A B)
   };
   
   let Monad : Kind := sig {
     let T : Type -> Type
-    let return : (A : Type) -> A -> T A
-    let bind : (A B : Type) -> T A -> (A -> T B) -> T B
+    let return : [A : Type] -> A -> T A
+    let bind : [A B : Type] -> T A -> (A -> T B) -> T B
   }
   
   let List := sig {
     let T : Type -> Type
-    let nil : (A : Type) -> T A
-    let cons : (A : Type) -> A -> T A -> T A
+    let nil : [A : Type] -> Unit -> T A
+    let cons : [A : Type] -> A -> T A -> T A
   }
   
-  let do_something = fun (A B : Type) (monad : Monad) (p : Pair (monad.T A) (monad.T B)) (x : monad.T A) (y : monad.T B) (list : List) -> {
-    let first = list.cons Unit () (list.nil Unit)
-    monad.bind A Unit x (fun x ->
-      monad.return Unit ()
+  let do_something = fun (A B : Type) (monad : Monad) (p : Pair (monad.T A) (monad.T B)) (x : monad.T A) (y : monad.T B) (list : List) -> ({
+    let first = list.cons () (list.nil ())
+    monad.bind x (fun x ->
+      monad.return ()
     )
+  } : monad.T Unit)
+  
+  let do_something' :
+    [A B] ->
+    (monad : Monad) ->
+    Pair (monad.T A) (monad.T B) ->
+    monad.T A ->
+    monad.T B ->
+    (list : List) ->
+    monad.T (list.T Int) = fun [A B] monad p x y list -> {
+    let first = list.cons 1324 (list.nil ())
+    monad.bind x (fun x -> {
+      monad.return first
+    })
   }
 }
       |};
@@ -480,30 +494,30 @@ mod {
     sig {
       let Pair : (a : Type) -> (b : Type) -> Type
       let Functor :
-        (= sig { let T : Type -> Type; let map : (A : Type) -> (B : Type) -> (A -> B) -> (T A) -> T B })
+        (= sig { let T : Type -> Type; let map : [A : Type] -> [B : Type] -> (A -> B) -> T A -> T B })
       let Applicative :
         ( =
           sig {
             let T : Type -> Type
-            let pure : (A : Type) -> T A
-            let map : (A : Type) -> (B : Type) -> (A -> B) -> (T A) -> T B
-            let and : (A : Type) -> (B : Type) -> (T A) -> (T B) -> T (Pair A B)
+            let pure : [A : Type] -> T A
+            let map : [A : Type] -> [B : Type] -> (A -> B) -> T A -> T B
+            let and : [A : Type] -> [B : Type] -> T A -> T B -> T (Pair A B)
           }
         )
       let Monad :
         ( =
           sig {
             let T : Type -> Type
-            let return : (A : Type) -> A -> T A
-            let bind : (A : Type) -> (B : Type) -> (T A) -> (A -> T B) -> T B
+            let return : [A : Type] -> A -> T A
+            let bind : [A : Type] -> [B : Type] -> T A -> (A -> T B) -> T B
           }
         )
       let List :
         ( =
           sig {
             let T : Type -> Type
-            let nil : (A : Type) -> T A
-            let cons : (A : Type) -> A -> (T A) -> T A
+            let nil : [A : Type] -> Unit -> T A
+            let cons : [A : Type] -> A -> T A -> T A
           }
         )
       let do_something :
@@ -515,6 +529,15 @@ mod {
         (y : monad.T B) ->
         (list : List) ->
         monad.T Unit
+      let do_something' :
+        [A : Type] ->
+        [B : Type] ->
+        (monad : Monad) ->
+        Pair (monad.T A) (monad.T B) ->
+        monad.T A ->
+        monad.T B ->
+        (list : List) ->
+        monad.T (list.T Int)
     }
     |}];
   check

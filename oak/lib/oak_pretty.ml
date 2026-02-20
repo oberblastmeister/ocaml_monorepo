@@ -144,7 +144,7 @@ struct
   and collect_ty_fun_params names acc_params (ty : Syntax.value_ty_fun) =
     let param_doc =
       if String.equal ty.var.name "_"
-      then pp_atom names ty.param_ty
+      then pp_non_arrow names ty.param_ty
       else begin
         let param =
           Doc.string ty.var.name
@@ -165,6 +165,11 @@ struct
     | _ ->
       let params = List.rev (param_doc :: acc_params) in
       params, names', body_ty
+
+  and pp_non_arrow (name : Name_list.t) (value : Syntax.value) =
+    match value with
+    | Value_ty_fun _ -> pp_atom name value
+    | _ -> pp_value name value
 
   and pp_atom (names : Name_list.t) (value : Syntax.value) =
     match value with
