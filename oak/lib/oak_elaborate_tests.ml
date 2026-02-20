@@ -928,3 +928,66 @@ let%expect_test "universe" =
     |};
   [%expect {| Sig |}]
 ;;
+
+let%expect_test "implicits" =
+  check
+    {|
+mod {
+  let id = fun [A : Type] (x : A) -> x
+  
+  let id' = id
+  
+  let x = id 1234
+  
+  let y = id [Int] 1234
+  
+  let z = id' #t
+}
+    |};
+  [%expect
+    {|
+    sig {
+      let id : [A : Type] -> (x : A) -> A
+      let id' : [A : Type] -> (x : A) -> A
+      let x : Int
+      let y : Int
+      let z : Bool
+    }
+    |}];
+  check
+    {|
+mod {
+  let const = fun [A B : Type] (x : A) (y : B) -> x
+  
+  let w = const #t 123
+}
+      |};
+  [%expect
+    {| sig { let const : [A : Type] -> [B : Type] -> (x : A) -> (y : B) -> A; let w : Bool } |}];
+  check
+    {|
+  mod {
+    let const = fun [A B : Type] (x : A) (y : B) -> x
+    
+    let w = const #t
+  }
+        |};
+  [%expect
+    {|
+    error: Unsolved meta variable: ?B_1
+     --> <input>:5:13
+      |
+    5 |     let w = const #t
+      |             ^^^^^^^^
+    |}];
+  check
+    {|
+    mod {
+      let const = fun [B A : Type] (x : A) (y : B) -> x
+      
+      let w = const [Int] #t
+    }
+          |};
+  [%expect
+    {| sig { let const : [B : Type] -> [A : Type] -> (x : A) -> (y : B) -> A; let w : (y : Int) -> Bool } |}]
+;;

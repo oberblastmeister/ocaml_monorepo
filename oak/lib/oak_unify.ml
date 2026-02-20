@@ -11,11 +11,98 @@ open struct
   module Infer_simple = Oak_infer_simple
   module Universe = Common.Universe
   module Evaluate = Oak_evaluate
+  module Close = Evaluate.Close
 end
 
 exception Type_mismatch of Diagnostic.Part.t
 
 let raise_type_mismatch part = raise_notrace (Type_mismatch part)
+
+let rec occurs_check_adjust (cx : Context.t) (meta : meta_unsolved) (ty : ty) : ty =
+  match Context.unfold cx ty with
+  | Value_ignore | Value_mod _ | Value_abs _ | Value_sing_in _ -> failwith "not a type"
+  | Value_core_ty _ | Value_universe _ -> ty
+  | Value_neutral neutral ->
+    let neutral = occurs_check_adjust_neutral cx meta neutral in
+    Value_neutral (Whnf_neutral.to_neutral neutral)
+  | Value_ty_meta meta' ->
+    if meta'.meta.id = meta.meta.id
+    then
+      raise_type_mismatch
+        (Diagnostic.Part.create
+           (Doc.string "Occurs check failed: meta variable "
+            ^^ Meta.pp meta.meta
+            ^^ Doc.string " occurs in its own solution"));
+    if meta.meta.context_size < meta'.meta.context_size
+    then Meta_unsolved.adjust_context_size meta' meta.meta.context_size;
+    Value_ty_meta meta'.meta
+  | Value_ty_sing { identity; ty } ->
+    let identity = occurs_check_adjust cx meta identity in
+    let ty = occurs_check_adjust cx meta ty in
+    Value_ty_sing { identity; ty }
+  | Value_ty_fun ({ var; param_ty; icit; body_ty = _ } as ty) ->
+    let param_ty = occurs_check_adjust cx meta param_ty in
+    let cx' = Context.bind var param_ty cx in
+    let body_ty =
+      occurs_check_adjust cx' meta (Evaluate.Fun_ty.app ty (Context.next_free cx))
+      |> Context.quote cx'
+      |> Evaluate.close_single (Context.next_level cx)
+    in
+    Value_ty_fun { var; param_ty; icit; body_ty = { env = Env.empty; body = body_ty } }
+  | Value_ty_pack ty ->
+    let ty = occurs_check_adjust cx meta ty in
+    Value_ty_pack ty
+  | Value_ty_mod ty ->
+    let _, ty_decls =
+      List.fold_map
+        ty.ty_decls
+        ~init:(cx, ty.env, Close.empty)
+        ~f:(fun (cx, closure_env, close) { var; ty } ->
+          let ty = occurs_check_adjust cx meta (Evaluate.eval closure_env ty) in
+          ( ( Context.bind var ty cx
+            , Env.push ty closure_env
+            , Close.add_exn (Context.next_level cx) Index.zero (Close.lift 1 close) )
+          , ({ var; ty = Context.quote cx ty |> Evaluate.close close } : term_ty_decl) ))
+    in
+    Value_ty_mod { env = Env.empty; ty_decls }
+
+and occurs_check_adjust_neutral
+      (cx : Context.t)
+      (meta : meta_unsolved)
+      (neutral : whnf_neutral)
+  : whnf_neutral
+  =
+  if neutral.head.level >= meta.meta.context_size
+  then
+    raise_type_mismatch
+      (Diagnostic.Part.create
+         (Doc.string "Free variable "
+          ^^ Context.pp_value cx (Value.free neutral.head)
+          ^^ Doc.string " is out of scope of meta variable "
+          ^^ Meta.pp meta.meta));
+  let spine =
+    Bwd.map neutral.spine ~f:(fun elim ->
+      match elim with
+      | Whnf_elim_app { arg; icit } ->
+        let arg = occurs_check_adjust cx meta arg in
+        Whnf_elim_app { arg; icit }
+      | Whnf_elim_proj _ -> elim)
+  in
+  { head = neutral.head; spine }
+;;
+
+let solve_meta (cx : Context.t) (meta : meta_unsolved) (ty : ty) =
+  let universe = Infer_simple.infer_value_universe cx.ty_env ty in
+  if not (Universe.is_type universe)
+  then
+    raise_type_mismatch
+      (Diagnostic.Part.create
+         (Context.pp_value cx ty
+          ^^ Doc.string " was not of kind Type when solving meta variable "
+          ^^ Context.pp_value cx (Value_ty_meta meta.meta)));
+  let ty = occurs_check_adjust cx meta ty in
+  Meta_unsolved.link_to meta ty
+;;
 
 (* precondition: e1 and e2 must have type ty. ty must be an element of some universe. *)
 let rec unify (cx : Context.t) (e1 : value) (e2 : value) (ty : value) : unit =
@@ -66,7 +153,8 @@ let rec unify (cx : Context.t) (e1 : value) (e2 : value) (ty : value) : unit =
 *)
 and unify_ty (cx : Context.t) (ty1 : ty) (ty2 : ty) : unit =
   match Context.unfold cx ty1, Context.unfold cx ty2 with
-  | Value_ty_meta _, _ -> failwith ""
+  | Value_ty_meta meta, ty2 -> solve_meta cx meta (Whnf.to_value ty2)
+  | ty1, Value_ty_meta meta -> solve_meta cx meta (Whnf.to_value ty1)
   | Value_ty_sing ty1, Value_ty_sing ty2 ->
     unify_ty cx ty1.ty ty2.ty;
     (* we now know that ty1 = ty2 *)
@@ -280,7 +368,7 @@ let rec sub cx (e : term) (ty1 : ty) (ty2 : ty) : term option =
           (Evaluate.Fun_ty.app ty2 arg_var_value)
       in
       Option.map body ~f:(fun body ->
-        Term_abs { var; body = Term.close_single free body; icit = ty2.icit })
+        Term_abs { var; body = Evaluate.close_single free body; icit = ty2.icit })
     | Some arg ->
       let arg_value = Evaluate.eval Env.empty arg in
       let body =
@@ -290,7 +378,7 @@ let rec sub cx (e : term) (ty1 : ty) (ty2 : ty) : term option =
           (Evaluate.Fun_ty.app ty1 arg_value)
           (Evaluate.Fun_ty.app ty2 arg_value)
       in
-      Some (Term_abs { var; body = Term.close_single free body; icit = ty2.icit })
+      Some (Term_abs { var; body = Evaluate.close_single free body; icit = ty2.icit })
     end
   | Value_ty_mod ty1, Value_ty_mod ty2 ->
     let value = Evaluate.eval Env.empty e in

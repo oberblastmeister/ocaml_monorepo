@@ -25,46 +25,6 @@ module Var_info = struct
   let generated = { name = "<generated>"; pos = 0 }
 end
 
-(* Substitutes free variables into bound variables *)
-module Close = struct
-  type t =
-    { map : int Int.Map.t
-    ; lift : int
-    }
-  [@@deriving sexp_of]
-
-  let empty = { map = Int.Map.empty; lift = 0 }
-  let lift n (close : t) = { close with lift = close.lift + n }
-
-  let singleton (level : Level.t) (index : Index.t) : t =
-    { map = Int.Map.singleton level.level index.index; lift = 0 }
-  ;;
-
-  let add_exn (level : Level.t) (index : Index.t) (close : t) =
-    { close with
-      map = Map.add_exn close.map ~key:level.level ~data:(index.index - close.lift)
-    }
-  ;;
-
-  let compose ~(second : t) ~(first : t) =
-    let map =
-      Map.merge first.map second.map ~f:(fun ~key:_ e ->
-        Some
-          (match e with
-           | `Right v -> v - first.lift + second.lift
-           | `Left v -> v
-           | `Both (v1, _v2) -> v1))
-    in
-    { first with map }
-  ;;
-
-  let find (close : t) (level : Level.t) =
-    Option.map
-      ~f:(fun i -> Index.of_int (i + close.lift))
-      (Map.find close.map level.level)
-  ;;
-end
-
 (* raw syntax *)
 type expr =
   | Expr_var of
@@ -233,11 +193,6 @@ type term =
       }
   | Term_ty_meta of meta
 
-and term_close =
-  { e : term
-  ; close : Close.t
-  }
-
 and term_ty = term
 
 and term_field =
@@ -316,19 +271,20 @@ and whnf_neutral =
 
 and spine = elim Bwd.t
 and whnf_spine = whnf_elim Bwd.t
-and meta = { mutable state : meta_state }
+
+and meta =
+  { var : Var_info.t
+  ; created_at : Span.t
+  ; id : int
+  ; mutable context_size : int
+  ; mutable state : meta_state
+  }
 
 (* Can only range over values of kind Type for now *)
 and meta_state =
-  | Meta_unsolved of meta_state_unsolved
+  | Meta_unsolved
   | Meta_link of ty
   | Meta_solved of ty
-
-and meta_state_unsolved =
-  { var : Var_info.t
-  ; id : int
-  ; context_size : int
-  }
 
 and meta_unsolved = { meta : meta }
 
@@ -391,67 +347,6 @@ and env =
   ; list : env_list
   }
 
-let rec term_close e close =
-  match e with
-  | Term_bound v -> Term_bound v
-  | Term_free i ->
-    Close.find close i |> Option.value_map ~default:e ~f:(fun v -> Term_bound v)
-  | Term_app { func; arg; icit } ->
-    Term_app { func = term_close func close; arg = term_close arg close; icit }
-  | Term_abs { var; body; icit } ->
-    Term_abs { var; body = term_close body (Close.lift 1 close); icit }
-  | Term_ty_fun { var; param_ty; icit; body_ty } ->
-    Term_ty_fun
-      { var
-      ; param_ty = term_close param_ty close
-      ; icit
-      ; body_ty = term_close body_ty (Close.lift 1 close)
-      }
-  | Term_proj { mod_e; field; field_index } ->
-    Term_proj { mod_e = term_close mod_e close; field; field_index }
-  | Term_mod { fields } ->
-    Term_mod
-      { fields = List.map fields ~f:(fun { name; e } -> { name; e = term_close e close })
-      }
-  | Term_ty_mod { ty_decls } ->
-    let _, ty_decls =
-      List.fold_map ty_decls ~init:0 ~f:(fun under { var; ty } ->
-        under + 1, { var; ty = term_close ty (Close.lift under close) })
-    in
-    Term_ty_mod { ty_decls }
-  | Term_let { var; rhs; body } ->
-    Term_let
-      { var; rhs = term_close rhs close; body = term_close body (Close.lift 1 close) }
-  | Term_ty_sing { identity; ty } ->
-    Term_ty_sing { identity = term_close identity close; ty = term_close ty close }
-  | Term_sing_in e -> Term_sing_in (term_close e close)
-  | Term_sing_out e -> Term_sing_out (term_close e close)
-  | Term_ty_pack ty -> Term_ty_pack (term_close ty close)
-  | Term_pack e -> Term_pack (term_close e close)
-  | Term_bind { var; rhs; body } ->
-    Term_bind
-      { var; rhs = term_close rhs close; body = term_close body (Close.lift 1 close) }
-  | Term_universe u -> Term_universe u
-  | Term_core_ty ty -> Term_core_ty ty
-  | Term_literal lit -> Term_literal lit
-  | Term_ignore -> Term_ignore
-  | Term_if { cond; body1; body2 } ->
-    Term_if
-      { cond = term_close cond close
-      ; body1 = term_close body1 close
-      ; body2 = term_close body2 close
-      }
-  | Term_ty_meta meta -> Term_ty_meta meta
-;;
-
-module Term = struct
-  let close c e = term_close e c
-
-  let close_single (level : Level.t) e =
-    term_close e (Close.singleton level (Index.of_int 0))
-  ;;
-end
-
 module Expr = struct
   let span = function
     | Expr_error { span; _ }
@@ -476,14 +371,35 @@ module Expr = struct
   ;;
 end
 
+module Meta = struct
+  type t = meta
+
+  let pp (meta : t) =
+    Doc.char '?'
+    ^^ Doc.string meta.var.name
+    ^^ Doc.char '_'
+    ^^ Doc.string (Int.to_string meta.id)
+  ;;
+end
+
 module Meta_unsolved = struct
   type t = meta_unsolved
 
   let to_meta (t : t) = t.meta
 
-  (* let get (t : t) = match t.meta.state with
-      | Meta_unsolved t -> t
-      | _ -> failwith "should be meta unsolved" *)
+  let adjust_context_size t new_size =
+    begin match t.meta.state with
+    | Meta_unsolved -> ()
+    | _ -> failwith "should be meta unsolved"
+    end;
+    t.meta.context_size <- new_size
+  ;;
+
+  let link_to (t : t) ty =
+    match t.meta.state with
+    | Meta_unsolved -> t.meta.state <- Meta_link ty
+    | _ -> failwith "should be meta unsolved"
+  ;;
 end
 
 module Whnf_elim = struct

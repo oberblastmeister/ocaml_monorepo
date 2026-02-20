@@ -44,7 +44,7 @@ let rec eval (env : Env.t) (term : term) : value =
     let e = eval env e in
     out_value e
   | Term_literal _ | Term_pack _ | Term_ignore | Term_if _ | Term_bind _ -> Value_ignore
-  | Term_ty_meta _meta -> failwith "TODO"
+  | Term_ty_meta meta -> Value_ty_meta meta
 
 and eval_closure1 closure arg = eval (Env.push arg closure.env) closure.body
 
@@ -104,7 +104,12 @@ and unfold ty_env (e : value) : whnf =
   | Value_core_ty ty -> Value_core_ty ty
   | Value_neutral neutral -> unfold_neutral ty_env neutral
   | Value_universe u -> Value_universe u
-  | Value_ty_meta meta -> failwith "TODO"
+  | Value_ty_meta meta -> begin
+    (* TODO: perform some path compression *)
+    match meta.state with
+    | Meta_unsolved -> Value_ty_meta { meta }
+    | Meta_link ty | Meta_solved ty -> unfold ty_env ty
+  end
   | Value_ty_sing sing -> Value_ty_sing sing
   | Value_ty_mod ty_mod -> Value_ty_mod ty_mod
   | Value_ty_fun ty_fun -> Value_ty_fun ty_fun
@@ -156,6 +161,46 @@ and proj_whnf ty_env mod_e field field_index : whnf =
 let next_free_of_size size = Value.free (Level.of_int size)
 let next_free_of_env env = next_free_of_size (Env.size env)
 
+(* Substitutes free variables into bound variables *)
+module Close = struct
+  type t =
+    { map : int Int.Map.t
+    ; lift : int
+    }
+  [@@deriving sexp_of]
+
+  let empty = { map = Int.Map.empty; lift = 0 }
+  let lift n (close : t) = { close with lift = close.lift + n }
+
+  let singleton (level : Level.t) (index : Index.t) : t =
+    { map = Int.Map.singleton level.level index.index; lift = 0 }
+  ;;
+
+  let add_exn (level : Level.t) (index : Index.t) (close : t) =
+    { close with
+      map = Map.add_exn close.map ~key:level.level ~data:(index.index - close.lift)
+    }
+  ;;
+
+  let compose ~(second : t) ~(first : t) =
+    let map =
+      Map.merge first.map second.map ~f:(fun ~key:_ e ->
+        Some
+          (match e with
+           | `Right v -> v - first.lift + second.lift
+           | `Left v -> v
+           | `Both (v1, _v2) -> v1))
+    in
+    { first with map }
+  ;;
+
+  let find (close : t) (level : Level.t) =
+    Option.map
+      ~f:(fun i -> Index.of_int (i + close.lift))
+      (Map.find close.map level.level)
+  ;;
+end
+
 (* This should only be used in irrelevant contexts *)
 let rec quote context_size (e : value) : term =
   match e with
@@ -171,7 +216,7 @@ let rec quote context_size (e : value) : term =
     let body =
       eval_closure1 body (next_free_of_size context_size)
       |> quote (context_size + 1)
-      |> Term.close_single (Level.of_int context_size)
+      |> close_single (Level.of_int context_size)
     in
     Term_abs { var; body; icit }
   | Value_sing_in e ->
@@ -189,7 +234,7 @@ let rec quote context_size (e : value) : term =
     let body_ty =
       eval_closure1 body_ty (next_free_of_size context_size)
       |> quote (context_size + 1)
-      |> Term.close_single (Level.of_int context_size)
+      |> close_single (Level.of_int context_size)
     in
     Term_ty_fun { var; param_ty; icit; body_ty }
   | Value_ty_mod ty ->
@@ -197,18 +242,18 @@ let rec quote context_size (e : value) : term =
       List.fold_map
         ty.ty_decls
         ~init:(context_size, ty.env, Close.empty)
-        ~f:(fun (context_size, closure_env, (close : Close.t)) { var; ty } ->
-          let ty = eval closure_env ty |> quote context_size |> Term.close close in
+        ~f:(fun (context_size, closure_env, (c : Close.t)) { var; ty } ->
+          let ty = eval closure_env ty |> quote context_size |> close c in
           ( ( context_size + 1
             , Env.push (next_free_of_size context_size) closure_env
-            , Close.add_exn (Level.of_int context_size) Index.zero (Close.lift 1 close) )
+            , Close.add_exn (Level.of_int context_size) Index.zero (Close.lift 1 c) )
           , ({ var; ty } : term_ty_decl) ))
     in
     Term_ty_mod { ty_decls }
   | Value_ty_pack ty ->
     let ty = quote context_size ty in
     Term_ty_pack ty
-  | Value_ty_meta meta -> failwith "TODO"
+  | Value_ty_meta meta -> Term_ty_meta meta
 
 and quote_neutral context_size (e : neutral) : term =
   Bwd.fold_left e.spine ~init:(Term_free e.head) ~f:(fun e elim ->
@@ -218,7 +263,62 @@ and quote_neutral context_size (e : neutral) : term =
       let arg = quote context_size arg in
       Term_app { func = e; arg; icit }
     | Elim_out -> Term_sing_out e)
-;;
+
+and close (c : Close.t) e =
+  match e with
+  | Term_bound v -> Term_bound v
+  | Term_free i ->
+    Close.find c i |> Option.value_map ~default:e ~f:(fun v -> Term_bound v)
+  | Term_app { func; arg; icit } ->
+    Term_app { func = close c func; arg = close c arg; icit }
+  | Term_abs { var; body; icit } ->
+    Term_abs { var; body = close (Close.lift 1 c) body; icit }
+  | Term_ty_fun { var; param_ty; icit; body_ty } ->
+    Term_ty_fun
+      { var; param_ty = close c param_ty; icit; body_ty = close (Close.lift 1 c) body_ty }
+  | Term_proj { mod_e; field; field_index } ->
+    Term_proj { mod_e = close c mod_e; field; field_index }
+  | Term_mod { fields } ->
+    Term_mod
+      { fields =
+          List.map fields ~f:(fun { name; e } -> ({ name; e = close c e } : term_field))
+      }
+  | Term_ty_mod { ty_decls } ->
+    let _, ty_decls =
+      List.fold_map ty_decls ~init:0 ~f:(fun under { var; ty } ->
+        under + 1, ({ var; ty = close (Close.lift under c) ty } : term_ty_decl))
+    in
+    Term_ty_mod { ty_decls }
+  | Term_let { var; rhs; body } ->
+    Term_let { var; rhs = close c rhs; body = close (Close.lift 1 c) body }
+  | Term_ty_sing { identity; ty } ->
+    Term_ty_sing { identity = close c identity; ty = close c ty }
+  | Term_sing_in e -> Term_sing_in (close c e)
+  | Term_sing_out e -> Term_sing_out (close c e)
+  | Term_ty_pack ty -> Term_ty_pack (close c ty)
+  | Term_pack e -> Term_pack (close c e)
+  | Term_bind { var; rhs; body } ->
+    Term_bind { var; rhs = close c rhs; body = close (Close.lift 1 c) body }
+  | Term_universe u -> Term_universe u
+  | Term_core_ty ty -> Term_core_ty ty
+  | Term_literal lit -> Term_literal lit
+  | Term_ignore -> Term_ignore
+  | Term_if { cond; body1; body2 } ->
+    Term_if { cond = close c cond; body1 = close c body1; body2 = close c body2 }
+  | Term_ty_meta meta -> begin
+    match meta.state with
+    | Meta_unsolved | Meta_link _ ->
+      begin match Map.min_elt c.map with
+      | Some (smallest_level, _) when smallest_level >= meta.context_size -> ()
+      (* Otherwise, we are closing over a variable that can be a part of the meta's solution, which is invalid *)
+      | Some _ -> failwith "cannot close over meta variable that we are currently solving"
+      | None -> ()
+      end;
+      Term_ty_meta meta
+    | Meta_solved ty -> close c (quote meta.context_size ty)
+  end
+
+and close_single (level : Level.t) e = close (Close.singleton level (Index.of_int 0)) e
 
 module Mod = struct
   let proj = proj_mod

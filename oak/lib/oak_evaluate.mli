@@ -6,6 +6,20 @@ val eval_closure1 : value_closure -> value -> value
 val unfold : Env.t -> value -> whnf
 val quote : int -> value -> term
 
+module Close : sig
+  type t
+
+  val empty : t
+  val lift : int -> t -> t
+  val singleton : Level.t -> Index.t -> t
+  val add_exn : Level.t -> Index.t -> t -> t
+  val compose : second:t -> first:t -> t
+  val find : t -> Level.t -> Index.t option
+end
+
+val close :  Close.t -> term -> term
+val close_single : Level.t -> term -> term
+
 module Mod : sig
   val proj : value_mod -> int -> value
 end

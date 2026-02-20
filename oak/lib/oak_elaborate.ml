@@ -13,6 +13,7 @@ open struct
   module Universe = Common.Universe
   module Infer_simple = Oak_infer_simple
   module Evaluate = Oak_evaluate
+  module Close = Evaluate.Close
 end
 
 exception Error of Diagnostic.t
@@ -24,10 +25,12 @@ module Meta_list = struct
 
   let create () = { metas = [] }
 
-  let fresh t (cx : Context.t) var =
+  let fresh t (cx : Context.t) var created_at =
     let id = !(cx.next_meta_id) in
     incr cx.next_meta_id;
-    let meta = { state = Meta_unsolved { var; id; context_size = Context.size cx } } in
+    let meta =
+      { var; created_at; id; context_size = Context.size cx; state = Meta_unsolved }
+    in
     t.metas <- meta :: t.metas;
     Term_ty_meta meta
   ;;
@@ -36,14 +39,16 @@ module Meta_list = struct
     List.iter t.metas ~f:(fun meta ->
       match meta.state with
       | Meta_solved _ -> failwith "Meta cannot be solved yet"
-      | Meta_link ty -> meta.state <- Meta_solved ty
-      | Meta_unsolved meta ->
+      | Meta_link ty ->
+        (* Now this allows free variables to be closed *)
+        meta.state <- Meta_solved ty
+      | Meta_unsolved ->
         raise_error
           { code = None
           ; parts =
               [ Diagnostic.Part.create
-                  ~snippet:(Context.snippet cx (Span.single meta.var.pos))
-                  (Doc.string "Unsolved meta: " ^^ Doc.string meta.var.name)
+                  ~snippet:(Context.snippet cx meta.created_at)
+                  (Doc.string "Unsolved meta variable: " ^^ Meta.pp meta)
               ]
           })
   ;;
@@ -130,7 +135,9 @@ let rec infer (cx : Context.t) (e : expr) : term * ty =
     let ty = Evaluate.eval Env.empty ty in
     check cx e ty, ty
   | Expr_app _ | Expr_proj _ ->
-    let e, ty = infer_spine cx e in
+    let meta_list = Meta_list.create () in
+    let e, ty = infer_spine cx meta_list e in
+    Meta_list.check_all_solved meta_list cx;
     e, ty
   | Expr_abs { var; param_ty = Some param_ty; icit; body; span } ->
     let param_ty, _ = check_universe cx param_ty in
@@ -155,10 +162,10 @@ let rec infer (cx : Context.t) (e : expr) : term * ty =
     let body, body_ty = infer cx' body in
     let body_ty : value_closure =
       { env = Env.empty
-      ; body = Context.quote cx' body_ty |> Term.close_single (Context.next_level cx)
+      ; body = Context.quote cx' body_ty |> Evaluate.close_single (Context.next_level cx)
       }
     in
-    ( Term_abs { var; icit; body = Term.close_single (Context.next_level cx) body }
+    ( Term_abs { var; icit; body = Evaluate.close_single (Context.next_level cx) body }
     , Value_ty_fun { var; param_ty; icit; body_ty } )
   | Expr_abs { var = _; param_ty = None; icit = _; body = _; span } ->
     raise_error
@@ -183,9 +190,9 @@ let rec infer (cx : Context.t) (e : expr) : term * ty =
     let _, stuff =
       List.fold_map decls ~init:(cx, Close.empty) ~f:(fun (cx, close) decl ->
         let e, ty = infer cx decl.e in
-        let let_tuple = decl.var, Term.close close e in
+        let let_tuple = decl.var, Evaluate.close close e in
         let ty_decl : term_ty_decl =
-          { var = decl.var; ty = Context.quote cx ty |> Term.close close }
+          { var = decl.var; ty = Context.quote cx ty |> Evaluate.close close }
         in
         ( ( Context.bind decl.var ty cx
           , Close.add_exn (Context.next_level cx) Index.zero (Close.lift 1 close) )
@@ -207,7 +214,7 @@ let rec infer (cx : Context.t) (e : expr) : term * ty =
         { var
         ; param_ty
         ; icit
-        ; body_ty = Term.close_single (Context.next_level cx) body_ty
+        ; body_ty = Evaluate.close_single (Context.next_level cx) body_ty
         }
     , Value_universe (Universe.max universe1 universe2) )
   | Expr_ty_mod { ty_decls; span = _ } ->
@@ -220,17 +227,17 @@ let rec infer (cx : Context.t) (e : expr) : term * ty =
           ( ( Context.bind var (Evaluate.eval Env.empty ty) cx
             , Close.add_exn (Context.next_level cx) Index.zero (Close.lift 1 close)
             , Universe.max universe universe' )
-          , ({ var; ty = Term.close close ty } : term_ty_decl) ))
+          , ({ var; ty = Evaluate.close close ty } : term_ty_decl) ))
     in
     Term_ty_mod { ty_decls }, Value_universe universe
   | Expr_let { var; rhs; body; span = _ } ->
     let rhs, rhs_ty = infer cx rhs in
     let cx' = Context.bind var rhs_ty cx in
     let body, body_ty = infer cx' body in
-    ( Term_let { var; rhs; body = Term.close_single (Context.next_level cx) body }
+    ( Term_let { var; rhs; body = Evaluate.close_single (Context.next_level cx) body }
     , Evaluate.eval
         (Env.push (Evaluate.eval Env.empty rhs) Env.empty)
-        (Term.close_single (Context.next_level cx) (Context.quote cx' body_ty)) )
+        (Evaluate.close_single (Context.next_level cx) (Context.quote cx' body_ty)) )
   | Expr_ty_sing { identity; span = _ } ->
     let identity, identity_ty = infer cx identity in
     ( Term_ty_sing { identity; ty = Context.quote cx identity_ty }
@@ -347,11 +354,11 @@ and check (cx : Context.t) (e : expr) (ty : ty) : term =
         body
         (Evaluate.Fun_ty.app ty (Context.next_free cx))
     in
-    Term_abs { var; icit; body = Term.close_single (Context.next_level cx) body }
+    Term_abs { var; icit; body = Evaluate.close_single (Context.next_level cx) body }
   | Expr_let { var; rhs; body; span = _ }, _ ->
     let rhs, rhs_ty = infer cx rhs in
     let body = check (Context.bind var rhs_ty cx) body ty in
-    Term_let { var; rhs; body = Term.close_single (Context.next_level cx) body }
+    Term_let { var; rhs; body = Evaluate.close_single (Context.next_level cx) body }
   | Expr_if { cond; body1; body2; span = _ }, _ ->
     let cond = check cx cond (Value_core_ty Bool) in
     let body1 = check cx body1 ty in
@@ -389,7 +396,7 @@ and check (cx : Context.t) (e : expr) (ty : ty) : term =
           }
     in
     let body = check (Context.bind var rhs_inner_ty cx) body ty in
-    Term_bind { var; rhs; body = Term.close_single (Context.next_level cx) body }
+    Term_bind { var; rhs; body = Evaluate.close_single (Context.next_level cx) body }
   | _ ->
     let span = Expr.span e in
     let e, ty' = infer cx e in
@@ -411,53 +418,94 @@ and check (cx : Context.t) (e : expr) (ty : ty) : term =
              ]
          })
 
-and coerce_implicits (cx : Context.t) (e : term) (ty : ty) : term * ty =
-  match Context.unfold cx ty with
-  | Value_ty_fun { var; icit = Impl } ->
-    (* let meta = Meta_list.fresh meta_list cx var in *)
-    failwith ""
+and insert_implicit_args
+      (cx : Context.t)
+      (meta_list : Meta_list.t)
+      (span : Span.t)
+      (e : term)
+      (ty : ty)
+  : term * whnf
+  =
+  let e, ty = Unify.coerce_singleton cx e ty in
+  match ty with
+  | Value_ty_fun ({ var; icit = Impl; _ } as ty) ->
+    let meta = Meta_list.fresh meta_list cx var span in
+    insert_implicit_args
+      cx
+      meta_list
+      span
+      (Term_app { func = e; icit = Impl; arg = meta })
+      (Evaluate.Fun_ty.app ty (Evaluate.eval Env.empty meta))
   | _ -> e, ty
 
-and infer_spine (cx : Context.t) (e : expr) : term * ty =
+and extract_fun_ty cx span func (func_ty : ty) =
+  let func, func_ty = Unify.coerce_singleton cx func func_ty in
+  match func_ty with
+  | Value_ty_fun t -> func, t
+  | other ->
+    raise_error
+      { code = None
+      ; parts =
+          [ Diagnostic.Part.create
+              ~snippet:(Context.snippet cx span)
+              (Doc.string "Expected function type, got "
+               ^^ Context.pp_value cx (Whnf.to_value other))
+          ]
+      }
+
+and extract_mod_ty cx span mod_e mod_ty =
+  let mod_e, mod_ty = Unify.coerce_singleton cx mod_e mod_ty in
+  let mod_ty =
+    match mod_ty with
+    | Value_ty_mod t -> t
+    | _ ->
+      raise_error
+        { code = None
+        ; parts =
+            [ Diagnostic.Part.create
+                ~snippet:(Context.snippet cx span)
+                (Doc.string "Expected mod type, got "
+                 ^^ Context.pp_value cx (Whnf.to_value mod_ty))
+            ]
+        }
+  in
+  mod_e, mod_ty
+
+and infer_spine (cx : Context.t) (meta_list : Meta_list.t) (e : expr) : term * ty =
   match e with
   | Expr_app { func; arg; icit; span } ->
-    let func, func_ty = infer_spine cx func in
-    let func, func_ty = Unify.coerce_singleton cx func func_ty in
-    let func_ty =
-      match func_ty with
-      | Value_ty_fun t -> t
-      | other ->
-        raise_error
-          { code = None
-          ; parts =
-              [ Diagnostic.Part.create
-                  ~snippet:(Context.snippet cx span)
-                  (Doc.string "Expected function type, got "
-                   ^^ Context.pp_value cx (Whnf.to_value other))
-              ]
-          }
+    let func, func_ty = infer_spine cx meta_list func in
+    let func, func_ty =
+      begin match icit with
+      | Expl ->
+        let func, func_ty = insert_implicit_args cx meta_list span func func_ty in
+        extract_fun_ty cx span func (Whnf.to_value func_ty)
+      | Impl -> extract_fun_ty cx span func func_ty
+      end
     in
+    if not (Icit.equal func_ty.icit icit)
+    then begin
+      raise_error
+        { code = None
+        ; parts =
+            [ Diagnostic.Part.create
+                ~snippet:(Context.snippet cx span)
+                (Doc.string "Expected "
+                 ^^ Icit.pp func_ty.icit
+                 ^^ Doc.string " argument, got "
+                 ^^ Icit.pp icit
+                 ^^ Doc.string " argument")
+            ]
+        }
+    end;
     let arg = check cx arg func_ty.param_ty in
     let e = Term_app { func; icit; arg } in
     let ty = Evaluate.Fun_ty.app func_ty (Evaluate.eval Env.empty arg) in
     e, ty
   | Expr_proj { mod_e; field; span } ->
-    let mod_e, mod_ty = infer_spine cx mod_e in
-    let mod_e, mod_ty = Unify.coerce_singleton cx mod_e mod_ty in
-    let mod_ty =
-      match mod_ty with
-      | Value_ty_mod t -> t
-      | _ ->
-        raise_error
-          { code = None
-          ; parts =
-              [ Diagnostic.Part.create
-                  ~snippet:(Context.snippet cx span)
-                  (Doc.string "Expected mod type, got "
-                   ^^ Context.pp_value cx (Whnf.to_value mod_ty))
-              ]
-          }
-    in
+    let mod_e, mod_ty = infer_spine cx meta_list mod_e in
+    let mod_e, mod_ty = insert_implicit_args cx meta_list span mod_e mod_ty in
+    let mod_e, mod_ty = extract_mod_ty cx span mod_e (Whnf.to_value mod_ty) in
     let field_index, _ =
       match
         List.findi mod_ty.ty_decls ~f:(fun _ ty_decl ->

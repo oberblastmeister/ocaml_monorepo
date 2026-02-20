@@ -32,7 +32,7 @@ let bind (var : Var_info.t) ty cx =
 let size (cx : t) = Env.size cx.ty_env
 let next_free cx = Value.free (Level.of_int (size cx))
 let next_level cx = Level.of_int (size cx)
-let close_single cx body = Term.close_single (next_level cx) body
+let close_single cx body = Evaluate.close_single (next_level cx) body
 let quote (cx : t) e = Evaluate.quote (Env.size cx.ty_env) e
 let unfold (cx : t) e = Evaluate.unfold cx.ty_env e
 

@@ -94,8 +94,11 @@ struct
       Doc.group (Doc.string "mod" ^^ Doc.space ^^ block decls)
     | Value_ty_mod ty_mod -> pp_ty_mod names ty_mod
     | Value_ty_pack ty -> Doc.group (Doc.string "Pack" ^^ Doc.break1 ^^ pp_atom names ty)
-    (* TODO *)
-    | Value_ty_meta _ -> failwith "TODO"
+    | Value_ty_meta meta -> begin
+      match meta.state with
+      | Meta_link ty | Meta_solved ty -> pp_value names ty
+      | Meta_unsolved -> Syntax.Meta.pp meta
+    end
 
   and pp_ty_mod names (ty_mod : Syntax.value_ty_mod_closure) =
     let _, decls =

@@ -10,6 +10,7 @@ open struct
   module Context = Oak_context
   module Universe = Common.Universe
   module Evaluate = Oak_evaluate
+  module Close = Evaluate.Close
 end
 
 (* precondition: the neutral must be well typed, but it *doesn't* have to be an element of some universe. *)

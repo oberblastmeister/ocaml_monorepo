@@ -42,6 +42,7 @@ module Universe : sig
   val min : t -> t -> t
   val max : t -> t -> t
   val to_string : t -> string
+  val is_type : t -> bool
   val type_ : t
   val kind_ : t
   val sig_ : t
@@ -65,6 +66,7 @@ end = struct
 
   let sexp_of_t t = Sexp.Atom (to_string t)
   let pp t = Doc.string (to_string t)
+  let is_type t = t = 0
   let type_ = 0
   let kind_ = 1
   let sig_ = 2
@@ -146,4 +148,6 @@ module Icit = struct
     | Impl -> "implicit"
     | Expl -> "explicit"
   ;;
+
+  let pp t = Doc.string (to_string t)
 end
