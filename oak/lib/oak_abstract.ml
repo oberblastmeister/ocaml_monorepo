@@ -104,6 +104,16 @@ type expr =
       ; span : Span.t
       }
   | Expr_error of { span : Span.t }
+  | Expr_rec of
+      { decls : expr_rec_decl list
+      ; span : Span.t
+      }
+
+and expr_rec_decl =
+  { var : Var_info.t
+  ; ty : expr
+  ; e : expr
+  }
 
 and expr_decl =
   { var : Var_info.t

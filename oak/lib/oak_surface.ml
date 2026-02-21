@@ -102,12 +102,6 @@ type expr =
       { e : expr
       ; span : Span.t
       }
-  | Expr_bind of
-      { var : Var.t
-      ; rhs : expr
-      ; body : expr
-      ; span : Span.t
-      }
   | Expr_paren of
       { e : expr
       ; span : Span.t
@@ -116,15 +110,13 @@ type expr =
       { e : expr
       ; span : Span.t
       }
-
-and block_decl =
-  | Block_decl_let of
-      { var : Var.t
-      ; ann : expr option
-      ; is_alias : bool
-      ; rhs : expr
+  | Expr_rec of
+      { decls : let_decl list
       ; span : Span.t
       }
+
+and block_decl =
+  | Block_decl_let of let_decl
   | Block_decl_bind of
       { var : Var.t
       ; rhs : expr
@@ -134,6 +126,14 @@ and block_decl =
       { e : expr
       ; span : Span.t
       }
+
+and let_decl =
+  { var : Var.t
+  ; ann : expr option
+  ; is_alias : bool
+  ; rhs : expr
+  ; span : Span.t
+  }
 
 and decl =
   { var : Var.t
@@ -183,7 +183,7 @@ let expr_span (e : expr) : Span.t =
   | Expr_alias { span; _ }
   | Expr_pack { span; _ }
   | Expr_literal { span; _ }
-  | Expr_bind { span; _ }
   | Expr_brack { span; _ }
+  | Expr_rec { span; _ }
   | Expr_paren { span; _ } -> span
 ;;

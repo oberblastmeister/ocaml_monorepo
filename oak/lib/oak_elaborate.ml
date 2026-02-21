@@ -317,6 +317,7 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : term * ty =
               (Doc.string "Cannot infer bind expressions")
           ]
       }
+  | Expr_rec _ -> failwith "TODO"
 
 and check (cx : Context.t) (e : Abstract.expr) (ty : ty) : term =
   (* TODO: need to handle some singleton cases here *)
@@ -513,7 +514,8 @@ and infer_spine_enter (cx : Context.t) (e : Abstract.expr) : term * ty =
   Meta_list.check_all_solved meta_list cx;
   e, ty
 
-and infer_spine (cx : Context.t) (meta_list : Meta_list.t) (e : Abstract.expr) : term * ty =
+and infer_spine (cx : Context.t) (meta_list : Meta_list.t) (e : Abstract.expr) : term * ty
+  =
   match e with
   | Expr_app { func; arg; icit; span } ->
     let func, func_ty = infer_spine cx meta_list func in

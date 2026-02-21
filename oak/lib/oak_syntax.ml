@@ -75,11 +75,20 @@ type term =
       ; body2 : term
       }
   | Term_ty_meta of meta
+  (* This binds n variables at once *)
+  | Term_rec of term_rec_decl list
 
 and term_ty = term
 
 and term_field =
   { name : string
+  ; e : term
+  }
+
+and term_rec_decl =
+  { 
+    var : Var_info.t
+  ; ty : term
   ; e : term
   }
 
@@ -229,7 +238,6 @@ and env =
   { size : int
   ; list : env_list
   }
-
 
 module Meta = struct
   type t = meta

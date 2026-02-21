@@ -21,20 +21,33 @@ end
 
 module State = struct
   type t =
-    { var_map : Syntax.Level.t Var.Table.t
+    { var_map : Syntax.Level.t list Var.Table.t
+    ; mutable var_stack : Var.t list
     ; mutable errors : Error.t list
     ; mutable context_size : int
     }
 
+  let create () =
+    { var_map = Var.Table.create (); var_stack = []; errors = []; context_size = 0 }
+  ;;
+
+  let push_var st var =
+    Hashtbl.add_multi st.var_map ~key:var ~data:(Level.of_int st.context_size);
+    st.var_stack <- var :: st.var_stack;
+    st.context_size <- st.context_size + 1
+  ;;
+
+  let pop_var st =
+    let var = List.hd_exn st.var_stack in
+    st.var_stack <- List.tl_exn st.var_stack;
+    Hashtbl.remove_multi st.var_map var;
+    st.context_size <- st.context_size - 1
+  ;;
+
   let with_var st var ~f =
-    let prev = Hashtbl.find st.var_map var in
-    Hashtbl.set st.var_map ~key:var ~data:(Level.of_int st.context_size);
-    st.context_size <- st.context_size + 1;
+    push_var st var;
     let result = f () in
-    st.context_size <- st.context_size - 1;
-    (match prev with
-     | Some prev -> Hashtbl.set st.var_map ~key:var ~data:prev
-     | None -> Hashtbl.remove st.var_map var);
+    pop_var st;
     result
   ;;
 
@@ -42,6 +55,19 @@ module State = struct
 end
 
 let var_info (var : Var.t) : Syntax.Var_info.t = { name = var.name; pos = var.span.start }
+
+let check_vars_distinct st vars =
+  let used_vars = Surface.Var.Hash_set.create () in
+  let duplicate = ref false in
+  List.iter vars ~f:(fun var ->
+    if Hash_set.mem used_vars var
+    then begin
+      duplicate := true;
+      State.add_error st (Spanned.create "Duplicate variable in module" var.span)
+    end;
+    Hash_set.add used_vars var);
+  !duplicate
+;;
 
 let rec rename_expr st (expr : Surface.expr) : Abstract.expr =
   match expr with
@@ -53,9 +79,9 @@ let rec rename_expr st (expr : Surface.expr) : Abstract.expr =
       Abstract.Expr_error { span }
     end
     else begin
-      match Hashtbl.find st.var_map var with
-      | Some level -> Expr_var { var = Index.of_level st.context_size level; span }
-      | None ->
+      match Hashtbl.find_multi st.var_map var with
+      | level :: _ -> Expr_var { var = Index.of_level st.context_size level; span }
+      | [] ->
         State.add_error st (Spanned.create ("Failed to find variable: " ^ var.name) span);
         Abstract.Expr_error { span }
     end
@@ -106,19 +132,14 @@ let rec rename_expr st (expr : Surface.expr) : Abstract.expr =
     let mod_e = rename_expr st mod_e in
     Expr_proj { mod_e; field; span }
   | Surface.Expr_mod { decls; span } ->
-    let used_vars = Surface.Var.Hash_set.create () in
-    let duplicate = ref false in
-    List.iter decls ~f:(fun decl ->
-      match decl with
-      | Block_decl_let { var; _ } | Block_decl_bind { var; _ } ->
-        if Hash_set.mem used_vars var
-        then begin
-          duplicate := true;
-          State.add_error st (Spanned.create "Duplicate variable in module" var.span)
-        end;
-        Hash_set.add used_vars var
-      | Block_decl_expr _ -> ());
-    if !duplicate
+    let vars =
+      List.filter_map decls ~f:(fun decl ->
+        match decl with
+        | Block_decl_let { var; _ } | Block_decl_bind { var; _ } -> Some var
+        | Block_decl_expr _ -> None)
+    in
+    let duplicate = check_vars_distinct st vars in
+    if duplicate
     then Expr_error { span }
     else begin
       let decls = rename_decls st decls in
@@ -148,12 +169,38 @@ let rec rename_expr st (expr : Surface.expr) : Abstract.expr =
   | Surface.Expr_pack { e; span } ->
     let e = rename_expr st e in
     Expr_pack { e; span }
-  | Surface.Expr_bind { var; rhs; body; span } ->
-    let rhs = rename_expr st rhs in
-    State.with_var st var ~f:(fun () ->
-      let body = rename_expr st body in
-      Abstract.Expr_bind { var = var_info var; rhs; body; span })
   | Surface.Expr_paren { e; span = _ } -> rename_expr st e
+  | Surface.Expr_rec { decls; span } ->
+    let vars = List.map decls ~f:(fun decl -> decl.var) in
+    let duplicate = check_vars_distinct st vars in
+    let num_decls = List.length decls in
+    let tys =
+      List.filter_map decls ~f:(fun decl ->
+        if Option.is_none decl.ann
+        then
+          State.add_error
+            st
+            (Spanned.create "type annotations required for recursive block" decl.span);
+        decl.ann)
+    in
+    let missing_annotation = List.length tys <> num_decls in
+    if duplicate || missing_annotation
+    then Expr_error { span }
+    else begin
+      let tys = List.map tys ~f:(fun ty -> rename_expr st ty) in
+      (* push *)
+      List.iter decls ~f:(fun decl -> State.push_var st decl.var);
+      let rhs_exprs = List.map decls ~f:(fun decl -> rename_let_decl_rhs st decl) in
+      List.iter decls ~f:(fun _ -> State.pop_var st);
+      (* pop *)
+      let decls =
+        List.zip_exn tys rhs_exprs
+        |> List.zip_exn vars
+        |> List.map ~f:(fun (var, (ty, rhs)) ->
+          ({ var = var_info var; ty; e = rhs } : Abstract.expr_rec_decl))
+      in
+      Expr_rec { decls; span }
+    end
 
 and rename_abs st vars body span =
   match vars with
@@ -178,24 +225,11 @@ and rename_ty_fun st params body_ty span =
 and rename_block st decls ret span =
   match decls with
   | [] -> rename_expr st ret
-  | Surface.Block_decl_let { var; ann; is_alias; rhs; span = decl_span } :: rest ->
-    (* Important that the annotation goes first, before the alias. *)
-    let rhs =
-      match ann with
-      | Some ty ->
-        let ty = rename_expr st ty in
-        let rhs = rename_expr st rhs in
-        Abstract.Expr_ann { e = rhs; ty; span = decl_span }
-      | None -> rename_expr st rhs
-    in
-    let rhs =
-      if is_alias
-      then Abstract.Expr_alias { identity = rhs; span = Abstract.Expr.span rhs }
-      else rhs
-    in
-    State.with_var st var ~f:(fun () ->
+  | Surface.Block_decl_let let_decl :: rest ->
+    let rhs = rename_let_decl_rhs st let_decl in
+    State.with_var st let_decl.var ~f:(fun () ->
       let body = rename_block st rest ret span in
-      Abstract.Expr_let { var = var_info var; rhs; body; span })
+      Abstract.Expr_let { var = var_info let_decl.var; rhs; body; span })
   | Surface.Block_decl_bind { var; rhs; span = _ } :: rest ->
     let rhs = rename_expr st rhs in
     State.with_var st var ~f:(fun () ->
@@ -206,6 +240,23 @@ and rename_block st decls ret span =
     State.with_var st { name = "<generated>"; span } ~f:(fun () ->
       let body = rename_block st rest ret span in
       Abstract.Expr_let { var = Abstract.Var_info.generated; rhs = e; body; span })
+
+and rename_let_decl_rhs st ({ var = _; ann; is_alias; rhs; span } : Surface.let_decl) =
+  (* Important that the annotation goes first, before the alias. *)
+  let rhs =
+    match ann with
+    | Some ty ->
+      let ty = rename_expr st ty in
+      let rhs = rename_expr st rhs in
+      Abstract.Expr_ann { e = rhs; ty; span }
+    | None -> rename_expr st rhs
+  in
+  let rhs =
+    if is_alias
+    then Abstract.Expr_alias { identity = rhs; span = Abstract.Expr.span rhs }
+    else rhs
+  in
+  rhs
 
 and rename_decls st decls =
   match decls with
@@ -263,7 +314,7 @@ let error_to_diagnostic (source : Source.t) (e : Error.t) : Diagnostic.t =
 ;;
 
 let rename source expr =
-  let st : State.t = { var_map = Var.Table.create (); errors = []; context_size = 0 } in
+  let st = State.create () in
   let expr = rename_expr st expr in
   let diagnostics = List.rev st.errors |> List.map ~f:(error_to_diagnostic source) in
   diagnostics, expr

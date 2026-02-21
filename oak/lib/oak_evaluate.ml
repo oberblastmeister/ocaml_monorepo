@@ -45,6 +45,11 @@ let rec eval (env : Env.t) (term : term) : value =
     out_value e
   | Term_literal _ | Term_pack _ | Term_ignore | Term_if _ | Term_bind _ -> Value_ignore
   | Term_ty_meta meta -> Value_ty_meta meta
+  | Term_rec decls ->
+    let fields =
+      List.map decls ~f:(fun decl -> { name = decl.var.name; e = Value_ignore })
+    in
+    Value_mod { fields }
 
 and eval_closure1 closure arg = eval (Env.push arg closure.env) closure.body
 
@@ -317,6 +322,13 @@ and close (c : Close.t) e =
       Term_ty_meta meta
     | Meta_solved ty -> close c (quote meta.context_size ty)
   end
+  | Term_rec decls ->
+    let c = Close.lift (List.length decls) c in
+    let decls =
+      List.map decls ~f:(fun { var; ty; e } ->
+        ({ var; ty = close c ty; e = close c e } : term_rec_decl))
+    in
+    Term_rec decls
 
 and close_single (level : Level.t) e = close (Close.singleton level (Index.of_int 0)) e
 

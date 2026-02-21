@@ -149,14 +149,16 @@ let%expect_test "blocks" =
       (body
        (Expr_block
         (decls
-         ((Block_decl_let (var ((name z) (span ((start 15) (stop 16)))))
-           (ann ()) (is_alias false)
-           (rhs (Expr_var ((name x) (span ((start 19) (stop 20))))))
-           (span ((start 13) (stop 20))))
-          (Block_decl_let (var ((name w) (span ((start 25) (stop 26)))))
-           (ann ()) (is_alias false)
-           (rhs (Expr_var ((name y) (span ((start 29) (stop 30))))))
-           (span ((start 23) (stop 30))))))
+         ((Block_decl_let
+           ((var ((name z) (span ((start 15) (stop 16))))) (ann ())
+            (is_alias false)
+            (rhs (Expr_var ((name x) (span ((start 19) (stop 20))))))
+            (span ((start 13) (stop 20)))))
+          (Block_decl_let
+           ((var ((name w) (span ((start 25) (stop 26))))) (ann ())
+            (is_alias false)
+            (rhs (Expr_var ((name y) (span ((start 29) (stop 30))))))
+            (span ((start 23) (stop 30)))))))
         (ret (Expr_var ((name w) (span ((start 33) (stop 34))))))
         (span ((start 10) (stop 37)))))
       (span ((start 2) (stop 37)))))
@@ -187,18 +189,20 @@ fun x y z w -> {
       (body
        (Expr_block
         (decls
-         ((Block_decl_let (var ((name w) (span ((start 18) (stop 19)))))
-           (ann ()) (is_alias false)
-           (rhs
-            (Expr_block
-             (decls
-              ((Block_decl_let (var ((name x) (span ((start 27) (stop 28)))))
-                (ann ()) (is_alias false)
-                (rhs (Expr_var ((name x) (span ((start 31) (stop 32))))))
-                (span ((start 25) (stop 32))))))
-             (ret (Expr_var ((name x) (span ((start 35) (stop 36))))))
-             (span ((start 22) (stop 39)))))
-           (span ((start 16) (stop 39))))))
+         ((Block_decl_let
+           ((var ((name w) (span ((start 18) (stop 19))))) (ann ())
+            (is_alias false)
+            (rhs
+             (Expr_block
+              (decls
+               ((Block_decl_let
+                 ((var ((name x) (span ((start 27) (stop 28))))) (ann ())
+                  (is_alias false)
+                  (rhs (Expr_var ((name x) (span ((start 31) (stop 32))))))
+                  (span ((start 25) (stop 32)))))))
+              (ret (Expr_var ((name x) (span ((start 35) (stop 36))))))
+              (span ((start 22) (stop 39)))))
+            (span ((start 16) (stop 39)))))))
         (ret
          (Expr_block (decls ())
           (ret (Expr_var ((name w) (span ((start 44) (stop 45))))))
@@ -223,27 +227,31 @@ let%expect_test "base types" =
     {|
     ((Expr_block
       (decls
-       ((Block_decl_let (var ((name x) (span ((start 6) (stop 7))))) (ann ())
-         (is_alias false)
-         (rhs (Expr_literal (literal Unit) (span ((start 10) (stop 12)))))
-         (span ((start 4) (stop 12))))
-        (Block_decl_let (var ((name y) (span ((start 17) (stop 18)))))
-         (ann ((Expr_core_ty (ty Bool) (span ((start 21) (stop 22))))))
-         (is_alias false)
-         (rhs (Expr_literal (literal (Bool true)) (span ((start 25) (stop 26)))))
-         (span ((start 15) (stop 26))))
-        (Block_decl_let (var ((name z) (span ((start 31) (stop 32))))) (ann ())
-         (is_alias false)
-         (rhs
-          (Expr_literal (literal (Bool false)) (span ((start 35) (stop 36)))))
-         (span ((start 29) (stop 36))))
-        (Block_decl_let (var ((name another) (span ((start 41) (stop 42)))))
-         (ann ()) (is_alias false)
-         (rhs
-          (Expr_proj
-           (mod_e (Expr_var ((name first) (span ((start 45) (stop 46))))))
-           (field T#first) (span ((start 45) (stop 48)))))
-         (span ((start 39) (stop 48))))))
+       ((Block_decl_let
+         ((var ((name x) (span ((start 6) (stop 7))))) (ann ()) (is_alias false)
+          (rhs (Expr_literal (literal Unit) (span ((start 10) (stop 12)))))
+          (span ((start 4) (stop 12)))))
+        (Block_decl_let
+         ((var ((name y) (span ((start 17) (stop 18)))))
+          (ann ((Expr_core_ty (ty Bool) (span ((start 21) (stop 22))))))
+          (is_alias false)
+          (rhs
+           (Expr_literal (literal (Bool true)) (span ((start 25) (stop 26)))))
+          (span ((start 15) (stop 26)))))
+        (Block_decl_let
+         ((var ((name z) (span ((start 31) (stop 32))))) (ann ())
+          (is_alias false)
+          (rhs
+           (Expr_literal (literal (Bool false)) (span ((start 35) (stop 36)))))
+          (span ((start 29) (stop 36)))))
+        (Block_decl_let
+         ((var ((name another) (span ((start 41) (stop 42))))) (ann ())
+          (is_alias false)
+          (rhs
+           (Expr_proj
+            (mod_e (Expr_var ((name first) (span ((start 45) (stop 46))))))
+            (field T#first) (span ((start 45) (stop 48)))))
+          (span ((start 39) (stop 48)))))))
       (ret (Expr_literal (literal Unit) (span ((start 51) (stop 53)))))
       (span ((start 1) (stop 55)))))
     |}]
@@ -266,28 +274,33 @@ mod {
     {|
     ((Expr_mod
       (decls
-       ((Block_decl_let (var ((name first) (span ((start 8) (stop 9)))))
-         (ann ()) (is_alias false)
-         (rhs
-          (Expr_block
-           (decls
-            ((Block_decl_let (var ((name x) (span ((start 17) (stop 18)))))
-              (ann ()) (is_alias false)
-              (rhs
-               (Expr_literal (literal (Int 1234)) (span ((start 21) (stop 22)))))
-              (span ((start 15) (stop 22))))
-             (Block_decl_let (var ((name y) (span ((start 27) (stop 28)))))
-              (ann ()) (is_alias false)
-              (rhs
-               (Expr_literal (literal (Int 234)) (span ((start 31) (stop 32)))))
-              (span ((start 25) (stop 32))))))
-           (ret (Expr_literal (literal Unit) (span ((start 35) (stop 37)))))
-           (span ((start 12) (stop 40)))))
-         (span ((start 6) (stop 40))))
-        (Block_decl_let (var ((name second) (span ((start 47) (stop 48)))))
-         (ann ()) (is_alias false)
-         (rhs (Expr_literal (literal (Int 1324)) (span ((start 51) (stop 52)))))
-         (span ((start 45) (stop 52))))))
+       ((Block_decl_let
+         ((var ((name first) (span ((start 8) (stop 9))))) (ann ())
+          (is_alias false)
+          (rhs
+           (Expr_block
+            (decls
+             ((Block_decl_let
+               ((var ((name x) (span ((start 17) (stop 18))))) (ann ())
+                (is_alias false)
+                (rhs
+                 (Expr_literal (literal (Int 1234))
+                  (span ((start 21) (stop 22)))))
+                (span ((start 15) (stop 22)))))
+              (Block_decl_let
+               ((var ((name y) (span ((start 27) (stop 28))))) (ann ())
+                (is_alias false)
+                (rhs
+                 (Expr_literal (literal (Int 234)) (span ((start 31) (stop 32)))))
+                (span ((start 25) (stop 32)))))))
+            (ret (Expr_literal (literal Unit) (span ((start 35) (stop 37)))))
+            (span ((start 12) (stop 40)))))
+          (span ((start 6) (stop 40)))))
+        (Block_decl_let
+         ((var ((name second) (span ((start 47) (stop 48))))) (ann ())
+          (is_alias false)
+          (rhs (Expr_literal (literal (Int 1324)) (span ((start 51) (stop 52)))))
+          (span ((start 45) (stop 52)))))))
       (span ((start 1) (stop 54)))))
     |}]
 ;;
@@ -352,29 +365,30 @@ let%expect_test "paren exprs" =
     {|
     ((Expr_block
       (decls
-       ((Block_decl_let (var ((name awe) (span ((start 7) (stop 8))))) (ann ())
-         (is_alias false)
-         (rhs
-          (Expr_abs
-           (params
-            (((vars (((name x) (span ((start 13) (stop 14)))))) (ann ())
-              (icit Expl) (span ((start 13) (stop 14))))))
-           (ret_ty ())
-           (body
-            (Expr_paren
-             (e
-              (Expr_proj
-               (mod_e
-                (Expr_proj
-                 (mod_e
-                  (Expr_proj
-                   (mod_e (Expr_var ((name x) (span ((start 18) (stop 19))))))
-                   (field y) (span ((start 18) (stop 21)))))
-                 (field z) (span ((start 18) (stop 23)))))
-               (field w) (span ((start 18) (stop 25)))))
-             (span ((start 18) (stop 25)))))
-           (span ((start 11) (stop 25)))))
-         (span ((start 5) (stop 25))))))
+       ((Block_decl_let
+         ((var ((name awe) (span ((start 7) (stop 8))))) (ann ())
+          (is_alias false)
+          (rhs
+           (Expr_abs
+            (params
+             (((vars (((name x) (span ((start 13) (stop 14)))))) (ann ())
+               (icit Expl) (span ((start 13) (stop 14))))))
+            (ret_ty ())
+            (body
+             (Expr_paren
+              (e
+               (Expr_proj
+                (mod_e
+                 (Expr_proj
+                  (mod_e
+                   (Expr_proj
+                    (mod_e (Expr_var ((name x) (span ((start 18) (stop 19))))))
+                    (field y) (span ((start 18) (stop 21)))))
+                  (field z) (span ((start 18) (stop 23)))))
+                (field w) (span ((start 18) (stop 25)))))
+              (span ((start 18) (stop 25)))))
+            (span ((start 11) (stop 25)))))
+          (span ((start 5) (stop 25)))))))
       (ret (Expr_literal (literal Unit) (span ((start 29) (stop 31)))))
       (span ((start 2) (stop 34)))))
     |}]
@@ -392,56 +406,58 @@ let%expect_test "function application" =
     {|
     ((Expr_block
       (decls
-       ((Block_decl_let (var ((name app) (span ((start 7) (stop 8))))) (ann ())
-         (is_alias false)
-         (rhs
-          (Expr_abs
-           (params
-            (((vars (((name f) (span ((start 13) (stop 14)))))) (ann ())
-              (icit Expl) (span ((start 13) (stop 14))))
-             ((vars (((name x) (span ((start 15) (stop 16)))))) (ann ())
-              (icit Expl) (span ((start 15) (stop 16))))
-             ((vars (((name y) (span ((start 17) (stop 18)))))) (ann ())
-              (icit Expl) (span ((start 17) (stop 18))))
-             ((vars (((name z) (span ((start 19) (stop 20)))))) (ann ())
-              (icit Expl) (span ((start 19) (stop 20))))))
-           (ret_ty ())
-           (body
-            (Expr_app
-             (func
-              (Expr_proj
-               (mod_e
-                (Expr_proj
-                 (mod_e
-                  (Expr_proj
-                   (mod_e
-                    (Expr_paren
-                     (e
-                      (Expr_app
-                       (func (Expr_var ((name f) (span ((start 24) (stop 25))))))
-                       (args
-                        ((Expr_var ((name w) (span ((start 26) (stop 27)))))
-                         (Expr_var ((name z) (span ((start 28) (stop 29)))))))
-                       (span ((start 24) (stop 29)))))
-                     (span ((start 24) (stop 29)))))
-                   (field x) (span ((start 24) (stop 32)))))
-                 (field y) (span ((start 24) (stop 34)))))
-               (field w) (span ((start 24) (stop 36)))))
-             (args
-              ((Expr_var ((name x) (span ((start 37) (stop 38)))))
-               (Expr_paren
-                (e
-                 (Expr_app
-                  (func (Expr_var ((name a) (span ((start 40) (stop 41))))))
-                  (args
-                   ((Expr_var ((name b) (span ((start 42) (stop 43)))))
-                    (Expr_var ((name c) (span ((start 44) (stop 45)))))))
-                  (span ((start 40) (stop 45)))))
-                (span ((start 40) (stop 45))))
-               (Expr_var ((name z) (span ((start 47) (stop 48)))))))
-             (span ((start 24) (stop 48)))))
-           (span ((start 11) (stop 48)))))
-         (span ((start 5) (stop 48))))))
+       ((Block_decl_let
+         ((var ((name app) (span ((start 7) (stop 8))))) (ann ())
+          (is_alias false)
+          (rhs
+           (Expr_abs
+            (params
+             (((vars (((name f) (span ((start 13) (stop 14)))))) (ann ())
+               (icit Expl) (span ((start 13) (stop 14))))
+              ((vars (((name x) (span ((start 15) (stop 16)))))) (ann ())
+               (icit Expl) (span ((start 15) (stop 16))))
+              ((vars (((name y) (span ((start 17) (stop 18)))))) (ann ())
+               (icit Expl) (span ((start 17) (stop 18))))
+              ((vars (((name z) (span ((start 19) (stop 20)))))) (ann ())
+               (icit Expl) (span ((start 19) (stop 20))))))
+            (ret_ty ())
+            (body
+             (Expr_app
+              (func
+               (Expr_proj
+                (mod_e
+                 (Expr_proj
+                  (mod_e
+                   (Expr_proj
+                    (mod_e
+                     (Expr_paren
+                      (e
+                       (Expr_app
+                        (func
+                         (Expr_var ((name f) (span ((start 24) (stop 25))))))
+                        (args
+                         ((Expr_var ((name w) (span ((start 26) (stop 27)))))
+                          (Expr_var ((name z) (span ((start 28) (stop 29)))))))
+                        (span ((start 24) (stop 29)))))
+                      (span ((start 24) (stop 29)))))
+                    (field x) (span ((start 24) (stop 32)))))
+                  (field y) (span ((start 24) (stop 34)))))
+                (field w) (span ((start 24) (stop 36)))))
+              (args
+               ((Expr_var ((name x) (span ((start 37) (stop 38)))))
+                (Expr_paren
+                 (e
+                  (Expr_app
+                   (func (Expr_var ((name a) (span ((start 40) (stop 41))))))
+                   (args
+                    ((Expr_var ((name b) (span ((start 42) (stop 43)))))
+                     (Expr_var ((name c) (span ((start 44) (stop 45)))))))
+                   (span ((start 40) (stop 45)))))
+                 (span ((start 40) (stop 45))))
+                (Expr_var ((name z) (span ((start 47) (stop 48)))))))
+              (span ((start 24) (stop 48)))))
+            (span ((start 11) (stop 48)))))
+          (span ((start 5) (stop 48)))))))
       (ret (Expr_literal (literal Unit) (span ((start 51) (stop 53)))))
       (span ((start 2) (stop 56)))))
     |}]
@@ -462,33 +478,35 @@ let%expect_test "awefaewf" =
     {|
     ((Expr_block
       (decls
-       ((Block_decl_let (var ((name testing) (span ((start 6) (stop 7)))))
-         (ann ()) (is_alias false)
-         (rhs
-          (Expr_abs
-           (params
-            (((vars (((name x) (span ((start 12) (stop 13)))))) (ann ())
-              (icit Expl) (span ((start 12) (stop 13))))))
-           (ret_ty ())
-           (body
-            (Expr_block
-             (decls
-              ((Block_decl_bind (var ((name awef) (span ((start 21) (stop 22)))))
-                (rhs
-                 (Expr_paren
-                  (e
-                   (Expr_pack
-                    (e (Expr_var ((name x) (span ((start 28) (stop 29))))))
-                    (span ((start 26) (stop 29)))))
-                  (span ((start 26) (stop 29)))))
-                (span ((start 19) (stop 29))))))
-             (ret
-              (Expr_pack
-               (e (Expr_var ((name awef) (span ((start 35) (stop 36))))))
-               (span ((start 33) (stop 36)))))
-             (span ((start 16) (stop 39)))))
-           (span ((start 10) (stop 39)))))
-         (span ((start 4) (stop 39))))))
+       ((Block_decl_let
+         ((var ((name testing) (span ((start 6) (stop 7))))) (ann ())
+          (is_alias false)
+          (rhs
+           (Expr_abs
+            (params
+             (((vars (((name x) (span ((start 12) (stop 13)))))) (ann ())
+               (icit Expl) (span ((start 12) (stop 13))))))
+            (ret_ty ())
+            (body
+             (Expr_block
+              (decls
+               ((Block_decl_bind
+                 (var ((name awef) (span ((start 21) (stop 22)))))
+                 (rhs
+                  (Expr_paren
+                   (e
+                    (Expr_pack
+                     (e (Expr_var ((name x) (span ((start 28) (stop 29))))))
+                     (span ((start 26) (stop 29)))))
+                   (span ((start 26) (stop 29)))))
+                 (span ((start 19) (stop 29))))))
+              (ret
+               (Expr_pack
+                (e (Expr_var ((name awef) (span ((start 35) (stop 36))))))
+                (span ((start 33) (stop 36)))))
+              (span ((start 16) (stop 39)))))
+            (span ((start 10) (stop 39)))))
+          (span ((start 4) (stop 39)))))))
       (ret (Expr_var ((name testing) (span ((start 42) (stop 43))))))
       (span ((start 1) (stop 45)))))
     |}]
@@ -756,11 +774,13 @@ let%expect_test "let with annotation" =
     {|
     ((Expr_block
       (decls
-       ((Block_decl_let (var ((name x) (span ((start 6) (stop 7)))))
-         (ann ((Expr_core_ty (ty Bool) (span ((start 10) (stop 11))))))
-         (is_alias false)
-         (rhs (Expr_literal (literal (Bool true)) (span ((start 14) (stop 15)))))
-         (span ((start 4) (stop 15))))))
+       ((Block_decl_let
+         ((var ((name x) (span ((start 6) (stop 7)))))
+          (ann ((Expr_core_ty (ty Bool) (span ((start 10) (stop 11))))))
+          (is_alias false)
+          (rhs
+           (Expr_literal (literal (Bool true)) (span ((start 14) (stop 15)))))
+          (span ((start 4) (stop 15)))))))
       (ret (Expr_var ((name x) (span ((start 18) (stop 19))))))
       (span ((start 1) (stop 21)))))
     |}]
@@ -778,11 +798,12 @@ f { let x = #t
       (args
        ((Expr_block
          (decls
-          ((Block_decl_let (var ((name x) (span ((start 7) (stop 8))))) (ann ())
-            (is_alias false)
-            (rhs
-             (Expr_literal (literal (Bool true)) (span ((start 11) (stop 12)))))
-            (span ((start 5) (stop 12))))))
+          ((Block_decl_let
+            ((var ((name x) (span ((start 7) (stop 8))))) (ann ())
+             (is_alias false)
+             (rhs
+              (Expr_literal (literal (Bool true)) (span ((start 11) (stop 12)))))
+             (span ((start 5) (stop 12)))))))
          (ret (Expr_var ((name x) (span ((start 15) (stop 16))))))
          (span ((start 3) (stop 18))))))
       (span ((start 1) (stop 18)))))
