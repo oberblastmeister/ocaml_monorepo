@@ -1,3 +1,4 @@
+(* TODO: refactor this, the code is shit *)
 open Prelude
 
 open struct

@@ -14,6 +14,7 @@ open struct
   module Infer_simple = Oak_infer_simple
   module Evaluate = Oak_evaluate
   module Close = Evaluate.Close
+  module Abstract = Oak_abstract
 end
 
 exception Error of Diagnostic.t
@@ -132,7 +133,7 @@ let check_implicit_param_ty cx span ty =
       }
 ;;
 
-let rec infer (cx : Context.t) (e : expr) : term * ty =
+let rec infer (cx : Context.t) (e : Abstract.expr) : term * ty =
   match e with
   | Expr_error { span } ->
     raise_error
@@ -155,7 +156,7 @@ let rec infer (cx : Context.t) (e : expr) : term * ty =
     Meta_list.check_all_solved meta_list cx;
     e, ty
   | Expr_abs { var; param_ty = Some param_ty; icit; body; span = _ } ->
-    let param_ty_span = Expr.span param_ty in
+    let param_ty_span = Abstract.Expr.span param_ty in
     let param_ty, _ = check_universe cx param_ty in
     let param_ty = Evaluate.eval Env.empty param_ty in
     if Icit.equal icit Impl then check_implicit_param_ty cx param_ty_span param_ty;
@@ -207,7 +208,7 @@ let rec infer (cx : Context.t) (e : expr) : term * ty =
     in
     res_term, res_ty
   | Expr_ty_fun { var; param_ty; icit; body_ty; span = _ } ->
-    let param_ty_span = Expr.span param_ty in
+    let param_ty_span = Abstract.Expr.span param_ty in
     let param_ty, universe1 = check_universe cx param_ty in
     let param_ty_val = Evaluate.eval Env.empty param_ty in
     if Icit.equal icit Impl then check_implicit_param_ty cx param_ty_span param_ty_val;
@@ -255,8 +256,8 @@ let rec infer (cx : Context.t) (e : expr) : term * ty =
   | Expr_universe { universe; span = _ } ->
     Term_universe universe, Value_universe (Universe.incr universe)
   | Expr_if { cond; body1; body2; span = _ } ->
-    let body1_span = Expr.span body1 in
-    let body2_span = Expr.span body2 in
+    let body1_span = Abstract.Expr.span body1 in
+    let body2_span = Abstract.Expr.span body2 in
     let cond = check cx cond (Value_core_ty Bool) in
     let body1, body1_ty = infer cx body1 in
     let body2, body2_ty = infer cx body2 in
@@ -317,7 +318,7 @@ let rec infer (cx : Context.t) (e : expr) : term * ty =
           ]
       }
 
-and check (cx : Context.t) (e : expr) (ty : ty) : term =
+and check (cx : Context.t) (e : Abstract.expr) (ty : ty) : term =
   (* TODO: need to handle some singleton cases here *)
   match e, Context.unfold cx ty with
   | Expr_abs { var; param_ty; icit; body; span }, Value_ty_fun ty ->
@@ -407,7 +408,7 @@ and check (cx : Context.t) (e : expr) (ty : ty) : term =
       But this is without the info that we are checking at type ty!
       Thus we should have the ability to solve some extra metavariables in checking mode.
     *)
-    let span = Expr.span e in
+    let span = Abstract.Expr.span e in
     let meta_list = Meta_list.create () in
     let e, ty' = infer_spine cx meta_list e in
     let e =
@@ -433,7 +434,7 @@ and check (cx : Context.t) (e : expr) (ty : ty) : term =
     Meta_list.check_all_solved meta_list cx;
     e
   | _ ->
-    let span = Expr.span e in
+    let span = Abstract.Expr.span e in
     let e, ty' = infer cx e in
     (match Unify.coerce cx e ty' ty with
      | Ok term -> term
@@ -506,13 +507,13 @@ and extract_mod_ty cx span mod_e mod_ty =
   in
   mod_e, mod_ty
 
-and infer_spine_enter (cx : Context.t) (e : expr) : term * ty =
+and infer_spine_enter (cx : Context.t) (e : Abstract.expr) : term * ty =
   let meta_list = Meta_list.create () in
   let e, ty = infer_spine cx meta_list e in
   Meta_list.check_all_solved meta_list cx;
   e, ty
 
-and infer_spine (cx : Context.t) (meta_list : Meta_list.t) (e : expr) : term * ty =
+and infer_spine (cx : Context.t) (meta_list : Meta_list.t) (e : Abstract.expr) : term * ty =
   match e with
   | Expr_app { func; arg; icit; span } ->
     let func, func_ty = infer_spine cx meta_list func in
@@ -574,7 +575,7 @@ and infer_spine (cx : Context.t) (meta_list : Meta_list.t) (e : expr) : term * t
     e, ty
   | _ -> infer cx e
 
-and check_universe (cx : Context.t) (ty_expr : expr) : term * Universe.t =
+and check_universe (cx : Context.t) (ty_expr : Abstract.expr) : term * Universe.t =
   let ty, kind = infer cx ty_expr in
   let ty, kind = Unify.coerce_singleton cx ty kind in
   match kind with
@@ -584,7 +585,7 @@ and check_universe (cx : Context.t) (ty_expr : expr) : term * Universe.t =
       { code = None
       ; parts =
           [ Diagnostic.Part.create
-              ~snippet:(Context.snippet cx (Expr.span ty_expr))
+              ~snippet:(Context.snippet cx (Abstract.Expr.span ty_expr))
               (Doc.string "Not a type")
           ]
       }
