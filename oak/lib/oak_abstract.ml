@@ -116,6 +116,7 @@ and expr_ty_decl =
   ; ty : expr
   ; span : Span.t
   }
+[@@deriving sexp_of]
 
 module Expr = struct
   let span = function

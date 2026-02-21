@@ -13,8 +13,6 @@ let check s =
   else print_s [%sexp (expr : Oak_surface.expr option)]
 ;;
 
-let bruh = (fun x -> x : int -> int)
-
 let%expect_test "smoke" =
   check
     {|
@@ -846,14 +844,16 @@ a b c [a b c]
 ;;
 
 let%expect_test "block decl expressions" =
-  check {|
+  check
+    {|
 {
   f
   f
   f "aewfaewf"
 }
     |};
-  [%expect {|
+  [%expect
+    {|
     ((Expr_block
       (decls
        ((Block_decl_expr (e (Expr_var ((name f) (span ((start 4) (stop 5))))))
@@ -868,4 +868,4 @@ let%expect_test "block decl expressions" =
         (span ((start 12) (stop 15)))))
       (span ((start 1) (stop 17)))))
     |}]
-  
+;;
