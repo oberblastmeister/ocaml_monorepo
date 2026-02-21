@@ -457,6 +457,8 @@ and parse_atom_fail st (p : Parser.t) : Surface.expr =
                error (Error.token "Invalid number" index)))
       ; span = Span.single index
       }
+  | Token { token = String s; index } ->
+    Expr_literal { literal = String s; span = Span.single index }
   | _ -> Parser.fail p
 
 and parse_atom st (p : Parser.State.t) : Surface.expr =
@@ -533,7 +535,9 @@ and parse_block_decl st (group : Shrub.group) : Surface.block_decl =
     let span = Span.combine (Span.single bind_index) (Surface.expr_span rhs) in
     Block_decl_bind { var; rhs; span }
   | _ ->
-    error (Error.token "Expected block declaration" (Shrub.Group.first_token group).index)
+    let e = parse_expr_group st group in
+    let span = Surface.expr_span e in
+    Block_decl_expr { e; span }
 
 and parse_expr_ann st (p : Parser.State.t) : Surface.expr =
   let e = parse_expr st p in

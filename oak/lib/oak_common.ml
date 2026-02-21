@@ -135,6 +135,7 @@ module Literal = struct
     | Unit
     | Bool of bool
     | Int of int
+    | String of string
   [@@deriving sexp_of]
 end
 

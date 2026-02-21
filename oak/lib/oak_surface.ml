@@ -130,6 +130,10 @@ and block_decl =
       ; rhs : expr
       ; span : Span.t
       }
+  | Block_decl_expr of
+      { e : expr
+      ; span : Span.t
+      }
 
 and decl =
   { var : Var.t

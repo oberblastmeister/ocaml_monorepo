@@ -109,17 +109,15 @@ let rec rename_expr st (expr : Surface.expr) : Abstract.expr =
     let used_vars = Surface.Var.Hash_set.create () in
     let duplicate = ref false in
     List.iter decls ~f:(fun decl ->
-      let var =
-        match decl with
-        | Block_decl_let { var; _ } -> var
-        | Block_decl_bind { var; _ } -> var
-      in
-      if Hash_set.mem used_vars var
-      then begin
-        duplicate := true;
-        State.add_error st (Spanned.create "Duplicate variable in module" var.span)
-      end;
-      Hash_set.add used_vars var);
+      match decl with
+      | Block_decl_let { var; _ } | Block_decl_bind { var; _ } ->
+        if Hash_set.mem used_vars var
+        then begin
+          duplicate := true;
+          State.add_error st (Spanned.create "Duplicate variable in module" var.span)
+        end;
+        Hash_set.add used_vars var
+      | Block_decl_expr _ -> ());
     if !duplicate
     then Expr_error { span }
     else begin
@@ -203,6 +201,11 @@ and rename_block st decls ret span =
     State.with_var st var ~f:(fun () ->
       let body = rename_block st rest ret span in
       Abstract.Expr_bind { var = var_info var; rhs; body; span })
+  | Surface.Block_decl_expr { e; span } :: rest ->
+    let e = rename_expr st e in
+    State.with_var st { name = "<generated>"; span } ~f:(fun () ->
+      let body = rename_block st rest ret span in
+      Abstract.Expr_let { var = Abstract.Var_info.generated; rhs = e; body; span })
 
 and rename_decls st decls =
   match decls with
@@ -229,6 +232,11 @@ and rename_decls st decls =
       State.add_error
         st
         (Spanned.create "Bind declarations are not allowed at the top level" span);
+      rename_decls st rest
+    | Block_decl_expr { span; _ } ->
+      State.add_error
+        st
+        (Spanned.create "Expression declarations are not allowed at the top level" span);
       rename_decls st rest
   end
 
