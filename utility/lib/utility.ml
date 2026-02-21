@@ -11,3 +11,4 @@ module File_span = Utility_file_span
 module Spanned = Utility_spanned
 module Diagnostic = Utility_diagnostic
 module Bwd = Utility_bwd
+module Fail_state = Utility_fail_state
