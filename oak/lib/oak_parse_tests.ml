@@ -890,3 +890,56 @@ let%expect_test "block decl expressions" =
       (span ((start 1) (stop 17)))))
     |}]
 ;;
+
+let%expect_test "recursive blocks" =
+  check {|
+rec {
+  let first = fun x -> second x
+  
+  let second : Int -> Int = fun x -> first x
+}
+    |};
+  [%expect {|
+    ((Expr_rec
+      (decls
+       (((var ((name first) (span ((start 8) (stop 9))))) (ann ())
+         (is_alias false)
+         (rhs
+          (Expr_abs
+           (params
+            (((vars (((name x) (span ((start 14) (stop 15)))))) (ann ())
+              (icit Expl) (span ((start 14) (stop 15))))))
+           (ret_ty ())
+           (body
+            (Expr_app
+             (func (Expr_var ((name second) (span ((start 18) (stop 19))))))
+             (args ((Expr_var ((name x) (span ((start 20) (stop 21)))))))
+             (span ((start 18) (stop 21)))))
+           (span ((start 12) (stop 21)))))
+         (span ((start 6) (stop 21))))
+        ((var ((name second) (span ((start 28) (stop 29)))))
+         (ann
+          ((Expr_ty_fun
+            (param_tys
+             (((vars ())
+               (ty ((Expr_core_ty (ty Int) (span ((start 32) (stop 33))))))
+               (icit Expl) (span ((start 32) (stop 33))))))
+            (body_ty (Expr_core_ty (ty Int) (span ((start 36) (stop 37)))))
+            (span ((start 32) (stop 37))))))
+         (is_alias false)
+         (rhs
+          (Expr_abs
+           (params
+            (((vars (((name x) (span ((start 42) (stop 43)))))) (ann ())
+              (icit Expl) (span ((start 42) (stop 43))))))
+           (ret_ty ())
+           (body
+            (Expr_app
+             (func (Expr_var ((name first) (span ((start 46) (stop 47))))))
+             (args ((Expr_var ((name x) (span ((start 48) (stop 49)))))))
+             (span ((start 46) (stop 49)))))
+           (span ((start 40) (stop 49)))))
+         (span ((start 26) (stop 49))))))
+      (span ((start 1) (stop 51)))))
+    |}]
+  

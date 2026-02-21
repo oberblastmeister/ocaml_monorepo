@@ -277,6 +277,28 @@ and parse_keyword_fail st (p : Parser.t) : Surface.expr =
       let ty = parse_atom st (Parser.state p) in
       Expr_ty_pack
         { ty; span = Span.combine (Span.single keyword_index) (Surface.expr_span ty) }
+    | "rec" ->
+      let _ = Parser.next_exn p in
+      let block =
+        Parser.orelse
+          p
+          (fun () -> Parser.brace p)
+          (fun () -> State.error st (Parser.state p) "Expected {")
+      in
+      let decls =
+        List.map block.groups ~f:(fun { Shrub.group; sep = _ } ->
+          match parse_block_decl st group with
+          | Block_decl_let decl -> decl
+          | _ ->
+            error
+              (Error.token
+                 "Expected let declaration in rec block"
+                 (Shrub.Group.first_token group).index))
+      in
+      let span =
+        Span.combine (Span.single keyword_index) (Span.single block.rdelim.index)
+      in
+      Expr_rec { decls; span }
     | _ -> parse_app st p
   end
   | _ -> parse_app st p

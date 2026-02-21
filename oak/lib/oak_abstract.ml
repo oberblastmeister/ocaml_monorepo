@@ -148,6 +148,7 @@ module Expr = struct
     | Expr_pack { span; _ }
     | Expr_alias { span; _ }
     | Expr_literal { span; _ }
+    | Expr_rec { span; _ } -> span
     | Expr_bind { span; _ } -> span
   ;;
 end
