@@ -317,7 +317,7 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : term * ty =
               (Doc.string "Cannot infer bind expressions")
           ]
       }
-  | Expr_rec { decls; span } ->
+  | Expr_rec { decls; span = _ } ->
     let tys =
       List.map decls ~f:(fun decl ->
         let ty, _universe = check_universe cx decl.ty in
@@ -383,8 +383,38 @@ and check (cx : Context.t) (e : Abstract.expr) (ty : ty) : term =
             ]
         }
   in
+  let unify cx span e1 e2 ty =
+    begin match Unify.unify cx e1 e2 ty with
+    | Ok () -> ()
+    | Error part ->
+      raise_error
+        { code = None
+        ; parts =
+            [ part
+            ; Diagnostic.Part.create
+                ~kind:Note
+                ~snippet:(Context.snippet cx span)
+                (Doc.string "Values were not equal")
+            ]
+        }
+    end
+  in
   (* TODO: need to handle some singleton cases here *)
   match e, Context.unfold cx ty with
+  | Expr_alias { identity; span }, Value_ty_sing { identity = identity'; ty } ->
+    let identity = check cx identity ty in
+    unify cx span (Evaluate.eval Env.empty identity) identity' ty;
+    Term_sing_in identity
+  | Expr_alias { identity; span = _ }, _ ->
+    (* implicitly add sing_out here *)
+    let e = check cx identity ty in
+    e
+  | _, Value_ty_sing { identity; ty } ->
+    let span = Abstract.Expr.span e in
+    let e = check cx e ty in
+    unify cx span (Evaluate.eval Env.empty e) identity ty;
+    (* implicitly add sing_in here *)
+    Term_sing_in e
   | Expr_abs { var; param_ty; icit; body; span }, Value_ty_fun ty ->
     (match param_ty with
      | Some param_ty ->

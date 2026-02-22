@@ -371,7 +371,15 @@ mod {
   let T := f Bool
 }
       |};
-  [%expect {| sig { let ty : (= (= fun T -> T)); let f : ty; let T : (= f (Bool)) } |}];
+  [%expect
+    {|
+    error: Types were not equal: Type != (= Bool)
+    note: parameter type annotation did not match expected type
+     --> <input>:4:13
+      |
+    4 |   let f = ((fun (T : Type) -> Bool) : ty)
+      |             ^^^^^^^^^^^^^^^^^^^^^^
+    |}];
   check
     {|
   mod {
@@ -382,12 +390,12 @@ mod {
         |};
   [%expect
     {|
-    error: Base types were not equal: Int != Bool
-    note: failed to coerce inferred type Type when checking against type (= Bool)
-     --> <input>:5:16
+    error: Types were not equal: Type != (= Bool)
+    note: parameter type annotation did not match expected type
+     --> <input>:4:9
       |
-    5 |     let T := f Int
-      |                ^^^
+    4 |       ((fun (T : Type) -> Bool) : (= fun (T : (= Bool)) -> T))
+      |         ^^^^^^^^^^^^^^^^^^^^^^
     |}];
   check
     {|
@@ -399,12 +407,12 @@ mod {
           |};
   [%expect
     {|
-    error: Base types were not equal: Int != Bool
-    note: failed to coerce inferred type Type when checking against type (= Bool)
-     --> <input>:5:17
+    error: Types were not equal: Type != (= Bool)
+    note: parameter type annotation did not match expected type
+     --> <input>:4:11
       |
-    5 |       let T = f Int
-      |                 ^^^
+    4 |         ((fun (T : Type) -> Bool) : (= fun (T : (= Bool)) -> T))
+      |           ^^^^^^^^^^^^^^^^^^^^^^
     |}];
   check
     {|
@@ -707,7 +715,7 @@ let%expect_test "singleton type not ignorable" =
     |};
   [%expect
     {|
-    error: Type was not ignorable: (= Int)
+    error: Type was not ignorable: Type
     note: in bind expression
      --> <input>:2:2
       |
@@ -883,10 +891,7 @@ mod {
   [%expect
     {|
     error: Types were not equal: Type != (= Bool)
-    note: failed to coerce inferred type
-      Kind
-    when checking against type
-      (= sig { let T : (= Bool); let U : (= T) })
+    note: Values were not equal
      --> <input>:6:8
       |
     6 |   }) = sig {
@@ -1180,4 +1185,101 @@ mod {
     4 |     let x : (= y) = y
       |                ^
     |}]
+;;
+
+let%expect_test "singleton checking mode" =
+  check
+    {|
+mod {
+  let x : (= fun x -> x : Int -> Int) = fun x -> x
+}
+    |};
+  [%expect {| sig { let x : (= fun x -> x) } |}];
+  check
+    {|
+mod {
+  let x : (= fun x -> x : Int -> Int) = alias (fun x -> x)
+}
+    |};
+  [%expect {| sig { let x : (= fun x -> x) } |}];
+  check
+    {|
+mod {
+  let x : (= fun x y -> x : Type -> Type -> Type) = fun x y -> x
+}
+    |};
+  [%expect {| sig { let x : (= fun x y -> x) } |}];
+  (* TODO: make this error message better, the underscore is because we use the type binder name *)
+  check
+    {|
+mod {
+  let x : (= fun x y -> x : Type -> Type -> Type) = fun x y -> y
+}
+    |};
+  [%expect
+    {|
+    error: Variables were not equal: _/1 != _
+    note: Values were not equal
+     --> <input>:3:53
+      |
+    3 |   let x : (= fun x y -> x : Type -> Type -> Type) = fun x y -> y
+      |                                                     ^^^^^^^^^^^^
+    |}];
+  check
+    {|
+  mod {
+    let x : (= fun x y -> x : (x y : Type) -> Type) = fun x y -> y
+  }
+      |};
+  [%expect
+    {|
+    error: Variables were not equal: y != x
+    note: Values were not equal
+     --> <input>:3:55
+      |
+    3 |     let x : (= fun x y -> x : (x y : Type) -> Type) = fun x y -> y
+      |                                                       ^^^^^^^^^^^^
+    |}];
+  check
+    {|
+    mod {
+      let f : Type -> Type -> Type = fun x y -> Unit
+      let g : Type -> Type -> Type = fun x y -> Unit
+      let x : (= g) = f
+    }
+    |};
+  [%expect
+    {|
+    error: Variables were not equal: f != g
+    note: Values were not equal
+     --> <input>:5:23
+      |
+    5 |       let x : (= g) = f
+      |                       ^
+    |}];
+  check
+    {|
+mod {
+  let x : (= mod { let x = 213; let T = Int }) = mod { let x = 1234; let T = Bool }
+}
+      |};
+  [%expect
+    {|
+    error: Base types were not equal: Bool != Int
+    note: Values were not equal
+     --> <input>:3:50
+      |
+    3 |   let x : (= mod { let x = 213; let T = Int }) = mod { let x = 1234; let T = Bool }
+      |                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |}];
+  check
+    {|
+      mod {
+        let f : Type -> Type -> Int = fun x y -> 0
+        let g : Type -> Type -> Int = fun x y -> 1
+        let x : (= g) = f
+      }
+      |};
+  [%expect
+    {| sig { let f : Type -> Type -> Int; let g : Type -> Type -> Int; let x : (= g) } |}]
 ;;
