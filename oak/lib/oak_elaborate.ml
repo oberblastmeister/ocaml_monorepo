@@ -317,9 +317,72 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : term * ty =
               (Doc.string "Cannot infer bind expressions")
           ]
       }
-  | Expr_rec _ -> failwith "TODO"
+  | Expr_rec { decls; span } ->
+    let tys =
+      List.map decls ~f:(fun decl ->
+        let ty, _universe = check_universe cx decl.ty in
+        let ty = Evaluate.eval Env.empty ty in
+        begin match check_ty_ignorable cx ty with
+        | Ok () -> ()
+        | Error part ->
+          raise_error
+            { code = None
+            ; parts =
+                [ part
+                ; Diagnostic.Part.create
+                    ~kind:Note
+                    ~snippet:(Context.snippet cx (Abstract.Expr.span decl.ty))
+                    (Doc.string "in recursive block")
+                ; Diagnostic.Part.create
+                    ~kind:Note
+                    (Doc.string "Types must be ignorable inside of a recursive block")
+                ]
+            }
+        end;
+        decl.var, ty)
+    in
+    let cx' = List.fold tys ~init:cx ~f:(fun cx (var, ty) -> Context.bind var ty cx) in
+    let close =
+      List.range (Context.size cx) (Context.size cx')
+      |> List.fold ~init:(Close.lift (-1) Close.empty) ~f:(fun c i ->
+        Close.add_exn (Level.of_int i) Index.zero (Close.lift 1 c))
+    in
+    let es =
+      List.map (List.zip_exn decls tys) ~f:(fun (decl, (_, ty)) ->
+        let e = check cx' decl.e ty in
+        Evaluate.close close e)
+    in
+    (* non dependent record *)
+    let _, ty_decls =
+      List.fold_map tys ~init:cx ~f:(fun cx (var, ty) ->
+        Context.bind var ty cx, ({ var; ty = Context.quote cx ty } : term_ty_decl))
+    in
+    let decls =
+      List.zip_exn tys es
+      |> List.map ~f:(fun ((var, _), e) -> ({ var; e } : term_rec_decl))
+    in
+    Term_rec decls, Value_ty_mod { env = Env.empty; ty_decls }
 
 and check (cx : Context.t) (e : Abstract.expr) (ty : ty) : term =
+  let coerce cx span e ty1 ty2 =
+    match Unify.coerce cx e ty1 ty2 with
+    | Ok term -> term
+    | Error part ->
+      raise_error
+        { code = None
+        ; parts =
+            [ part
+            ; Diagnostic.Part.create
+                ~kind:Note
+                ~snippet:(Context.snippet cx span)
+                (Doc.string "failed to coerce inferred type"
+                 ^^ Doc.indent 2 (Doc.break1 ^^ Context.pp_value cx ty1)
+                 ^^ Doc.break1
+                 ^^ Doc.string "when checking against type"
+                 ^^ Doc.indent 2 (Doc.break1 ^^ Context.pp_value cx ty2))
+            ]
+        }
+  in
   (* TODO: need to handle some singleton cases here *)
   match e, Context.unfold cx ty with
   | Expr_abs { var; param_ty; icit; body; span }, Value_ty_fun ty ->
@@ -412,48 +475,13 @@ and check (cx : Context.t) (e : Abstract.expr) (ty : ty) : term =
     let span = Abstract.Expr.span e in
     let meta_list = Meta_list.create () in
     let e, ty' = infer_spine cx meta_list e in
-    let e =
-      (* TODO: deduplicate these error messages *)
-      match Unify.coerce cx e ty' ty with
-      | Ok term -> term
-      | Error part ->
-        raise_error
-          { code = None
-          ; parts =
-              [ part
-              ; Diagnostic.Part.create
-                  ~kind:Note
-                  ~snippet:(Context.snippet cx span)
-                  (Doc.string "failed to coerce inferred type"
-                   ^^ Doc.indent 2 (Doc.break1 ^^ Context.pp_value cx ty')
-                   ^^ Doc.break1
-                   ^^ Doc.string "when checking against type"
-                   ^^ Doc.indent 2 (Doc.break1 ^^ Context.pp_value cx ty))
-              ]
-          }
-    in
+    let e = coerce cx span e ty' ty in
     Meta_list.check_all_solved meta_list cx;
     e
   | _ ->
     let span = Abstract.Expr.span e in
     let e, ty' = infer cx e in
-    (match Unify.coerce cx e ty' ty with
-     | Ok term -> term
-     | Error part ->
-       raise_error
-         { code = None
-         ; parts =
-             [ part
-             ; Diagnostic.Part.create
-                 ~kind:Note
-                 ~snippet:(Context.snippet cx span)
-                 (Doc.string "failed to coerce inferred type"
-                  ^^ Doc.indent 2 (Doc.break1 ^^ Context.pp_value cx ty')
-                  ^^ Doc.break1
-                  ^^ Doc.string "when checking against type"
-                  ^^ Doc.indent 2 (Doc.break1 ^^ Context.pp_value cx ty))
-             ]
-         })
+    coerce cx span e ty' ty
 
 and insert_implicit_args
       (cx : Context.t)

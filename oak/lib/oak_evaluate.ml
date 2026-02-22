@@ -325,8 +325,7 @@ and close (c : Close.t) e =
   | Term_rec decls ->
     let c = Close.lift (List.length decls) c in
     let decls =
-      List.map decls ~f:(fun { var; ty; e } ->
-        ({ var; ty = close c ty; e = close c e } : term_rec_decl))
+      List.map decls ~f:(fun { var; e } -> ({ var; e = close c e } : term_rec_decl))
     in
     Term_rec decls
 

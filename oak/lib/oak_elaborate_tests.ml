@@ -1048,3 +1048,136 @@ mod {
       |              ^^^^^^^^^^^^
     |}]
 ;;
+
+let%expect_test "rec" =
+  check
+    {|
+mod {
+  let m = rec {
+    let first : int = 234
+  }
+}
+    |};
+  [%expect
+    {|
+    error: Failed to find variable: int
+     --> <input>:4:17
+      |
+    4 |     let first : int = 234
+      |                 ^^^
+
+    error: Cannot infer error term
+     --> <input>:4:17
+      |
+    4 |     let first : int = 234
+      |                 ^^^
+    |}];
+  check
+    {|
+  mod {
+    let m = rec {
+      let first : Int = second
+      let second : Int = first
+    }
+  }
+      |};
+  [%expect {| sig { let m : sig { let first : Int; let second : Int } } |}];
+  check
+    {|
+  mod {
+    let m = rec {
+      let first : (= Int) = Int
+      let second : (= Int) = Int
+    }
+  }
+      |};
+  [%expect
+    {|
+    error: Type was not ignorable: (= Int)
+    note: in recursive block
+     --> <input>:4:19
+      |
+    4 |       let first : (= Int) = Int
+      |                   ^^^^^^^
+    note: Types must be ignorable inside of a recursive block
+    |}];
+  check
+    {|
+  mod {
+    let m = rec {
+      let even : Int -> Bool = fun x -> odd x
+      let odd : Int -> Bool = fun x -> even x
+    }
+  }
+      |};
+  [%expect {| sig { let m : sig { let even : Int -> Bool; let odd : Int -> Bool } } |}];
+  check
+    {|
+  mod {
+    let m = rec {
+      let poly_rec1 : [A : Type] -> A -> A = fun [A] x -> (poly_rec2 [A -> A] (fun y -> y)) x
+      let poly_rec2 : [A : Type] -> A -> A = fun [A] x -> (poly_rec1 [A -> A] (fun y -> y)) x
+    }
+  }
+    |};
+  [%expect
+    {| sig { let m : sig { let poly_rec1 : [A : Type] -> A -> A; let poly_rec2 : [A : Type] -> A -> A } } |}];
+  check
+    {|
+  mod {
+    let m = rec {
+      let x : y = ()
+      let y : x = ()
+    }
+  }
+      |};
+  [%expect
+    {|
+    error: Failed to find variable: y
+     --> <input>:4:15
+      |
+    4 |       let x : y = ()
+      |               ^
+
+    error: Failed to find variable: x
+     --> <input>:5:15
+      |
+    5 |       let y : x = ()
+      |               ^
+
+    error: Cannot infer error term
+     --> <input>:4:15
+      |
+    4 |       let x : y = ()
+      |               ^
+    |}];
+  check
+    {|
+mod {
+  let m = rec {
+    let x : (= y) = y
+    let y : (= x) = x
+  }
+}
+      |};
+  [%expect
+    {|
+    error: Failed to find variable: y
+     --> <input>:4:16
+      |
+    4 |     let x : (= y) = y
+      |                ^
+
+    error: Failed to find variable: x
+     --> <input>:5:16
+      |
+    5 |     let y : (= x) = x
+      |                ^
+
+    error: Cannot infer error term
+     --> <input>:4:16
+      |
+    4 |     let x : (= y) = y
+      |                ^
+    |}]
+;;

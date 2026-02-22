@@ -86,9 +86,7 @@ and term_field =
   }
 
 and term_rec_decl =
-  { 
-    var : Var_info.t
-  ; ty : term
+  { var : Var_info.t
   ; e : term
   }
 

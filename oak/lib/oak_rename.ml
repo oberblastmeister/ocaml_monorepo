@@ -171,6 +171,10 @@ let rec rename_expr st (expr : Surface.expr) : Abstract.expr =
     Expr_pack { e; span }
   | Surface.Expr_paren { e; span = _ } -> rename_expr st e
   | Surface.Expr_rec { decls; span } ->
+    List.iter decls ~f:(fun decl ->
+      if decl.is_alias
+      then
+        State.add_error st (Spanned.create "Cannot have alias inside rec block" decl.span));
     let vars = List.map decls ~f:(fun decl -> decl.var) in
     let duplicate = check_vars_distinct st vars in
     let num_decls = List.length decls in
@@ -190,7 +194,7 @@ let rec rename_expr st (expr : Surface.expr) : Abstract.expr =
       let tys = List.map tys ~f:(fun ty -> rename_expr st ty) in
       (* push *)
       List.iter decls ~f:(fun decl -> State.push_var st decl.var);
-      let rhs_exprs = List.map decls ~f:(fun decl -> rename_let_decl_rhs st decl) in
+      let rhs_exprs = List.map decls ~f:(fun decl -> rename_expr st decl.rhs) in
       List.iter decls ~f:(fun _ -> State.pop_var st);
       (* pop *)
       let decls =
@@ -225,11 +229,24 @@ and rename_ty_fun st params body_ty span =
 and rename_block st decls ret span =
   match decls with
   | [] -> rename_expr st ret
-  | Surface.Block_decl_let let_decl :: rest ->
-    let rhs = rename_let_decl_rhs st let_decl in
-    State.with_var st let_decl.var ~f:(fun () ->
+  | Surface.Block_decl_let { var; ann; rhs; is_alias; _ } :: rest ->
+    (* Important that the annotation goes first, before the alias. *)
+    let rhs =
+      match ann with
+      | Some ty ->
+        let ty = rename_expr st ty in
+        let rhs = rename_expr st rhs in
+        Abstract.Expr_ann { e = rhs; ty; span }
+      | None -> rename_expr st rhs
+    in
+    let rhs =
+      if is_alias
+      then Abstract.Expr_alias { identity = rhs; span = Abstract.Expr.span rhs }
+      else rhs
+    in
+    State.with_var st var ~f:(fun () ->
       let body = rename_block st rest ret span in
-      Abstract.Expr_let { var = var_info let_decl.var; rhs; body; span })
+      Abstract.Expr_let { var = var_info var; rhs; body; span })
   | Surface.Block_decl_bind { var; rhs; span = _ } :: rest ->
     let rhs = rename_expr st rhs in
     State.with_var st var ~f:(fun () ->
@@ -240,23 +257,6 @@ and rename_block st decls ret span =
     State.with_var st { name = "<generated>"; span } ~f:(fun () ->
       let body = rename_block st rest ret span in
       Abstract.Expr_let { var = Abstract.Var_info.generated; rhs = e; body; span })
-
-and rename_let_decl_rhs st ({ var = _; ann; is_alias; rhs; span } : Surface.let_decl) =
-  (* Important that the annotation goes first, before the alias. *)
-  let rhs =
-    match ann with
-    | Some ty ->
-      let ty = rename_expr st ty in
-      let rhs = rename_expr st rhs in
-      Abstract.Expr_ann { e = rhs; ty; span }
-    | None -> rename_expr st rhs
-  in
-  let rhs =
-    if is_alias
-    then Abstract.Expr_alias { identity = rhs; span = Abstract.Expr.span rhs }
-    else rhs
-  in
-  rhs
 
 and rename_decls st decls =
   match decls with

@@ -89,7 +89,7 @@ fun (x : Bool) -> {
        (rhs
         (Expr_ann (e (Expr_var (var ((index 0))) (span ((start 26) (stop 27)))))
          (ty (Expr_core_ty (ty Bool) (span ((start 22) (stop 23)))))
-         (span ((start 16) (stop 27)))))
+         (span ((start 13) (stop 33)))))
        (body (Expr_var (var ((index 0))) (span ((start 30) (stop 31)))))
        (span ((start 13) (stop 33)))))
      (span ((start 1) (stop 33))))
@@ -154,7 +154,7 @@ fun (x : Bool) -> {
        (rhs
         (Expr_ann (e (Expr_var (var ((index 0))) (span ((start 26) (stop 27)))))
          (ty (Expr_core_ty (ty Bool) (span ((start 22) (stop 23)))))
-         (span ((start 16) (stop 27)))))
+         (span ((start 13) (stop 59)))))
        (body
         (Expr_bind (var ((name z) (pos 32)))
          (rhs
@@ -167,7 +167,7 @@ fun (x : Bool) -> {
             (Expr_ann
              (e (Expr_var (var ((index 0))) (span ((start 52) (stop 53)))))
              (ty (Expr_core_ty (ty Bool) (span ((start 48) (stop 49)))))
-             (span ((start 42) (stop 53)))))
+             (span ((start 13) (stop 59)))))
            (body (Expr_var (var ((index 0))) (span ((start 56) (stop 57)))))
            (span ((start 13) (stop 59)))))
          (span ((start 13) (stop 59)))))
@@ -383,16 +383,10 @@ rec {
      (decls
       (((var ((name first) (pos 8)))
         (ty (Expr_core_ty (ty Int) (span ((start 12) (stop 13)))))
-        (e
-         (Expr_ann (e (Expr_var (var ((index 0))) (span ((start 16) (stop 17)))))
-          (ty (Expr_core_ty (ty Int) (span ((start 12) (stop 13)))))
-          (span ((start 6) (stop 17))))))
+        (e (Expr_var (var ((index 0))) (span ((start 16) (stop 17))))))
        ((var ((name second) (pos 22)))
         (ty (Expr_core_ty (ty Int) (span ((start 26) (stop 27)))))
-        (e
-         (Expr_ann (e (Expr_var (var ((index 1))) (span ((start 30) (stop 31)))))
-          (ty (Expr_core_ty (ty Int) (span ((start 26) (stop 27)))))
-          (span ((start 20) (stop 31))))))))
+        (e (Expr_var (var ((index 1))) (span ((start 30) (stop 31))))))))
      (span ((start 1) (stop 33))))
     |}];
   check
