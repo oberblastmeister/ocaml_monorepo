@@ -207,7 +207,7 @@ and parse_param_ty_from_expr st (expr : Surface.expr) : Surface.param_ty =
     { vars; ty = None; icit = Impl; span }
   | e -> { vars = []; ty = Some e; icit = Expl; span = Surface.expr_span e }
 
-and parse_expr_vars st (e : Surface.expr) : Surface.Var.t list =
+and parse_expr_vars _st (e : Surface.expr) : Surface.Var.t list =
   let vars =
     match e with
     | Expr_app { func; args; span = _ } -> func :: args
@@ -222,23 +222,17 @@ and parse_expr_vars st (e : Surface.expr) : Surface.Var.t list =
   in
   vars
 
-and parse_keyword st p =
-  Parser.run_or_thunk
-    p
-    (fun p -> parse_keyword_fail st p)
-    (fun () -> State.error st p "Expected expression")
-
-and parse_keyword_fail st (p : Parser.t) : Surface.expr =
-  match Parser.peek p with
+and parse_keyword st (p : Parser.State.t) : Surface.expr =
+  match Parser.State.peek p with
   | Some (Token { token = Ident keyword; index = keyword_index }) -> begin
     match keyword with
     | "mod" ->
-      let _ = Parser.next_exn p in
+      let _ = Parser.State.next_exn p in
       let block =
-        Parser.orelse
+        Parser.run_or_thunk
           p
-          (fun () -> Parser.brace p)
-          (fun () -> State.error st (Parser.state p) "Expected {")
+          (fun p -> Parser.brace p)
+          (fun () -> State.error st p "Expected {")
       in
       let decls =
         List.map block.groups ~f:(fun { Shrub.group; sep = _ } ->
@@ -249,12 +243,12 @@ and parse_keyword_fail st (p : Parser.t) : Surface.expr =
       in
       Expr_mod { decls; span }
     | "sig" ->
-      let _ = Parser.next_exn p in
+      let _ = Parser.State.next_exn p in
       let block =
-        Parser.orelse
+        Parser.run_or_thunk
           p
-          (fun () -> Parser.brace p)
-          (fun () -> State.error st (Parser.state p) "Expected {")
+          (fun p -> Parser.brace p)
+          (fun () -> State.error st p "Expected {")
       in
       let ty_decls =
         List.map block.groups ~f:(fun { Shrub.group; sep = _ } -> parse_sig_decl st group)
@@ -264,26 +258,26 @@ and parse_keyword_fail st (p : Parser.t) : Surface.expr =
       in
       Expr_ty_mod { ty_decls; span }
     | "alias" ->
-      let _ = Parser.next_exn p in
-      let e = parse_atom st (Parser.state p) in
+      let _ = Parser.State.next_exn p in
+      let e = parse_atom st p in
       Expr_alias { e; span = Surface.expr_span e }
     | "pack" ->
-      let _ = Parser.next_exn p in
-      let e = parse_atom st (Parser.state p) in
+      let _ = Parser.State.next_exn p in
+      let e = parse_atom st p in
       Expr_pack
         { e; span = Span.combine (Span.single keyword_index) (Surface.expr_span e) }
     | "Pack" ->
-      let _ = Parser.next_exn p in
-      let ty = parse_atom st (Parser.state p) in
+      let _ = Parser.State.next_exn p in
+      let ty = parse_atom st p in
       Expr_ty_pack
         { ty; span = Span.combine (Span.single keyword_index) (Surface.expr_span ty) }
     | "rec" ->
-      let _ = Parser.next_exn p in
+      let _ = Parser.State.next_exn p in
       let block =
-        Parser.orelse
+        Parser.run_or_thunk
           p
-          (fun () -> Parser.brace p)
-          (fun () -> State.error st (Parser.state p) "Expected {")
+          (fun p -> Parser.brace p)
+          (fun () -> State.error st p "Expected {")
       in
       let decls =
         List.map block.groups ~f:(fun { Shrub.group; sep = _ } ->
@@ -408,9 +402,9 @@ and parse_annotation_cont st (p : Parser.t) : Surface.expr =
   let _ = Parser.colon p in
   parse_expr st (Parser.state p)
 
-and parse_app st (p : Parser.t) : Surface.expr =
+and parse_app st (p : Parser.State.t) : Surface.expr =
   let func = parse_dot st p in
-  let args = Parser.many p (fun () -> parse_dot st p) in
+  let args = Parser.many p (fun p -> parse_dot_fail st p) in
   match args with
   | [] -> func
   | _ ->
@@ -421,7 +415,13 @@ and parse_app st (p : Parser.t) : Surface.expr =
           Span.combine (Surface.expr_span func) (Surface.expr_span (List.last_exn args))
       }
 
-and parse_dot st (p : Parser.t) : Surface.expr =
+and parse_dot st (p : Parser.State.t) : Surface.expr =
+  Parser.run_or_thunk
+    p
+    (fun p -> parse_dot_fail st p)
+    (fun () -> State.error st p "Expected expression")
+
+and parse_dot_fail st (p : Parser.t) : Surface.expr =
   let expr = parse_atom_fail st p in
   parse_dot_cont st (Parser.state p) expr
 

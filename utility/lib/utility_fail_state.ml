@@ -33,8 +33,8 @@ module Make (Config : Config) : sig
   val fail : t -> 'a
   val optional : t -> (unit -> 'a) -> 'a option
   val either : t -> (unit -> 'a) -> (unit -> 'b) -> ('b, 'a) Either.t
-  val many_rev : t -> (unit -> 'b) -> 'b list
-  val many : t -> (unit -> 'b) -> 'b list
+  val many_rev : State.t -> (t -> 'b) -> 'b list
+  val many : State.t -> (t -> 'b) -> 'b list
   val some_rev : t -> (unit -> 'b) -> 'b Non_empty_list.t
   val some : t -> (unit -> 'b) -> 'b Non_empty_list.t
   val guard : t -> bool -> unit
@@ -96,7 +96,7 @@ end = struct
     | x -> many_rev_acc t f (x :: acc)
   ;;
 
-  let many_rev t f = many_rev_acc t f []
+  let many_rev t f = many_rev_acc t (fun () -> f t) []
   let guard t b = if not b then fail t
   let many t f = many_rev t f |> List.rev
 
