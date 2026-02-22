@@ -100,6 +100,7 @@ struct
       | Meta_unsolved -> Syntax.Meta.pp meta
     end
 
+  (* TODO: fix shadowing here by using the name after pushing to name_list *)
   and pp_ty_mod names (ty_mod : Syntax.value_ty_mod_closure) =
     let _, decls =
       List.fold_map
@@ -128,19 +129,21 @@ struct
         (docs : Doc.t list)
         ({ var; body; icit } : Syntax.value_abs)
     =
+    let level = Syntax.Level.of_int (Name_list.size names) in
+    let arg = Syntax.Value.free level in
+    let names = Name_list.push var.name names in
     let param_doc =
       if Syntax.Icit.equal icit Impl
-      then bracks (Doc.string var.name)
-      else Doc.string var.name
+      then bracks (Doc.string (Name_list.get names level))
+      else Doc.string (Name_list.get names level)
     in
     let docs = param_doc :: docs in
-    let arg = next_free_of_size (Name_list.size names) in
-    let names = Name_list.push var.name names in
     let body = Evaluate.eval_closure1 body arg in
     match body with
     | Syntax.Value_abs abs -> collect_abs_params names docs abs
     | _ -> List.rev docs, names, body
 
+  (* TODO: fix shadowing here *)
   and collect_ty_fun_params names acc_params (ty : Syntax.value_ty_fun) =
     let param_doc =
       if String.equal ty.var.name "_"

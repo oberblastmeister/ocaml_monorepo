@@ -892,14 +892,16 @@ let%expect_test "block decl expressions" =
 ;;
 
 let%expect_test "recursive blocks" =
-  check {|
+  check
+    {|
 rec {
   let first = fun x -> second x
   
   let second : Int -> Int = fun x -> first x
 }
     |};
-  [%expect {|
+  [%expect
+    {|
     ((Expr_rec
       (decls
        (((var ((name first) (span ((start 8) (stop 9))))) (ann ())
@@ -942,4 +944,19 @@ rec {
          (span ((start 26) (stop 49))))))
       (span ((start 1) (stop 51)))))
     |}]
-  
+;;
+
+let%expect_test "record patching" =
+  check
+    {|
+sig { let T : Type; let U : Type -> Type } where { T := Int; U := List }
+|};
+  [%expect
+    {|
+    error[E0001]: Unconsumed tokens when parsing expression
+     --> <input>:2:44
+      |
+    2 | sig { let T : Type; let U : Type -> Type } where { T := Int; U := List }
+      |                                            ^^^^^
+    |}]
+;;

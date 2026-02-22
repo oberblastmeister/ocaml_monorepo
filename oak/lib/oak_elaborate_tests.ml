@@ -1283,3 +1283,40 @@ mod {
   [%expect
     {| sig { let f : Type -> Type -> Int; let g : Type -> Type -> Int; let x : (= g) } |}]
 ;;
+
+let%expect_test "eta laws" =
+  check
+    {|
+mod {
+  let f : Type -> Type = fun x -> Unit
+  let x : (= f) = fun x -> f x
+  let y : (= fun (x : Type) -> f x) = f
+  let S := sig { let T : Type; let U : Type -> Type; let x : T }
+  let m : S = mod {
+    let T := Unit
+    let U := fun (x : Type) -> Unit
+    let x : T = ()
+  } 
+  let z1 : (= m) = mod { let T = m.T; let U = m.U; let x = m.x }
+  let z2 : (= m : sig { let T : Type }) = mod { let T = m.T; let U = Unit }
+  let z3 : (= m : sig { let T : Type }) = m
+  let z4 : (= mod { let T = m.T; let U = m.U; let x = m.x } : S) = m
+  let z5 : (= m) = mod { let T = m.T; let U = fun (x : Type) -> m.U x; let x = m.x }
+}
+    |};
+  [%expect
+    {|
+    sig {
+      let f : Type -> Type
+      let x : (= f)
+      let y : (= fun x/1 -> f x/1)
+      let S : (= sig { let T : Type; let U : Type -> Type; let x : T })
+      let m : S
+      let z1 : (= m)
+      let z2 : (= m)
+      let z3 : (= m)
+      let z4 : (= mod { let T = m.T; let U = m.U; let x = m.x })
+      let z5 : (= m)
+    }
+    |}]
+;;
