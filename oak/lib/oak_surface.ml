@@ -114,6 +114,17 @@ type expr =
       { decls : let_decl list
       ; span : Span.t
       }
+  | Expr_where of
+      { e : expr
+      ; patches : where_patch list
+      ; span : Span.t
+      }
+
+and where_patch =
+  { path : string Non_empty_list.t
+  ; rhs : expr
+  ; span : Span.t
+  }
 
 and block_decl =
   | Block_decl_let of let_decl
@@ -185,5 +196,6 @@ let expr_span (e : expr) : Span.t =
   | Expr_literal { span; _ }
   | Expr_brack { span; _ }
   | Expr_rec { span; _ }
-  | Expr_paren { span; _ } -> span
+  | Expr_paren { span; _ }
+  | Expr_where { span; _ } -> span
 ;;

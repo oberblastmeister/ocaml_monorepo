@@ -364,6 +364,7 @@ module Env = struct
   type t = env [@@deriving sexp_of]
 
   let empty = { size = 0; list = Env_empty }
+  let singleton value = { size = 1; list = Env_push { value; rest = Env_empty } }
   let push value env = { size = env.size + 1; list = Env_push { value; rest = env.list } }
 
   let pop_exn t =

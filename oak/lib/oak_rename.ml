@@ -170,6 +170,11 @@ let rec rename_expr st (expr : Surface.expr) : Abstract.expr =
     let e = rename_expr st e in
     Expr_pack { e; span }
   | Surface.Expr_paren { e; span = _ } -> rename_expr st e
+  | Surface.Expr_where { e; patches; span } ->
+    let e = rename_expr st e in
+    List.fold patches ~init:e ~f:(fun e (patch : Surface.where_patch) ->
+      let rhs = rename_expr st patch.rhs in
+      Abstract.Expr_where { e; path = patch.path; rhs; span })
   | Surface.Expr_rec { decls; span } ->
     List.iter decls ~f:(fun decl ->
       if decl.is_alias

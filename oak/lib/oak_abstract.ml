@@ -108,6 +108,12 @@ type expr =
       { decls : expr_rec_decl list
       ; span : Span.t
       }
+  | Expr_where of
+      { e : expr
+      ; path : string Non_empty_list.t
+      ; rhs : expr
+      ; span : Span.t
+      }
 
 and expr_rec_decl =
   { var : Var_info.t
@@ -148,7 +154,8 @@ module Expr = struct
     | Expr_pack { span; _ }
     | Expr_alias { span; _ }
     | Expr_literal { span; _ }
-    | Expr_rec { span; _ } -> span
+    | Expr_rec { span; _ }
+    | Expr_where { span; _ }
     | Expr_bind { span; _ } -> span
   ;;
 end

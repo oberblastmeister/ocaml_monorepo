@@ -133,6 +133,162 @@ let check_implicit_param_ty cx span ty =
       }
 ;;
 
+let coerce cx span e ty1 ty2 =
+  match Unify.coerce cx e ty1 ty2 with
+  | Ok term -> term
+  | Error part ->
+    raise_error
+      { code = None
+      ; parts =
+          [ part
+          ; Diagnostic.Part.create
+              ~kind:Note
+              ~snippet:(Context.snippet cx span)
+              (Doc.string "failed to coerce inferred type"
+               ^^ Doc.indent 2 (Doc.break1 ^^ Context.pp_value cx ty1)
+               ^^ Doc.break1
+               ^^ Doc.string "when checking against type"
+               ^^ Doc.indent 2 (Doc.break1 ^^ Context.pp_value cx ty2))
+          ]
+      }
+;;
+
+let unify cx span e1 e2 ty =
+  match Unify.unify cx e1 e2 ty with
+  | Ok () -> ()
+  | Error part ->
+    raise_error
+      { code = None
+      ; parts =
+          [ part
+          ; Diagnostic.Part.create
+              ~kind:Note
+              ~snippet:(Context.snippet cx span)
+              (Doc.string "Values were not equal")
+          ]
+      }
+;;
+
+(*
+  given value_to_patch (which is a free variable) and ty_to_patch, we must have
+  value_to_patch : ty_to_patch
+  the function returns
+  coe(value_to_patch), f(ty_to_patch)
+  as if value_to_patch had type f(ty_to_patch), and coe coerces value_to_patch to the original type
+  so coe(value_to_patch) : ty_to_patch
+*)
+let rec apply_patch
+          cx
+          (value_to_patch : Level.t)
+          (ty_to_patch : ty)
+          (path : string list)
+          (rhs : term)
+          (rhs_ty : ty)
+          (span : Span.t)
+  =
+  match path with
+  | [] ->
+    let rhs = coerce cx span rhs rhs_ty ty_to_patch in
+    let rhs = Evaluate.eval Env.empty rhs in
+    ( Evaluate.Value.out (Value.free value_to_patch)
+    , Value_ty_sing { identity = rhs; ty = ty_to_patch } )
+  | head :: path ->
+    let ty_to_patch =
+      match Context.unfold cx ty_to_patch with
+      | Value_ty_mod ty -> ty
+      | _ ->
+        raise_error
+          { code = None
+          ; parts =
+              [ Diagnostic.Part.create
+                  ~snippet:(Context.snippet cx span)
+                  (Doc.string "Expected a sig value when trying to project field "
+                   ^^ Doc.string head)
+              ]
+          }
+    in
+    let (_, _, _, coerced_fields, field_found), ty_decls =
+      List.fold_mapi
+        ty_to_patch.ty_decls
+        ~init:(cx, ty_to_patch.env, Close.empty, Bwd.Empty, false)
+        ~f:
+          (fun
+            field_index
+            (cx, closure_env, close, (coerced_fields : value_field Bwd.t), field_found)
+            ty_decls
+          ->
+          let field_name = ty_decls.var.name in
+          (* We always need to evaluate the type here because stuff above could be patched so we need to properly substitute values that were patched *)
+          let field_ty = Evaluate.eval closure_env ty_decls.ty in
+          if (not field_found) && String.equal field_name head
+          then begin
+            let cx' = Context.bind ty_decls.var field_ty cx in
+            let coerced_value, patched_ty =
+              apply_patch cx' (Context.next_level cx) field_ty path rhs rhs_ty span
+            in
+            (* rebind the variable, because we just patched the type *)
+            (* but value still has type ty, the original type *)
+            let cx' = Context.bind ty_decls.var patched_ty cx in
+            (* add the coerced value to the environment, instead of the original free variable, because we just patched the type of the original free variable *)
+            let closure_env' = Env.push coerced_value closure_env in
+            (* close the free variables that we have created *)
+            let close' =
+              Close.add_exn (Context.next_level cx) Index.zero (Close.lift 1 close)
+            in
+            let coerced_fields' =
+              Bwd.snoc
+                coerced_fields
+                { name = field_name
+                ; e =
+                    Context.quote cx' coerced_value
+                    |> Evaluate.close_single (Context.next_level cx)
+                    |> Evaluate.eval
+                         (Env.singleton
+                            (Evaluate.Value.proj
+                               (Value.free value_to_patch)
+                               field_name
+                               field_index))
+                }
+            in
+            ( (cx', closure_env', close', coerced_fields', true)
+            , ({ var = ty_decls.var
+               ; ty = Context.quote cx patched_ty |> Evaluate.close close
+               }
+               : term_ty_decl) )
+          end
+          else begin
+            ( ( Context.bind ty_decls.var field_ty cx
+              , Env.push (Context.next_free cx) closure_env
+              , Close.add_exn (Context.next_level cx) Index.zero (Close.lift 1 close)
+              , Bwd.snoc
+                  coerced_fields
+                  { name = field_name
+                  ; e =
+                      Evaluate.Value.proj
+                        (Value.free value_to_patch)
+                        field_name
+                        field_index
+                  }
+              , field_found )
+            , { var = ty_decls.var
+              ; ty = Context.quote cx field_ty |> Evaluate.close close
+              } )
+          end)
+    in
+    if not field_found
+    then
+      raise_error
+        { code = None
+        ; parts =
+            [ Diagnostic.Part.create
+                ~snippet:(Context.snippet cx span)
+                (Doc.string "Failed to find field " ^^ Doc.string head)
+            ]
+        };
+    ( Value_mod { fields = Bwd.to_list coerced_fields }
+    , Value_ty_mod { env = Env.empty; ty_decls } )
+;;
+
 let rec infer (cx : Context.t) (e : Abstract.expr) : term * ty =
   match e with
   | Expr_error { span } ->
@@ -362,43 +518,24 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : term * ty =
       |> List.map ~f:(fun ((var, _), e) -> ({ var; e } : term_rec_decl))
     in
     Term_rec decls, Value_ty_mod { env = Env.empty; ty_decls }
+  | Expr_where { e; path; rhs; span } ->
+    let e, universe = check_universe cx e in
+    let rhs, rhs_ty = infer cx rhs in
+    let ty_to_patch = Evaluate.eval Env.empty e in
+    let _, patched_ty =
+      apply_patch
+        (Context.bind Var_info.generated ty_to_patch cx)
+        (Context.next_level cx)
+        ty_to_patch
+        (Non_empty_list.to_list path)
+        rhs
+        rhs_ty
+        span
+    in
+    (* patching the signature cannot change its universe *)
+    Context.quote cx patched_ty, Value_universe universe
 
 and check (cx : Context.t) (e : Abstract.expr) (ty : ty) : term =
-  let coerce cx span e ty1 ty2 =
-    match Unify.coerce cx e ty1 ty2 with
-    | Ok term -> term
-    | Error part ->
-      raise_error
-        { code = None
-        ; parts =
-            [ part
-            ; Diagnostic.Part.create
-                ~kind:Note
-                ~snippet:(Context.snippet cx span)
-                (Doc.string "failed to coerce inferred type"
-                 ^^ Doc.indent 2 (Doc.break1 ^^ Context.pp_value cx ty1)
-                 ^^ Doc.break1
-                 ^^ Doc.string "when checking against type"
-                 ^^ Doc.indent 2 (Doc.break1 ^^ Context.pp_value cx ty2))
-            ]
-        }
-  in
-  let unify cx span e1 e2 ty =
-    begin match Unify.unify cx e1 e2 ty with
-    | Ok () -> ()
-    | Error part ->
-      raise_error
-        { code = None
-        ; parts =
-            [ part
-            ; Diagnostic.Part.create
-                ~kind:Note
-                ~snippet:(Context.snippet cx span)
-                (Doc.string "Values were not equal")
-            ]
-        }
-    end
-  in
   (* TODO: need to handle some singleton cases here *)
   match e, Context.unfold cx ty with
   | Expr_alias { identity; span }, Value_ty_sing { identity = identity'; ty } ->

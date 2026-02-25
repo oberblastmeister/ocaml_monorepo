@@ -953,10 +953,123 @@ sig { let T : Type; let U : Type -> Type } where { T := Int; U := List }
 |};
   [%expect
     {|
-    error[E0001]: Unconsumed tokens when parsing expression
-     --> <input>:2:44
+    ((Expr_where
+      (e
+       (Expr_ty_mod
+        (ty_decls
+         (((var ((name T) (span ((start 7) (stop 8)))))
+           (ty (Expr_universe (universe Type) (span ((start 11) (stop 12)))))
+           (span ((start 5) (stop 12))))
+          ((var ((name U) (span ((start 16) (stop 17)))))
+           (ty
+            (Expr_ty_fun
+             (param_tys
+              (((vars ())
+                (ty
+                 ((Expr_universe (universe Type) (span ((start 20) (stop 21))))))
+                (icit Expl) (span ((start 20) (stop 21))))))
+             (body_ty
+              (Expr_universe (universe Type) (span ((start 24) (stop 25)))))
+             (span ((start 20) (stop 25)))))
+           (span ((start 14) (stop 25))))))
+        (span ((start 1) (stop 27)))))
+      (patches
+       (((path (T)) (rhs (Expr_core_ty (ty Int) (span ((start 36) (stop 37)))))
+         (span ((start 32) (stop 37))))
+        ((path (U)) (rhs (Expr_var ((name List) (span ((start 43) (stop 44))))))
+         (span ((start 39) (stop 44))))))
+      (span ((start 1) (stop 46)))))
+    |}];
+  check
+    {|
+Some_signature where { T.First.Second := Int; U := List }
+      |};
+  [%expect
+    {|
+    ((Expr_where
+      (e (Expr_var ((name Some_signature) (span ((start 1) (stop 2))))))
+      (patches
+       (((path (T First Second))
+         (rhs (Expr_core_ty (ty Int) (span ((start 15) (stop 16)))))
+         (span ((start 7) (stop 16))))
+        ((path (U)) (rhs (Expr_var ((name List) (span ((start 22) (stop 23))))))
+         (span ((start 18) (stop 23))))))
+      (span ((start 1) (stop 25)))))
+    |}];
+  check
+    {|
+      Some_signature where { T.First.Second := Int; u := List} -> Int
+      |};
+  check
+    {|
+      f a b c where { T := Int } -> f a b c where { T := Int } -> Int
+      |};
+  [%expect
+    {|
+    ((Expr_ty_fun
+      (param_tys
+       (((vars ())
+         (ty
+          ((Expr_where
+            (e (Expr_var ((name Some_signature) (span ((start 2) (stop 3))))))
+            (patches
+             (((path (T First Second))
+               (rhs (Expr_core_ty (ty Int) (span ((start 16) (stop 17)))))
+               (span ((start 8) (stop 17))))
+              ((path (u))
+               (rhs (Expr_var ((name List) (span ((start 23) (stop 24))))))
+               (span ((start 19) (stop 24))))))
+            (span ((start 2) (stop 25))))))
+         (icit Expl) (span ((start 2) (stop 25))))))
+      (body_ty (Expr_core_ty (ty Int) (span ((start 28) (stop 29)))))
+      (span ((start 2) (stop 29)))))
+    ((Expr_ty_fun
+      (param_tys
+       (((vars ())
+         (ty
+          ((Expr_where
+            (e
+             (Expr_app (func (Expr_var ((name f) (span ((start 2) (stop 3))))))
+              (args
+               ((Expr_var ((name a) (span ((start 4) (stop 5)))))
+                (Expr_var ((name b) (span ((start 6) (stop 7)))))
+                (Expr_var ((name c) (span ((start 8) (stop 9)))))))
+              (span ((start 2) (stop 9)))))
+            (patches
+             (((path (T))
+               (rhs (Expr_core_ty (ty Int) (span ((start 18) (stop 19)))))
+               (span ((start 14) (stop 19))))))
+            (span ((start 2) (stop 21))))))
+         (icit Expl) (span ((start 2) (stop 21))))
+        ((vars ())
+         (ty
+          ((Expr_where
+            (e
+             (Expr_app (func (Expr_var ((name f) (span ((start 24) (stop 25))))))
+              (args
+               ((Expr_var ((name a) (span ((start 26) (stop 27)))))
+                (Expr_var ((name b) (span ((start 28) (stop 29)))))
+                (Expr_var ((name c) (span ((start 30) (stop 31)))))))
+              (span ((start 24) (stop 31)))))
+            (patches
+             (((path (T))
+               (rhs (Expr_core_ty (ty Int) (span ((start 40) (stop 41)))))
+               (span ((start 36) (stop 41))))))
+            (span ((start 24) (stop 43))))))
+         (icit Expl) (span ((start 24) (stop 43))))))
+      (body_ty (Expr_core_ty (ty Int) (span ((start 46) (stop 47)))))
+      (span ((start 2) (stop 47)))))
+    |}];
+  check
+    {|
+sig { let first : Type; let second : Type } where { T = Int; }
+    |};
+  [%expect
+    {|
+    error[E0001]: Expected := in where patch
+     --> <input>:2:55
       |
-    2 | sig { let T : Type; let U : Type -> Type } where { T := Int; U := List }
-      |                                            ^^^^^
+    2 | sig { let first : Type; let second : Type } where { T = Int; }
+      |                                                       ^
     |}]
 ;;

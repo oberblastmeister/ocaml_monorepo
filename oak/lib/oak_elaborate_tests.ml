@@ -1320,3 +1320,140 @@ mod {
     }
     |}]
 ;;
+
+let%expect_test "record patching" =
+  check
+    ~show_singletons:true
+    {|
+mod {
+  let S := sig { let T : Type; let x : T }
+  let S' := S where { T := Int }
+}
+    |};
+  [%expect
+    {|
+    sig {
+      let S : (= sig { let T : Type; let x : T })
+      let S' : (= sig { let T : (= Int); let x : T.out })
+    }
+    |}];
+  check
+    ~show_singletons:true
+    {|
+mod {
+  let S := sig {
+    let m : sig {
+      let m : sig {
+        let T : Type
+        let x : T
+      }
+      let x : m.T
+    }
+    let x : m.m.T
+  }
+  let S' := S where { m.m.T := Int }
+}
+      |};
+  [%expect
+    {|
+    sig {
+      let S :
+        (= sig { let m : sig { let m : sig { let T : Type; let x : T }; let x : m.T }; let x : m.m.T })
+      let S' :
+        ( =
+          sig {
+            let m : sig { let m : sig { let T : (= Int); let x : T.out }; let x : m.T.out }
+            let x : m.m.T.out
+          }
+        )
+    }
+    |}];
+  check
+    ~show_singletons:true
+    {|
+  mod {
+    let S := sig {
+      let m : sig {
+        let m : sig {
+          let T : Type
+          let U : Type
+          let V : Type
+          let x : T
+          let y : U
+          let z : V
+        }
+        let x : m.T
+        let y : m.U
+        let z : m.V
+      }
+      let x : m.m.T
+      let y : m.m.U
+      let z : m.m.V
+    }
+    let m = mod {
+      let T := Int
+      let U := Bool
+      let V := Unit
+      let x = 123
+      let y = #t
+      let z = ()
+    }
+    let S' := S where { m.m := m }
+  }
+        |};
+  [%expect
+    {|
+    sig {
+      let S :
+        ( =
+          sig {
+            let m :
+              sig {
+                let m :
+                  sig { let T : Type; let U : Type; let V : Type; let x : T; let y : U; let z : V }
+                let x : m.T
+                let y : m.U
+                let z : m.V
+              }
+            let x : m.m.T
+            let y : m.m.U
+            let z : m.m.V
+          }
+        )
+      let m :
+        sig {
+          let T : (= Int)
+          let U : (= Bool)
+          let V : (= Unit)
+          let x : Int
+          let y : Bool
+          let z : Unit
+        }
+      let S' :
+        ( =
+          sig {
+            let m :
+              sig {
+                let m :
+                  ( =
+                    mod {
+                      let T = m.T.out
+                      let U = m.U.out
+                      let V = m.V.out
+                      let x = m.x
+                      let y = m.y
+                      let z = m.z
+                    }
+                  )
+                let x : m/1.out.T
+                let y : m/1.out.U
+                let z : m/1.out.V
+              }
+            let x : m/1.m.out.T
+            let y : m/1.m.out.U
+            let z : m/1.m.out.V
+          }
+        )
+    }
+    |}]
+;;

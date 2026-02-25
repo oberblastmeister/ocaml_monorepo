@@ -113,6 +113,13 @@ module Parser = struct
     | Equal -> ti
     | _ -> fail p
   ;;
+
+  let colon_equal p =
+    let ti = token p in
+    match ti.token with
+    | Colon_equal -> ti
+    | _ -> fail p
+  ;;
 end
 
 exception Error of Error.t
@@ -223,79 +230,139 @@ and parse_expr_vars _st (e : Surface.expr) : Surface.Var.t list =
   vars
 
 and parse_keyword st (p : Parser.State.t) : Surface.expr =
-  match Parser.State.peek p with
-  | Some (Token { token = Ident keyword; index = keyword_index }) -> begin
-    match keyword with
-    | "mod" ->
-      let _ = Parser.State.next_exn p in
-      let block =
-        Parser.run_or_thunk
-          p
-          (fun p -> Parser.brace p)
-          (fun () -> State.error st p "Expected {")
-      in
-      let decls =
-        List.map block.groups ~f:(fun { Shrub.group; sep = _ } ->
-          parse_block_decl st group)
-      in
-      let span =
-        Span.combine (Span.single keyword_index) (Span.single block.rdelim.index)
-      in
-      Expr_mod { decls; span }
-    | "sig" ->
-      let _ = Parser.State.next_exn p in
-      let block =
-        Parser.run_or_thunk
-          p
-          (fun p -> Parser.brace p)
-          (fun () -> State.error st p "Expected {")
-      in
-      let ty_decls =
-        List.map block.groups ~f:(fun { Shrub.group; sep = _ } -> parse_sig_decl st group)
-      in
-      let span =
-        Span.combine (Span.single keyword_index) (Span.single block.rdelim.index)
-      in
-      Expr_ty_mod { ty_decls; span }
-    | "alias" ->
-      let _ = Parser.State.next_exn p in
-      let e = parse_atom st p in
-      Expr_alias { e; span = Surface.expr_span e }
-    | "pack" ->
-      let _ = Parser.State.next_exn p in
-      let e = parse_atom st p in
-      Expr_pack
-        { e; span = Span.combine (Span.single keyword_index) (Surface.expr_span e) }
-    | "Pack" ->
-      let _ = Parser.State.next_exn p in
-      let ty = parse_atom st p in
-      Expr_ty_pack
-        { ty; span = Span.combine (Span.single keyword_index) (Surface.expr_span ty) }
-    | "rec" ->
-      let _ = Parser.State.next_exn p in
-      let block =
-        Parser.run_or_thunk
-          p
-          (fun p -> Parser.brace p)
-          (fun () -> State.error st p "Expected {")
-      in
-      let decls =
-        List.map block.groups ~f:(fun { Shrub.group; sep = _ } ->
-          match parse_block_decl st group with
-          | Block_decl_let decl -> decl
-          | _ ->
-            error
-              (Error.token
-                 "Expected let declaration in rec block"
-                 (Shrub.Group.first_token group).index))
-      in
-      let span =
-        Span.combine (Span.single keyword_index) (Span.single block.rdelim.index)
-      in
-      Expr_rec { decls; span }
+  let e =
+    match Parser.State.peek p with
+    | Some (Token { token = Ident keyword; index = keyword_index }) -> begin
+      match keyword with
+      | "mod" ->
+        let _ = Parser.State.next_exn p in
+        let block =
+          Parser.run_or_thunk
+            p
+            (fun p -> Parser.brace p)
+            (fun () -> State.error st p "Expected {")
+        in
+        let decls =
+          List.map block.groups ~f:(fun { Shrub.group; sep = _ } ->
+            parse_block_decl st group)
+        in
+        let span =
+          Span.combine (Span.single keyword_index) (Span.single block.rdelim.index)
+        in
+        Surface.Expr_mod { decls; span }
+      | "sig" ->
+        let _ = Parser.State.next_exn p in
+        let block =
+          Parser.run_or_thunk
+            p
+            (fun p -> Parser.brace p)
+            (fun () -> State.error st p "Expected {")
+        in
+        let ty_decls =
+          List.map block.groups ~f:(fun { Shrub.group; sep = _ } ->
+            parse_sig_decl st group)
+        in
+        let span =
+          Span.combine (Span.single keyword_index) (Span.single block.rdelim.index)
+        in
+        Surface.Expr_ty_mod { ty_decls; span }
+      | "alias" ->
+        let _ = Parser.State.next_exn p in
+        let e = parse_atom st p in
+        Expr_alias { e; span = Surface.expr_span e }
+      | "pack" ->
+        let _ = Parser.State.next_exn p in
+        let e = parse_atom st p in
+        Expr_pack
+          { e; span = Span.combine (Span.single keyword_index) (Surface.expr_span e) }
+      | "Pack" ->
+        let _ = Parser.State.next_exn p in
+        let ty = parse_atom st p in
+        Expr_ty_pack
+          { ty; span = Span.combine (Span.single keyword_index) (Surface.expr_span ty) }
+      | "rec" ->
+        let _ = Parser.State.next_exn p in
+        let block =
+          Parser.run_or_thunk
+            p
+            (fun p -> Parser.brace p)
+            (fun () -> State.error st p "Expected {")
+        in
+        let decls =
+          List.map block.groups ~f:(fun { Shrub.group; sep = _ } ->
+            match parse_block_decl st group with
+            | Block_decl_let decl -> decl
+            | _ ->
+              error
+                (Error.token
+                   "Expected let declaration in rec block"
+                   (Shrub.Group.first_token group).index))
+        in
+        let span =
+          Span.combine (Span.single keyword_index) (Span.single block.rdelim.index)
+        in
+        Expr_rec { decls; span }
+      | _ -> parse_app st p
+    end
     | _ -> parse_app st p
-  end
-  | _ -> parse_app st p
+  in
+  parse_keyword_cont st p e
+
+and parse_keyword_cont st p (e : Surface.expr) : Surface.expr =
+  match Parser.State.peek p with
+  | Some (Token { token = Ident "where"; _ }) ->
+    let _ = Parser.State.next_exn p in
+    let block =
+      Parser.run_or_thunk
+        p
+        (fun p -> Parser.brace p)
+        (fun () -> State.error st p "Expected { after where")
+    in
+    let patches =
+      List.map block.groups ~f:(fun { Shrub.group; sep = _ } ->
+        parse_where_patch st group)
+    in
+    let span = Span.combine (Surface.expr_span e) (Span.single block.rdelim.index) in
+    parse_keyword_cont st p (Surface.Expr_where { e; patches; span })
+  | _ -> e
+
+and parse_where_patch st (group : Shrub.group) : Surface.where_patch =
+  let p = Parser.State.create group in
+  let first_var =
+    Parser.run_or_thunk
+      p
+      (fun p -> Parser.var p)
+      (fun () ->
+         error
+           (Error.token "Expected variable name in where patch" (Parser.State.curr_pos p)))
+  in
+  let path : _ Non_empty_list.t = first_var.name :: parse_dot_path p in
+  let _ =
+    Parser.run_or_thunk
+      p
+      (fun p -> Parser.colon_equal p)
+      (fun () ->
+         error (Error.token "Expected := in where patch" (Parser.State.curr_pos p)))
+  in
+  let rhs_items = Parser.State.take p in
+  let rhs =
+    match Non_empty_list.of_list rhs_items with
+    | None -> error (Error.token "Expected expression after :=" first_var.span.start)
+    | Some group -> parse_expr_group st group
+  in
+  let span = Span.combine first_var.span (Surface.expr_span rhs) in
+  { path; rhs; span }
+
+and parse_dot_path (p : Parser.State.t) : string list =
+  match Parser.State.peek p with
+  | Some (Token { token = Dot; _ }) ->
+    Parser.State.next_exn p;
+    (match Parser.State.peek p with
+     | Some (Token { token = Ident name; _ }) ->
+       Parser.State.next_exn p;
+       name :: parse_dot_path p
+     | _ -> error (Error.token "Expected identifier after dot" (Parser.State.curr_pos p)))
+  | _ -> []
 
 and parse_mod_decl st (group : Shrub.group) : Surface.decl =
   let p = Parser.State.create group in
@@ -461,6 +528,7 @@ and parse_atom_fail st (p : Parser.t) : Surface.expr =
   | Token { token = Ident ident; index } -> begin
     let span = Span.single index in
     match ident with
+    | "where" -> Parser.fail p
     | "Bool" -> Expr_core_ty { ty = Bool; span }
     | "Int" -> Expr_core_ty { ty = Int; span }
     | "Unit" -> Expr_core_ty { ty = Unit; span }
