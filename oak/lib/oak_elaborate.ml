@@ -164,7 +164,13 @@ let unify cx span e1 e2 ty =
           ; Diagnostic.Part.create
               ~kind:Note
               ~snippet:(Context.snippet cx span)
-              (Doc.string "Values were not equal")
+              (Doc.string "the value"
+               ^^ Doc.break1
+               ^^ Context.pp_value cx e1
+               ^^ Doc.break1
+               ^^ Doc.string "was not equal to"
+               ^^ Doc.break1
+               ^^ Context.pp_value cx e2)
           ]
       }
 ;;

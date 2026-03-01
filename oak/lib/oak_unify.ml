@@ -131,13 +131,14 @@ let rec unify (cx : Context.t) (e1 : value) (e2 : value) (ty : value) : unit =
       let _ = unify_neutral cx ty1 ty2 in
       ()
     end
-  | Value_ty_fun ty ->
+  | Value_ty_fun ty -> begin
     let var_value = Context.next_free cx in
     unify
       (Context.bind ty.var ty.param_ty cx)
       (Evaluate.Value.app e1 var_value ty.icit)
       (Evaluate.Value.app e2 var_value ty.icit)
       (Evaluate.Fun_ty.app ty var_value)
+  end
   | Value_ty_mod ty ->
     let closure_env = ty.env in
     let _ =

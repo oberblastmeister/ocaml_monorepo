@@ -891,7 +891,10 @@ mod {
   [%expect
     {|
     error: Types were not equal: Type != (= Bool)
-    note: Values were not equal
+    note: the value
+    sig { let T : (= Bool); let U : (= Bool) }
+    was not equal to
+    sig { let T : (= Bool); let U : (= T) }
      --> <input>:6:8
       |
     6 |   }) = sig {
@@ -1218,8 +1221,8 @@ mod {
     |};
   [%expect
     {|
-    error: Variables were not equal: _/1 != _
-    note: Values were not equal
+    error: Variables were not equal: _ != _@1
+    note: the value fun x y -> y was not equal to fun x y -> x
      --> <input>:3:53
       |
     3 |   let x : (= fun x y -> x : Type -> Type -> Type) = fun x y -> y
@@ -1234,7 +1237,7 @@ mod {
   [%expect
     {|
     error: Variables were not equal: y != x
-    note: Values were not equal
+    note: the value fun x y -> y was not equal to fun x y -> x
      --> <input>:3:55
       |
     3 |     let x : (= fun x y -> x : (x y : Type) -> Type) = fun x y -> y
@@ -1251,7 +1254,7 @@ mod {
   [%expect
     {|
     error: Variables were not equal: f != g
-    note: Values were not equal
+    note: the value f was not equal to g
      --> <input>:5:23
       |
     5 |       let x : (= g) = f
@@ -1266,7 +1269,10 @@ mod {
   [%expect
     {|
     error: Base types were not equal: Bool != Int
-    note: Values were not equal
+    note: the value
+    mod { let x = ignore; let T = Bool }
+    was not equal to
+    mod { let x = ignore; let T = Int }
      --> <input>:3:50
       |
     3 |   let x : (= mod { let x = 213; let T = Int }) = mod { let x = 1234; let T = Bool }
@@ -1309,7 +1315,7 @@ mod {
     sig {
       let f : Type -> Type
       let x : (= f)
-      let y : (= fun x/1 -> f x/1)
+      let y : (= fun x -> f x)
       let S : (= sig { let T : Type; let U : Type -> Type; let x : T })
       let m : S
       let z1 : (= m)
@@ -1319,6 +1325,17 @@ mod {
       let z5 : (= m)
     }
     |}]
+;;
+
+let%expect_test "shadowing" =
+  check
+    {|
+mod {
+  let x = 1324
+  let hello := (= fun (x : Type) -> x)
+}
+    |};
+  [%expect {| sig { let x : Int; let hello : (= (= fun x -> x)) } |}]
 ;;
 
 let%expect_test "record patching" =
@@ -1445,13 +1462,13 @@ mod {
                       let z = m.z
                     }
                   )
-                let x : m/1.out.T
-                let y : m/1.out.U
-                let z : m/1.out.V
+                let x : m.out.T
+                let y : m.out.U
+                let z : m.out.V
               }
-            let x : m/1.m.out.T
-            let y : m/1.m.out.U
-            let z : m/1.m.out.V
+            let x : m.m.out.T
+            let y : m.m.out.U
+            let z : m.m.out.V
           }
         )
     }

@@ -102,32 +102,39 @@ module Name_list : sig
   val push : string -> t -> t
   val get : t -> Level.t -> string
   val size : t -> int
+  val next_level : t -> Level.t
 end = struct
   type t =
-    { names : string list
-    ; shadow_num_map : int String.Map.t
+    { names : (string * int) list
+    ; amount_with_name : int String.Map.t
     ; size : int
     }
   [@@deriving sexp_of]
 
-  let empty = { names = []; shadow_num_map = String.Map.empty; size = 0 }
+  let empty = { names = []; amount_with_name = String.Map.empty; size = 0 }
 
-  let push name { names; shadow_num_map; size } =
-    let shadow_num_map =
-      Map.update shadow_num_map name ~f:(function
-        | None -> 1
-        | Some n -> n + 1)
-    in
-    let shadow_num = Map.find_exn shadow_num_map name - 1 in
-    let name = if shadow_num = 0 then name else sprintf "%s/%d" name shadow_num in
-    { names = name :: names; shadow_num_map; size = size + 1 }
+  let push name { names; amount_with_name; size } =
+    (* let name = if shadow_num = 0 then name else sprintf "%s/%d" name shadow_num in *)
+    { names = (name, Map.find amount_with_name name |> Option.value ~default:0) :: names
+    ; amount_with_name =
+        Map.update amount_with_name name ~f:(function
+          | None -> 1
+          | Some n -> n + 1)
+    ; size = size + 1
+    }
   ;;
 
   let get t (level : Level.t) =
-    List.drop t.names (Index.of_level t.size level).index |> List.hd_exn
+    let name, name_level =
+      List.drop t.names (Index.of_level t.size level).index |> List.hd_exn
+    in
+    let amount = Map.find_exn t.amount_with_name name in
+    let name_index = amount - name_level - 1 in
+    if name_index = 0 then name else name ^ "@" ^ Int.to_string name_index
   ;;
 
   let size t = t.size
+  let next_level t = Level.of_int t.size
 end
 
 module Literal = struct
