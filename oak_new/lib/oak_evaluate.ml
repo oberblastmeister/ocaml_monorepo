@@ -1,31 +1,31 @@
 open Prelude
 open Oak_syntax
 
-let rec eval (env : env) (e : term) : value =
+let rec eval_value (env : env) (e : term) : value =
   match e with
-  | Term_bound index -> Seq.get_exn env index.index
+  | Term_bound index -> Seq.get_index_exn env index
   | Term_free level -> Value.free level
   | Term_app { func; arg } ->
-    let func = eval env func in
+    let func = eval_value env func in
     let arg = eval_arg env arg in
     app_value func arg
   | Term_fun { name; param_props; body } ->
     Value_fun { name; param_props; body = { env; body } }
   | Term_proj { strukt; field } ->
-    let strukt = eval env strukt in
+    let strukt = eval_value env strukt in
     proj_value strukt field
   | Term_struct { field_impls } ->
     let field_impls = List.map field_impls ~f:(eval_field_impl env) in
     Value_struct { field_impls }
   | Term_sing_in e ->
-    let e = eval env e in
+    let e = eval_value env e in
     Value_sing_in e
   | Term_sing_out e ->
-    let e = eval env e in
+    let e = eval_value env e in
     out_value e
   | Term_let { name = _; rhs; body } ->
-    let rhs = eval env rhs in
-    eval (Seq.push rhs env) body
+    let rhs = eval_value env rhs in
+    eval_value (Seq.push rhs env) body
   | Term_ignore -> Value_ignore
   | Term_encode_ty { ty; props } ->
     let ty = eval_ty env ty in
@@ -33,15 +33,15 @@ let rec eval (env : env) (e : term) : value =
 
 and eval_ty (env : env) (ty : term_ty) : ty =
   match ty with
-  | Term_ty_decode { e; props } ->
-    let e = eval env e in
-    decode_value e props
+  | Term_ty_decode e ->
+    let e = eval_value env e in
+    decode_value e
   | Term_ty_fun { name; param_ty; param_props; body_ty } ->
     let param_ty = eval_ty env param_ty in
     Ty_fun { name; param_props; param_ty; body_ty = { env; body = body_ty } }
   | Term_ty_struct { field_specs } -> Ty_struct { env; field_specs }
   | Term_ty_sing { identity; ty } ->
-    let identity = eval env identity in
+    let identity = eval_value env identity in
     let ty = eval_ty env ty in
     Ty_sing { identity; ty }
   | Term_ty_pack ty ->
@@ -51,17 +51,17 @@ and eval_ty (env : env) (ty : term_ty) : ty =
   | Term_ty_universe props -> Ty_universe props
 
 and eval_field_impl env ({ name; e } : term_field_impl) : value_field_impl =
-  let e = eval env e in
+  let e = eval_value env e in
   { name; e }
 
 and eval_arg env ({ e; param_props } : term_arg) : value_arg =
-  let e = eval env e in
+  let e = eval_value env e in
   { e; param_props }
 
-and decode_value (ty : value) (props : Ty_props.t) : ty =
+and decode_value (ty : value) : ty =
   match ty with
   | Value_encode_ty { ty; props = _ } -> ty
-  | Value_neutral e -> Ty_decode { e; props }
+  | Value_neutral e -> Ty_decode e
   | _ -> failwith "Expected a type code"
 
 and app_value (func : value) (arg : value_arg) =
@@ -91,19 +91,19 @@ and proj_struct (strukt : value_struct) (field : field_loc) =
   field_impl.e
 
 and app_fun (abs : value_fun) (arg : value_arg) = eval_closure1 abs.body arg.e
-and eval_closure1 closure arg = eval (Seq.push arg closure.env) closure.body
+and eval_closure1 closure arg = eval_value (Seq.push arg closure.env) closure.body
 
 and eval_ty_closure1 (closure : ty_closure) arg =
   eval_ty (Seq.push arg closure.env) closure.body
 
-and whnf ty_env (e : value) : value =
+and whnf_value ty_env (e : value) : value =
   match e with
   | Value_neutral neutral -> whnf_neutral ty_env neutral
   | Value_ignore | Value_struct _ | Value_fun _ | Value_sing_in _ | Value_encode_ty _ -> e
 
 and whnf_ty (ty_env : ty_env) (ty : ty) : ty =
   match ty with
-  | Ty_decode { e; props } -> whnf_ty ty_env (decode_value (whnf_neutral ty_env e) props)
+  | Ty_decode e -> whnf_ty ty_env (decode_value (whnf_neutral ty_env e))
   | Ty_universe _ | Ty_sing _ | Ty_struct _ | Ty_fun _ | Ty_core _ | Ty_pack _ -> ty
 
 and app_fun_ty (func_ty : ty_fun) (arg : value_arg) : ty =
@@ -131,19 +131,18 @@ and whnf_neutral (ty_env : ty_env) (e : neutral) : value =
     Bwd.fold_left
       e.spine
       ~init:
-        ( Value_neutral { head = e.head; spine = Empty }
-        , Seq.get_exn ty_env (Index.of_level (Seq.length ty_env) e.head).index )
-      ~f:(fun (e, ty) elim ->
-        match elim with
-        | App arg -> whnf ty_env (app_value e arg), app_ty ty_env ty arg
-        | Proj field -> whnf ty_env (proj_value e field), proj_ty ty_env e ty field
+        (Value_neutral { head = e.head; spine = Empty }, Seq.get_level_exn ty_env e.head)
+      ~f:(fun (e, ty) frame ->
+        match frame with
+        | App arg -> whnf_value ty_env (app_value e arg), app_ty ty_env ty arg
+        | Proj field -> whnf_value ty_env (proj_value e field), proj_ty ty_env e ty field
         | Out ->
           let ty =
             match whnf_ty ty_env ty with
             | Ty_sing sing -> sing
             | _ -> failwith "Expected singleton type"
           in
-          whnf ty_env ty.identity, ty.ty)
+          whnf_value ty_env ty.identity, ty.ty)
   in
   e
 ;;
@@ -217,12 +216,12 @@ and quote_ty context_size (ty : ty) : term_ty =
       List.fold_map
         field_specs
         ~init:(context_size, env, Close.empty)
-        ~f:(fun (context_size, closure_env, c) { name; ty } ->
+        ~f:(fun (context_size, closure_env, c) { name; ty; relevancy } ->
           let ty = eval_ty closure_env ty |> quote_ty context_size |> close_ty c in
           ( ( context_size + 1
             , Seq.push (Value.free_of_size context_size) closure_env
             , Close.add_exn (Level.of_int context_size) Index.zero (Close.lift 1 c) )
-          , ({ name; ty } : term_field_spec) ))
+          , ({ name; ty; relevancy } : term_field_spec) ))
     in
     Term_ty_struct { field_specs }
   | Ty_fun { name; param_props; param_ty; body_ty } ->
@@ -235,9 +234,9 @@ and quote_ty context_size (ty : ty) : term_ty =
     Term_ty_fun { name; param_props; param_ty; body_ty }
   | Ty_core ty -> Term_ty_core ty
   | Ty_pack ty -> Term_ty_pack (quote_ty context_size ty)
-  | Ty_decode { e; props } ->
+  | Ty_decode e ->
     let e = quote_neutral context_size e in
-    Term_ty_decode { e; props }
+    Term_ty_decode e
 
 and quote_neutral context_size (e : neutral) : term =
   Bwd.fold_left e.spine ~init:(Term_free e.head) ~f:(fun e elim ->
@@ -285,17 +284,18 @@ and close_ty_single (level : Level.t) ty =
 
 and close_ty (c : Close.t) (ty : term_ty) : term_ty =
   match ty with
-  | Term_ty_decode { e; props } ->
+  | Term_ty_decode e ->
     let e = close c e in
-    Term_ty_decode { e; props }
+    Term_ty_decode e
   | Term_ty_fun { name; param_ty; param_props; body_ty } ->
     let param_ty = close_ty c param_ty in
     let body_ty = close_ty (Close.lift 1 c) body_ty in
     Term_ty_fun { name; param_props; param_ty; body_ty }
   | Term_ty_struct { field_specs } ->
     let _, field_specs =
-      List.fold_map field_specs ~init:0 ~f:(fun under { name; ty } ->
-        under + 1, ({ name; ty = close_ty (Close.lift under c) ty } : term_field_spec))
+      List.fold_map field_specs ~init:0 ~f:(fun under { name; ty; relevancy } ->
+        ( under + 1
+        , ({ name; ty = close_ty (Close.lift under c) ty; relevancy } : term_field_spec) ))
     in
     Term_ty_struct { field_specs }
   | Term_ty_sing { identity; ty } ->
@@ -335,6 +335,7 @@ module Value = struct
   let proj = proj_value
   let app = app_value
   let out = out_value
+  let decode = decode_value
 end
 
 module Ty = struct

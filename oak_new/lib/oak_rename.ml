@@ -126,9 +126,9 @@ let rec rename_expr st (expr : Surface.expr) : Abstract.expr =
           List.map names ~f:(fun name -> Some name, ty, param_ty.icit, param_ty.relevancy))
     in
     rename_ty_fun st all_params body_ty span
-  | Surface.Expr_proj { mod_e; field; span } ->
-    let mod_e = rename_expr st mod_e in
-    Expr_proj { mod_e; field; span }
+  | Surface.Expr_proj { strukt; field; span } ->
+    let strukt = rename_expr st strukt in
+    Expr_proj { strukt; field; span }
   | Surface.Expr_struct { decls; span } ->
     let names =
       List.filter_map decls ~f:(function
@@ -141,13 +141,13 @@ let rec rename_expr st (expr : Surface.expr) : Abstract.expr =
     else (
       let decls = rename_decls st decls in
       Expr_struct { decls; span })
-  | Surface.Expr_ty_struct { ty_decls; span } ->
-    let names = List.map ty_decls ~f:(fun decl -> decl.name) in
+  | Surface.Expr_ty_struct { field_specs; span } ->
+    let names = List.map field_specs ~f:(fun decl -> decl.name) in
     if check_names_distinct st names ~error_message:"Duplicate variable in signature"
     then Expr_error { span }
     else (
-      let ty_decls = rename_ty_decls st ty_decls in
-      Expr_ty_struct { ty_decls; span })
+      let field_specs = rename_field_specs st field_specs in
+      Expr_ty_struct { field_specs; span })
   | Surface.Expr_block { decls; ret; span } -> rename_block st decls ret span
   | Surface.Expr_literal { literal; span } -> Expr_literal { literal; span }
   | Surface.Expr_core_ty { ty; span } -> Expr_core_ty { ty; span }
@@ -279,10 +279,10 @@ and rename_decls st decls =
       rename_decls st rest
   end
 
-and rename_ty_decls st ty_decls =
-  match ty_decls with
+and rename_field_specs st field_specs =
+  match field_specs with
   | [] -> []
-  | (decl : Surface.ty_decl) :: rest ->
+  | (decl : Surface.field_spec) :: rest ->
     let ty =
       match decl.rhs with
       | None -> rename_expr st decl.ty
@@ -291,10 +291,10 @@ and rename_ty_decls st ty_decls =
         let rhs = rename_expr st rhs in
         Abstract.Expr_ann { e = rhs; ty; span = decl.span }
     in
-    let d : Abstract.expr_ty_decl =
+    let d : Abstract.expr_field_spec =
       { name = decl.name; relevancy = decl.relevancy; ty; span = decl.span }
     in
-    State.with_var st decl.name ~f:(fun () -> d :: rename_ty_decls st rest)
+    State.with_var st decl.name ~f:(fun () -> d :: rename_field_specs st rest)
 ;;
 
 let error_to_diagnostic (source : Source.t) (e : Error.t) : Diagnostic.t =

@@ -262,7 +262,7 @@ let%expect_test "base types" =
           (is_abstract false)
           (rhs
            (Expr_proj
-            (mod_e (Expr_var ((name first) (span ((start 45) (stop 46))))))
+            (strukt (Expr_var ((name first) (span ((start 45) (stop 46))))))
             (field T#first) (span ((start 45) (stop 48)))))
           (span ((start 39) (stop 48)))))))
       (ret (Expr_literal (literal Unit) (span ((start 51) (stop 53)))))
@@ -333,7 +333,7 @@ sig {
   [%expect
     {|
     ((Expr_ty_struct
-      (ty_decls
+      (field_specs
        (((relevancy Relevant) (name ((name x) (span ((start 8) (stop 9)))))
          (ty (Expr_core_ty (ty Bool) (span ((start 12) (stop 13))))) (rhs ())
          (span ((start 6) (stop 13))))
@@ -397,11 +397,11 @@ let%expect_test "paren exprs" =
              (Expr_paren
               (e
                (Expr_proj
-                (mod_e
+                (strukt
                  (Expr_proj
-                  (mod_e
+                  (strukt
                    (Expr_proj
-                    (mod_e (Expr_var ((name x) (span ((start 18) (stop 19))))))
+                    (strukt (Expr_var ((name x) (span ((start 18) (stop 19))))))
                     (field y) (span ((start 18) (stop 21)))))
                   (field z) (span ((start 18) (stop 23)))))
                 (field w) (span ((start 18) (stop 25)))))
@@ -448,11 +448,11 @@ let%expect_test "function application" =
              (Expr_app
               (func
                (Expr_proj
-                (mod_e
+                (strukt
                  (Expr_proj
-                  (mod_e
+                  (strukt
                    (Expr_proj
-                    (mod_e
+                    (strukt
                      (Expr_paren
                       (e
                        (Expr_app
@@ -728,10 +728,10 @@ let%expect_test "chained projections" =
   [%expect
     {|
     ((Expr_proj
-      (mod_e
+      (strukt
        (Expr_proj
-        (mod_e
-         (Expr_proj (mod_e (Expr_var ((name a) (span ((start 0) (stop 1))))))
+        (strukt
+         (Expr_proj (strukt (Expr_var ((name a) (span ((start 0) (stop 1))))))
           (field b) (span ((start 0) (stop 3)))))
         (field c) (span ((start 0) (stop 5)))))
       (field d) (span ((start 0) (stop 7)))))
@@ -1006,7 +1006,7 @@ sig { val T : Type; val U : Type -> Type } where { T = Int; U = List }
     ((Expr_where
       (e
        (Expr_ty_struct
-        (ty_decls
+        (field_specs
          (((relevancy Relevant) (name ((name T) (span ((start 7) (stop 8)))))
            (ty (Expr_universe (size Type) (span ((start 11) (stop 12)))))
            (rhs ()) (span ((start 5) (stop 12))))
@@ -1123,7 +1123,7 @@ sig { val first : Type; val second : Type } where { T = Int; }
     ((Expr_where
       (e
        (Expr_ty_struct
-        (ty_decls
+        (field_specs
          (((relevancy Relevant) (name ((name first) (span ((start 7) (stop 8)))))
            (ty (Expr_universe (size Type) (span ((start 11) (stop 12)))))
            (rhs ()) (span ((start 5) (stop 12))))
@@ -1228,7 +1228,7 @@ sig {
   [%expect
     {|
     ((Expr_ty_struct
-      (ty_decls
+      (field_specs
        (((relevancy Relevant) (name ((name first) (span ((start 8) (stop 9)))))
          (ty (Expr_universe (size Type) (span ((start 12) (stop 13))))) (rhs ())
          (span ((start 6) (stop 13))))
@@ -1264,7 +1264,7 @@ struct {
     |};
   [%expect {|
     ((Expr_ty_struct
-      (ty_decls
+      (field_specs
        (((relevancy Relevant) (name ((name f) (span ((start 8) (stop 9)))))
          (ty
           (Expr_ty_fun
@@ -1379,7 +1379,7 @@ sig {
     |};
   [%expect {|
     ((Expr_ty_struct
-      (ty_decls
+      (field_specs
        (((relevancy Relevant) (name ((name f) (span ((start 8) (stop 9)))))
          (ty
           (Expr_ty_fun

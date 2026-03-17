@@ -59,6 +59,8 @@ type t =
   }
 [@@deriving sexp_of]
 
+let create ?code parts = { code; parts }
+
 let format_part ?code ~files (part : Part.t) =
   let message =
     let kind = Doc.string (Kind.to_string part.kind) in

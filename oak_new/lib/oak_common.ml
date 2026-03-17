@@ -174,4 +174,9 @@ module Relevancy = struct
     | Relevant -> "relevant"
     | Irrelevant -> "irrelevant"
   ;;
+
+  let pp = function
+    | Relevant -> Doc.string "relevant"
+    | Irrelevant -> Doc.string "irrelevant"
+  ;;
 end

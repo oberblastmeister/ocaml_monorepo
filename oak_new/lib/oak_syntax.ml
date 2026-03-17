@@ -22,8 +22,10 @@ module type Seq = sig
   val push : 'a -> 'a t -> 'a t
   val pop : 'a t -> ('a * 'a t) option
   val pop_exn : 'a t -> 'a * 'a t
-  val get : 'a t -> int -> 'a option
-  val get_exn : 'a t -> int -> 'a
+  val get_index : 'a t -> Index.t -> 'a option
+  val get_level : 'a t -> Level.t -> 'a option
+  val get_index_exn : 'a t -> Index.t -> 'a
+  val get_level_exn : 'a t -> Level.t -> 'a
   val iter : 'a t -> f:('a -> unit) -> unit
   val to_list : 'a t -> 'a list
   val of_list : 'a list -> 'a t
@@ -52,12 +54,16 @@ module List_seq = struct
   let to_list xs = xs
   let of_list xs = xs
   let length = List.length
+  let get_index xs (i : Index.t) = get xs i.index
+  let get_level xs (l : Level.t) = get xs (Index.of_level (length xs) l).index
+  let get_index_exn xs (i : Index.t) = get_exn xs i.index
+  let get_level_exn xs (l : Level.t) = get_exn xs (Index.of_level (length xs) l).index
 end
 
 module Seq : Seq = List_seq
 
 module Ty_props = struct
-  type t = { size : Size.t }
+  type t = { size : Size.t } [@@deriving sexp_of]
 end
 
 type term =
@@ -108,13 +114,11 @@ and term_field_impl =
 and term_field_spec =
   { name : Name.t
   ; ty : term_ty
+  ; relevancy : Relevancy.t
   }
 
 and term_ty =
-  | Term_ty_decode of
-      { e : term
-      ; props : Ty_props.t
-      }
+  | Term_ty_decode of term
   | Term_ty_fun of
       { name : Name.t
       ; param_ty : term_ty
@@ -150,10 +154,7 @@ and ty =
   | Ty_fun of ty_fun
   | Ty_core of Core_ty.t
   | Ty_pack of ty
-  | Ty_decode of
-      { e : neutral
-      ; props : Ty_props.t
-      }
+  | Ty_decode of neutral
 
 and ty_sing =
   { identity : value
@@ -218,7 +219,7 @@ and value_field_impl =
   }
 
 and env = value Seq.t
-and ty_env = ty Seq.t
+and ty_env = ty Seq.t [@@deriving sexp_of]
 
 module Value = struct
   type t = value

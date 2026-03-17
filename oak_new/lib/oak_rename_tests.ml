@@ -302,17 +302,17 @@ struct {
             (span ((start 58) (stop 101)))))
           (ty
            (Expr_ty_struct
-            (ty_decls
+            (field_specs
              (((name ((name M) (span ((start 19) (stop 20)))))
                (relevancy Relevant)
                (ty
                 (Expr_ty_struct
-                 (ty_decls
+                 (field_specs
                   (((name ((name M) (span ((start 30) (stop 31)))))
                     (relevancy Relevant)
                     (ty
                      (Expr_ty_struct
-                      (ty_decls
+                      (field_specs
                        (((name ((name T) (span ((start 41) (stop 42)))))
                          (relevancy Relevant)
                          (ty
@@ -329,11 +329,11 @@ struct {
        ((name ((name M2) (span ((start 107) (stop 108))))) (relevancy Relevant)
         (e
          (Expr_proj
-          (mod_e
+          (strukt
            (Expr_proj
-            (mod_e
+            (strukt
              (Expr_proj
-              (mod_e
+              (strukt
                (Expr_var (index ((index 0))) (span ((start 111) (stop 112)))))
               (field M) (span ((start 111) (stop 114)))))
             (field M) (span ((start 111) (stop 116)))))
@@ -472,7 +472,7 @@ struct {
   [%expect
     {|
     (Expr_ty_struct
-     (ty_decls
+     (field_specs
       (((name ((name f) (span ((start 8) (stop 9))))) (relevancy Relevant)
         (ty
          (Expr_ty_fun (name ((name A) (span ((start 15) (stop 16)))))

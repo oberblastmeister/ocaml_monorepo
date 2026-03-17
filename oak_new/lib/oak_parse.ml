@@ -275,14 +275,14 @@ and parse_keyword st (p : Parser.State.t) : Surface.expr =
             (fun p -> Parser.brace p)
             (fun () -> State.error st p "Expected {")
         in
-        let ty_decls =
+        let field_specs =
           List.map block.groups ~f:(fun { Shrub.group; sep = _ } ->
             parse_sig_decl st group)
         in
         let span =
           Span.combine (Span.single keyword_index) (Span.single block.rdelim.index)
         in
-        Surface.Expr_ty_struct { ty_decls; span }
+        Surface.Expr_ty_struct { field_specs; span }
       | "alias" ->
         let _ = Parser.State.next_exn p in
         let e = parse_atom st p in
@@ -381,7 +381,7 @@ and parse_dot_path (p : Parser.State.t) : string list =
      | _ -> error (Error.token "Expected identifier after dot" (Parser.State.curr_pos p)))
   | _ -> []
 
-and parse_sig_decl st (group : Shrub.group) : Surface.ty_decl =
+and parse_sig_decl st (group : Shrub.group) : Surface.field_spec =
   let p = Parser.State.create group in
   match Parser.State.peek p with
   | Some (Token { token = (Ident "val" | Ident "type" as keyword); index = keyword_index }) ->
@@ -591,7 +591,7 @@ and parse_dot_cont st (p : Parser.State.t) (expr : Surface.expr) : Surface.expr 
       st
       p
       (Expr_proj
-         { mod_e = expr
+         { strukt = expr
          ; field = ident
          ; span = Span.combine (Surface.expr_span expr) (Span.single ident_index)
          })

@@ -36,7 +36,7 @@ type expr =
       ; span : Span.t
       }
   | Expr_proj of
-      { mod_e : expr
+      { strukt : expr
       ; field : string
       ; span : Span.t
       }
@@ -45,7 +45,7 @@ type expr =
       ; span : Span.t
       }
   | Expr_ty_struct of
-      { ty_decls : ty_decl list
+      { field_specs : field_spec list
       ; span : Span.t
       }
   | Expr_block of
@@ -134,7 +134,7 @@ and val_decl =
   ; span : Span.t
   }
 
-and ty_decl =
+and field_spec =
   { relevancy : Relevancy.t
   ; name : Name.t
   ; ty : expr
