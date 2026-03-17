@@ -121,6 +121,7 @@ and expr_decl =
   { name : Name.t
   ; relevancy : Relevancy.t
   ; e : expr
+  ; is_abstract : bool
   ; span : Span.t
   }
 
@@ -128,6 +129,7 @@ and expr_field_spec =
   { name : Name.t
   ; relevancy : Relevancy.t
   ; ty : expr
+  ; rhs : expr option
   ; span : Span.t
   }
 [@@deriving sexp_of]

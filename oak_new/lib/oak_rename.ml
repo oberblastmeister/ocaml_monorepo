@@ -263,9 +263,9 @@ and rename_decls st decls =
   | [] -> []
   | (decl : Surface.block_decl) :: rest -> begin
     match decl with
-    | Surface.Block_decl_val { name; ann; rhs; relevancy; span; _ } ->
+    | Surface.Block_decl_val { name; ann; rhs; relevancy; is_abstract; span } ->
       let rhs = rename_rhs st ann rhs span in
-      let d : Abstract.expr_decl = { name; relevancy; e = rhs; span } in
+      let d : Abstract.expr_decl = { name; relevancy; e = rhs; is_abstract; span } in
       State.with_var st name ~f:(fun () -> d :: rename_decls st rest)
     | Surface.Block_decl_bind { span; _ } ->
       State.add_error
@@ -283,16 +283,10 @@ and rename_field_specs st field_specs =
   match field_specs with
   | [] -> []
   | (decl : Surface.field_spec) :: rest ->
-    let ty =
-      match decl.rhs with
-      | None -> rename_expr st decl.ty
-      | Some rhs ->
-        let ty = rename_expr st decl.ty in
-        let rhs = rename_expr st rhs in
-        Abstract.Expr_ann { e = rhs; ty; span = decl.span }
-    in
+    let ty = rename_expr st decl.ty in
+    let rhs = Option.map decl.rhs ~f:(rename_expr st) in
     let d : Abstract.expr_field_spec =
-      { name = decl.name; relevancy = decl.relevancy; ty; span = decl.span }
+      { name = decl.name; relevancy = decl.relevancy; ty; rhs; span = decl.span }
     in
     State.with_var st decl.name ~f:(fun () -> d :: rename_field_specs st rest)
 ;;

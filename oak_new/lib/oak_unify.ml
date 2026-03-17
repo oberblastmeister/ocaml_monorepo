@@ -2,6 +2,7 @@ open Prelude
 open Oak_syntax
 
 open struct
+  module Bwd = Utility.Bwd
   module Spanned = Utility.Spanned
   module Common = Oak_common
   module Name_list = Common.Name_list
@@ -10,7 +11,33 @@ open struct
   module Evaluate = Oak_evaluate
   module Close = Evaluate.Close
   module Infer_ty = Oak_infer_ty
+  module Typed = Oak_typed
 end
+
+let is_id_coe = function
+  | Typed.Id_coe -> true
+  | Typed.Fun_coe _ | Typed.Struct_coe _ -> false
+;;
+
+let mk_fun_coe (arg_coe : Typed.runtime_coe) (ret_coe : Typed.runtime_coe)
+  : Typed.runtime_coe
+  =
+  if is_id_coe arg_coe && is_id_coe ret_coe
+  then Typed.Id_coe
+  else Typed.Fun_coe { arg_coe; ret_coe }
+;;
+
+let mk_struct_coe (field_coes : Typed.runtime_coe list) : Typed.runtime_coe =
+  if List.for_all field_coes ~f:is_id_coe
+  then Typed.Id_coe
+  else Typed.Struct_coe field_coes
+;;
+
+let rec coerce_singleton (cx : Context.t) (e : term) (ty : ty) : term * ty =
+  match Context.whnf_ty cx ty with
+  | Ty_sing { identity = _; ty = kind } -> coerce_singleton cx (Term_sing_out e) kind
+  | ty -> e, ty
+;;
 
 let rec unify_value (cx : Context.t) (e1 : value) (e2 : value) (ty : ty) : unit =
   match Context.whnf_ty cx ty with
@@ -226,4 +253,129 @@ and unify_neutral (cx : Context.t) (e1 : neutral) (e2 : neutral) : unit =
         spine <: frame1, ty)
   in
   ()
+
+and sub (cx : Context.t) (e : term) (ty1 : ty) (ty2 : ty)
+  : term option * Typed.runtime_coe
+  =
+  match Context.whnf_ty cx ty1, Context.whnf_ty cx ty2 with
+  | Ty_universe props1, Ty_universe props2 ->
+    unify_ty_props cx props1 props2;
+    None, Typed.Id_coe
+  | Ty_core ty1, Ty_core ty2 ->
+    if not (Core_ty.equal ty1 ty2)
+    then
+      Context.throw
+        cx
+        [ Diagnostic.Part.create
+            (Doc.string "Base types were not equal: "
+             ^^ Context.pp_ty cx (Ty_core ty1)
+             ^^ Doc.string " != "
+             ^^ Context.pp_ty cx (Ty_core ty2))
+        ];
+    None, Typed.Id_coe
+  | Ty_sing ty1, Ty_sing ty2 ->
+    let e', coe = sub cx (Term_sing_out e) ty1.ty ty2.ty in
+    begin match e' with
+    | None ->
+      unify_value cx ty1.identity ty2.identity ty1.ty;
+      None, coe
+    | Some e' ->
+      unify_value cx (Evaluate.eval_value Seq.empty e') ty2.identity ty2.ty;
+      Some (Term_sing_in e'), coe
+    end
+  | Ty_sing _, _ ->
+    let e, ty1 = coerce_singleton cx e ty1 in
+    let e', coe = sub cx e ty1 ty2 in
+    Some (Option.value ~default:e e'), coe
+  | _, Ty_sing ty2 ->
+    let e', coe = sub cx e ty1 ty2.ty in
+    let e' = Option.value ~default:e e' in
+    unify_value cx (Evaluate.eval_value Seq.empty e') ty2.identity ty2.ty;
+    Some (Term_sing_in e'), coe
+  | Ty_fun ty1, Ty_fun ty2 ->
+    unify_param_props cx ty1.param_props ty2.param_props;
+    let free = Context.next_level cx in
+    let arg_var_value = Context.next_free cx in
+    let cx = Context.bind ty2.name ty2.param_ty cx in
+    let arg_var_term = Context.quote cx arg_var_value in
+    let arg', arg_coe = sub cx arg_var_term ty2.param_ty ty1.param_ty in
+    let arg_term = Option.value ~default:arg_var_term arg' in
+    let arg_value = Evaluate.eval_value Seq.empty arg_term in
+    let app_term =
+      Term_app { func = e; arg = { e = arg_term; param_props = ty1.param_props } }
+    in
+    let body', ret_coe =
+      sub
+        cx
+        app_term
+        (Evaluate.Fun_ty.app ty1 { e = arg_value; param_props = ty1.param_props })
+        (Evaluate.Fun_ty.app ty2 { e = arg_value; param_props = ty2.param_props })
+    in
+    let runtime_coe = mk_fun_coe arg_coe ret_coe in
+    let body_term = Option.value ~default:app_term body' in
+    if Option.is_none arg' && Option.is_none body'
+    then None, Typed.Id_coe
+    else
+      ( Some
+          (Term_fun
+             { name = ty2.name
+             ; param_props = ty2.param_props
+             ; body = Evaluate.close_single free body_term
+             })
+      , runtime_coe )
+  | Ty_struct ty1, Ty_struct ty2 ->
+    let value = Evaluate.eval_value Seq.empty e in
+    let _, ty1_map =
+      List.foldi
+        ty1.field_specs
+        ~init:(ty1.env, String.Map.empty)
+        ~f:(fun index (closure_env, acc) field_spec ->
+          let proj_ty = Evaluate.eval_ty closure_env field_spec.ty in
+          let field_name = field_spec.name.name in
+          let field_loc = ({ name = field_name; index } : field_loc) in
+          let proj_value = Evaluate.Value.proj value field_loc in
+          ( Seq.push proj_value closure_env
+          , Map.set acc ~key:field_name ~data:(field_loc, proj_ty, field_spec.relevancy) ))
+    in
+    let did_coerce, _, field_impls, field_coes =
+      List.fold
+        ty2.field_specs
+        ~init:(false, ty2.env, Bwd.Empty, Bwd.Empty)
+        ~f:(fun (did_coerce, closure_env, field_impls, field_coes) field_spec2 ->
+          let field_name = field_spec2.name.name in
+          let field_loc1, ty1_proj_ty, relevancy1 =
+            match Map.find ty1_map field_name with
+            | Some t -> t
+            | None ->
+              Context.throw
+                cx
+                [ Diagnostic.Part.create
+                    (Doc.string "Struct is not a subtype: could not find field "
+                     ^^ Doc.string field_name)
+                ]
+          in
+          unify_relevancy cx relevancy1 field_spec2.relevancy;
+          let proj_term = Term_proj { strukt = e; field = field_loc1 } in
+          let coerced_proj, field_coe =
+            sub cx proj_term ty1_proj_ty (Evaluate.eval_ty closure_env field_spec2.ty)
+          in
+          let coerced_proj_term = Option.value ~default:proj_term coerced_proj in
+          let did_coerce = did_coerce || Option.is_some coerced_proj in
+          let field_impl : term_field_impl =
+            { name = field_name; e = coerced_proj_term }
+          in
+          ( did_coerce
+          , Seq.push (Evaluate.eval_value Seq.empty coerced_proj_term) closure_env
+          , Bwd.snoc field_impls field_impl
+          , Bwd.snoc field_coes field_coe ))
+    in
+    let field_impls = Bwd.to_list field_impls in
+    let field_coes = Bwd.to_list field_coes in
+    let runtime_coe = mk_struct_coe field_coes in
+    if not did_coerce
+    then None, Typed.Id_coe
+    else Some (Term_struct { field_impls }), runtime_coe
+  | _ ->
+    unify_ty cx ty1 ty2;
+    None, Typed.Id_coe
 ;;

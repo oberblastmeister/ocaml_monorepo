@@ -216,10 +216,10 @@ struct {
      (decls
       (((name ((name x) (span ((start 8) (stop 9))))) (relevancy Relevant)
         (e (Expr_core_ty (ty Bool) (span ((start 12) (stop 13)))))
-        (span ((start 6) (stop 13))))
+        (is_abstract false) (span ((start 6) (stop 13))))
        ((name ((name y) (span ((start 18) (stop 19))))) (relevancy Relevant)
         (e (Expr_var (index ((index 0))) (span ((start 22) (stop 23)))))
-        (span ((start 16) (stop 23))))
+        (is_abstract false) (span ((start 16) (stop 23))))
        ((name ((name f) (span ((start 28) (stop 29))))) (relevancy Relevant)
         (e
          (Expr_ann
@@ -237,14 +237,14 @@ struct {
              (Expr_var (index ((index 2))) (span ((start 36) (stop 37)))))
             (span ((start 32) (stop 37)))))
           (span ((start 26) (stop 47)))))
-        (span ((start 26) (stop 47))))
+        (is_abstract false) (span ((start 26) (stop 47))))
        ((name ((name r) (span ((start 52) (stop 53))))) (relevancy Relevant)
         (e
          (Expr_app
           (func (Expr_var (index ((index 0))) (span ((start 56) (stop 57)))))
           (arg (Expr_core_ty (ty Bool) (span ((start 58) (stop 59)))))
           (icit Expl) (span ((start 56) (stop 59)))))
-        (span ((start 50) (stop 59))))))
+        (is_abstract false) (span ((start 50) (stop 59))))))
      (span ((start 1) (stop 61))))
     |}]
 ;;
@@ -294,11 +294,11 @@ struct {
                          (relevancy Relevant)
                          (e
                           (Expr_core_ty (ty Bool) (span ((start 91) (stop 92)))))
-                         (span ((start 85) (stop 92))))))
+                         (is_abstract false) (span ((start 85) (stop 92))))))
                       (span ((start 80) (stop 95)))))
-                    (span ((start 74) (stop 95))))))
+                    (is_abstract false) (span ((start 74) (stop 95))))))
                  (span ((start 69) (stop 98)))))
-               (span ((start 63) (stop 98))))))
+               (is_abstract false) (span ((start 63) (stop 98))))))
             (span ((start 58) (stop 101)))))
           (ty
            (Expr_ty_struct
@@ -318,14 +318,14 @@ struct {
                          (ty
                           (Expr_universe (size Type)
                            (span ((start 45) (stop 46)))))
-                         (span ((start 39) (stop 46))))))
+                         (rhs ()) (span ((start 39) (stop 46))))))
                       (span ((start 34) (stop 49)))))
-                    (span ((start 28) (stop 49))))))
+                    (rhs ()) (span ((start 28) (stop 49))))))
                  (span ((start 23) (stop 52)))))
-               (span ((start 17) (stop 52))))))
+               (rhs ()) (span ((start 17) (stop 52))))))
             (span ((start 12) (stop 55)))))
           (span ((start 6) (stop 101)))))
-        (span ((start 6) (stop 101))))
+        (is_abstract false) (span ((start 6) (stop 101))))
        ((name ((name M2) (span ((start 107) (stop 108))))) (relevancy Relevant)
         (e
          (Expr_proj
@@ -338,7 +338,7 @@ struct {
               (field M) (span ((start 111) (stop 114)))))
             (field M) (span ((start 111) (stop 116)))))
           (field T) (span ((start 111) (stop 118)))))
-        (span ((start 105) (stop 118))))))
+        (is_abstract false) (span ((start 105) (stop 118))))))
      (span ((start 1) (stop 120))))
     |}]
 ;;
@@ -487,12 +487,10 @@ struct {
              (Expr_var (index ((index 1))) (span ((start 28) (stop 29)))))
             (span ((start 13) (stop 29)))))
           (span ((start 13) (stop 29)))))
-        (span ((start 6) (stop 29))))
+        (rhs ()) (span ((start 6) (stop 29))))
        ((name ((name T) (span ((start 34) (stop 35))))) (relevancy Irrelevant)
-        (ty
-         (Expr_ann (e (Expr_core_ty (ty Int) (span ((start 42) (stop 43)))))
-          (ty (Expr_universe (size Type) (span ((start 38) (stop 39)))))
-          (span ((start 32) (stop 43)))))
+        (ty (Expr_universe (size Type) (span ((start 38) (stop 39)))))
+        (rhs ((Expr_core_ty (ty Int) (span ((start 42) (stop 43))))))
         (span ((start 32) (stop 43))))))
      (span ((start 1) (stop 45))))
     (Expr_struct
@@ -508,14 +506,14 @@ struct {
             (body (Expr_var (index ((index 1))) (span ((start 30) (stop 31)))))
             (span ((start 12) (stop 31)))))
           (span ((start 12) (stop 31)))))
-        (span ((start 6) (stop 31))))
+        (is_abstract false) (span ((start 6) (stop 31))))
        ((name ((name T) (span ((start 36) (stop 37))))) (relevancy Irrelevant)
         (e
          (Expr_app
           (func (Expr_var (index ((index 0))) (span ((start 40) (stop 41)))))
           (arg (Expr_core_ty (ty Int) (span ((start 43) (stop 44))))) (icit Impl)
           (span ((start 40) (stop 44)))))
-        (span ((start 34) (stop 44))))))
+        (is_abstract false) (span ((start 34) (stop 44))))))
      (span ((start 1) (stop 47))))
     |}]
 ;;

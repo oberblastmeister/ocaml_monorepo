@@ -231,6 +231,7 @@ module Expr = struct
     | Expr_error { ann; _ }
     | Expr_rec { ann; _ }
     | Expr_where { ann; _ }
+    | Expr_coe { ann; _ }
     | Expr_encode_ty { ann; _ } -> ann
   ;;
 

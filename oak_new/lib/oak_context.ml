@@ -46,6 +46,7 @@ let next_free cx = Value.free (Level.of_int (size cx))
 let next_level cx = Level.of_int (size cx)
 let close_single cx body = Evaluate.close_single (next_level cx) body
 let quote (cx : t) e = Evaluate.quote (Seq.length cx.ty_env) e
+let quote_ty (cx : t) ty = Evaluate.quote_ty (Seq.length cx.ty_env) ty
 let whnf_value (cx : t) e = Evaluate.whnf_value cx.ty_env e
 let whnf_ty (cx : t) e = Evaluate.whnf_ty cx.ty_env e
 let whnf_neutral cx e = Evaluate.whnf_neutral cx.ty_env e
