@@ -152,7 +152,15 @@ and unify_ty (cx : Context.t) (ty1 : ty) (ty2 : ty) =
   | Ty_decode ty1, Ty_decode ty2 ->
     (* both ty1 and ty2 are whnf, or otherwise the decode is not whnf *)
     unify_neutral cx ty1 ty2
-  | _, _ -> failwith ""
+  | _, _ ->
+    Context.throw
+      cx
+      [ Diagnostic.Part.create
+          (Doc.string "Types were not equal: "
+           ^^ Context.pp_ty cx ty1
+           ^^ Doc.string " != "
+           ^^ Context.pp_ty cx ty2)
+      ]
 
 and unify_param_props (cx : Context.t) (props1 : param_props) (props2 : param_props) =
   if not (Icit.equal props1.icit props2.icit)

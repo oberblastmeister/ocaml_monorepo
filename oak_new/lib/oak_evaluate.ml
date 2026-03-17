@@ -103,7 +103,12 @@ and whnf_value ty_env (e : value) : value =
 
 and whnf_ty (ty_env : ty_env) (ty : ty) : ty =
   match ty with
-  | Ty_decode e -> whnf_ty ty_env (decode_value (whnf_neutral ty_env e))
+  | Ty_decode e ->
+    begin match whnf_neutral ty_env e with
+    | Value_encode_ty { ty; props = _ } -> whnf_ty ty_env ty
+    | Value_neutral e -> Ty_decode e
+    | _ -> failwith "Expected a type code"
+    end
   | Ty_universe _ | Ty_sing _ | Ty_struct _ | Ty_fun _ | Ty_core _ | Ty_pack _ -> ty
 
 and app_fun_ty (func_ty : ty_fun) (arg : value_arg) : ty =
@@ -202,7 +207,9 @@ let rec quote context_size (e : value) : term =
     Term_fun { name; body; param_props }
   | Value_sing_in e -> Term_sing_in (quote context_size e)
   | Value_neutral e -> quote_neutral context_size e
-  | Value_encode_ty _ -> failwith ""
+  | Value_encode_ty { ty; props } ->
+    let ty = quote_ty context_size ty in
+    Term_encode_ty { ty; props }
 
 and quote_ty context_size (ty : ty) : term_ty =
   match ty with

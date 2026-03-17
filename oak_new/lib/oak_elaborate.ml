@@ -562,3 +562,10 @@ and check_universe (cx : Context.t) (ty : Abstract.expr) : Typed.ty =
           props
     }
 ;;
+
+let infer source e =
+  let cx = Context.create source in
+  match infer cx e with
+  | typed -> Ok typed
+  | exception Context.Error diagnostic -> Error diagnostic
+;;
