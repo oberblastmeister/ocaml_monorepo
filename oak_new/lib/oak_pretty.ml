@@ -41,6 +41,19 @@ struct
        ^^ Doc.char '}')
   ;;
 
+  let args docs =
+    Doc.group
+      (Doc.char '('
+       ^^ Doc.indent
+            2
+            (Doc.break0
+             ^^ Doc.concat
+                  docs
+                  ~sep:(Doc.choice ~flat:(Doc.string ", ") ~expanded:Doc.newline))
+       ^^ Doc.break0
+       ^^ Doc.char ')')
+  ;;
+
   let is_spine_atom (spine : Syntax.spine) =
     match spine with
     | Empty | Snoc (_, (Proj _ | Out)) -> true
@@ -97,7 +110,7 @@ struct
            ^^ Doc.string "="
            ^^ Doc.indent 2 (Doc.break1 ^^ pp_value names e)))
     in
-    Doc.group (Doc.string "struct" ^^ Doc.space ^^ block decls)
+    Doc.group (Doc.string "struct" ^^ Doc.space ^^ args decls)
 
   and pp_ty_struct names ({ env; field_specs } : Syntax.ty_struct) =
     let _, decls =

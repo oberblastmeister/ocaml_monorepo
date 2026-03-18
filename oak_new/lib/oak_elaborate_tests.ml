@@ -169,7 +169,7 @@ struct {
   } = struct (val y = #t, val T)
 }
     |};
-  [%expect {| sig { val T = Bool; val x = struct { val y = ignore; val T = T } } |}]
+  [%expect {| sig { val T = Bool; val x = struct (val y = ignore, val T = T) } |}]
 ;;
 
 let%expect_test "field reordering" =
@@ -266,7 +266,7 @@ struct {
   val x : sig { val f = f } = struct { val f : Type -> Type = fun x -> f x }
 }
     |};
-  [%expect {| sig { val f = fun x -> Unit; val x = struct { val f = fun x -> f x } } |}]
+  [%expect {| sig { val f = fun x -> Unit; val x = struct (val f = fun x -> f x) } |}]
 ;;
 
 let%expect_test "eta laws 2" =
@@ -276,22 +276,28 @@ struct {
   val f : Type -> Type = fun x -> Unit
   val x : sig { val f = f } = struct { val f : Type -> Type = fun x -> f x }
   val y : sig { val f = fun (x : Type) -> f x } = struct { val f = f }
+  val S = sig { val T : Type; val U : Type -> Type; val x : T }
+  val m : S = struct {
+    val T : Type = Unit
+    val U : Type -> Type = fun (x : Type) -> Unit
+    val x : T = ()
+  }
+  val z1 : sig { val v = m } = struct { val v : S = struct { val T = m.T; val U = m.U; val x = m.x } }
+  val z3 : sig { val v = m } = struct { val v = m }
+  val z5 : sig { val v = m } = struct { val v : S = struct { val T = m.T; val U = fun (x : Type) -> m.U x; val x = m.x } }
 }
 |};
   [%expect
-    {| sig { val f = fun x -> Unit; val x = struct { val f = fun x -> f x }; val y = struct { val f = f } } |}]
+    {|
+    sig {
+      val f = fun x -> Unit
+      val x = struct (val f = fun x -> f x)
+      val y = struct (val f = f)
+      val S = sig { val T : Type; val U : Type -> Type; val x : T }
+      val m = struct (val T = Unit, val U = fun x -> Unit, val x = ignore)
+      val z1 = struct (val v = struct (val T = m.T, val U = m.U, val x = m.x))
+      val z3 = struct (val v = m)
+      val z5 = struct (val v = struct (val T = m.T, val U = fun x -> m.U x, val x = m.x))
+    }
+    |}]
 ;;
-
-(* 
-let y : (= fun (x : Type) -> f x) = f
-let S := sig { let T : Type; let U : Type -> Type; let x : T }
-let m : S = mod {
-  let T := Unit
-  let U := fun (x : Type) -> Unit
-  let x : T = ()
-} 
-let z1 : (= m) = mod { let T = m.T; let U = m.U; let x = m.x }
-let z2 : (= m : sig { let T : Type }) = mod { let T = m.T; let U = Unit }
-let z3 : (= m : sig { let T : Type }) = m
-let z4 : (= mod { let T = m.T; let U = m.U; let x = m.x } : S) = m
-let z5 : (= m) = mod { let T = m.T; let U = fun (x : Type) -> m.U x; let x = m.x } *)
