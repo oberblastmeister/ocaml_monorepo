@@ -9,8 +9,8 @@ let rec eval_value (env : env) (e : term) : value =
     let func = eval_value env func in
     let arg = eval_arg env arg in
     app_value func arg
-  | Term_fun { name; param_props; body } ->
-    Value_fun { name; param_props; body = { env; body } }
+  | Term_fun { name; param_modifiers; body } ->
+    Value_fun { name; param_modifiers; body = { env; body } }
   | Term_proj { strukt; field } ->
     let strukt = eval_value env strukt in
     proj_value strukt field
@@ -36,9 +36,9 @@ and eval_ty (env : env) (ty : term_ty) : ty =
   | Term_ty_decode e ->
     let e = eval_value env e in
     decode_value e
-  | Term_ty_fun { name; param_ty; param_props; body_ty } ->
+  | Term_ty_fun { name; param_ty; param_modifiers; body_ty } ->
     let param_ty = eval_ty env param_ty in
-    Ty_fun { name; param_props; param_ty; body_ty = { env; body = body_ty } }
+    Ty_fun { name; param_modifiers; param_ty; body_ty = { env; body = body_ty } }
   | Term_ty_struct { field_specs } -> Ty_struct { env; field_specs }
   | Term_ty_sing { identity; ty } ->
     let identity = eval_value env identity in
@@ -54,9 +54,9 @@ and eval_field_impl env ({ name; e } : term_field_impl) : value_field_impl =
   let e = eval_value env e in
   { name; e }
 
-and eval_arg env ({ e; param_props } : term_arg) : value_arg =
+and eval_arg env ({ e; param_modifiers } : term_arg) : value_arg =
   let e = eval_value env e in
-  { e; param_props }
+  { e; param_modifiers }
 
 and decode_value (ty : value) : ty =
   match ty with
@@ -198,13 +198,13 @@ let rec quote context_size (e : value) : term =
   | Value_struct { field_impls } ->
     let field_impls = List.map field_impls ~f:(quote_field_impl context_size) in
     Term_struct { field_impls }
-  | Value_fun { name; body; param_props } ->
+  | Value_fun { name; body; param_modifiers } ->
     let body =
       eval_closure1 body (Value.free_of_size context_size)
       |> quote (context_size + 1)
       |> close_single (Level.of_int context_size)
     in
-    Term_fun { name; body; param_props }
+    Term_fun { name; body; param_modifiers }
   | Value_sing_in e -> Term_sing_in (quote context_size e)
   | Value_neutral e -> quote_neutral context_size e
   | Value_encode_ty { ty; props } ->
@@ -231,14 +231,14 @@ and quote_ty context_size (ty : ty) : term_ty =
           , ({ name; ty; relevancy } : term_field_spec) ))
     in
     Term_ty_struct { field_specs }
-  | Ty_fun { name; param_props; param_ty; body_ty } ->
+  | Ty_fun { name; param_modifiers; param_ty; body_ty } ->
     let param_ty = quote_ty context_size param_ty in
     let body_ty =
       eval_ty_closure1 body_ty (Value.free_of_size context_size)
       |> quote_ty (context_size + 1)
       |> close_ty_single (Level.of_int context_size)
     in
-    Term_ty_fun { name; param_props; param_ty; body_ty }
+    Term_ty_fun { name; param_modifiers; param_ty; body_ty }
   | Ty_core ty -> Term_ty_core ty
   | Ty_pack ty -> Term_ty_pack (quote_ty context_size ty)
   | Ty_decode e ->
@@ -256,7 +256,7 @@ and quote_neutral context_size (e : neutral) : term =
 
 and quote_arg context_size (arg : value_arg) : term_arg =
   let e = quote context_size arg.e in
-  { e; param_props = arg.param_props }
+  { e; param_modifiers = arg.param_modifiers }
 
 and quote_field_impl (context_size : int) (field_impl : value_field_impl)
   : term_field_impl
@@ -270,8 +270,8 @@ and close (c : Close.t) (e : term) : term =
   | Term_free i ->
     Close.find c i |> Option.value_map ~default:e ~f:(fun v -> Term_bound v)
   | Term_app { func; arg } -> Term_app { func = close c func; arg = close_arg c arg }
-  | Term_fun { name; param_props; body } ->
-    Term_fun { name; param_props; body = close (Close.lift 1 c) body }
+  | Term_fun { name; param_modifiers; body } ->
+    Term_fun { name; param_modifiers; body = close (Close.lift 1 c) body }
   | Term_proj { strukt; field } -> Term_proj { strukt = close c strukt; field }
   | Term_struct { field_impls } ->
     Term_struct { field_impls = List.map field_impls ~f:(close_field_impl c) }
@@ -294,10 +294,10 @@ and close_ty (c : Close.t) (ty : term_ty) : term_ty =
   | Term_ty_decode e ->
     let e = close c e in
     Term_ty_decode e
-  | Term_ty_fun { name; param_ty; param_props; body_ty } ->
+  | Term_ty_fun { name; param_ty; param_modifiers; body_ty } ->
     let param_ty = close_ty c param_ty in
     let body_ty = close_ty (Close.lift 1 c) body_ty in
-    Term_ty_fun { name; param_props; param_ty; body_ty }
+    Term_ty_fun { name; param_modifiers; param_ty; body_ty }
   | Term_ty_struct { field_specs } ->
     let _, field_specs =
       List.fold_map field_specs ~init:0 ~f:(fun under { name; ty; relevancy } ->
@@ -318,8 +318,8 @@ and close_ty (c : Close.t) (ty : term_ty) : term_ty =
 and close_field_impl (c : Close.t) ({ name; e } : term_field_impl) =
   { name; e = close c e }
 
-and close_arg (c : Close.t) ({ e; param_props } : term_arg) =
-  { e = close c e; param_props }
+and close_arg (c : Close.t) ({ e; param_modifiers } : term_arg) =
+  { e = close c e; param_modifiers }
 ;;
 
 module Struct = struct

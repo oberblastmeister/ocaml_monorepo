@@ -64,10 +64,9 @@ struct
       if Config.show_singletons
       then
         Doc.group (Doc.string "in" ^^ Doc.indent 2 (Doc.break1 ^^ pp_value_atom names e))
-      else pp_value_atom names e
+      else pp_value names e
     | Value_struct strukt -> pp_struct names strukt
-    | Value_encode_ty { ty; props = _ } ->
-      Doc.group (Doc.string "Pack" ^^ Doc.break1 ^^ pp_ty_atom names ty)
+    | Value_encode_ty { ty; props = _ } -> pp_ty names ty
 
   and pp_ty (names : Name_list.t) (ty : Syntax.ty) =
     match ty with
@@ -91,7 +90,7 @@ struct
     let decls =
       List.map field_impls ~f:(fun ({ name; e } : Syntax.value_field_impl) ->
         Doc.group
-          (Doc.string "let"
+          (Doc.string "val"
            ^^ Doc.space
            ^^ Doc.string name
            ^^ Doc.space
@@ -109,13 +108,23 @@ struct
           let ty = Evaluate.eval_ty closure_env field_spec.ty in
           let name = field_spec.name.name in
           let doc =
-            Doc.group
-              (Doc.string "let"
-               ^^ Doc.space
-               ^^ Doc.string name
-               ^^ Doc.space
-               ^^ Doc.string ":"
-               ^^ Doc.indent 2 (Doc.break1 ^^ pp_ty names ty))
+            match ty with
+            | Ty_sing { identity; ty = _ } ->
+              Doc.group
+                (Doc.string "val"
+                 ^^ Doc.space
+                 ^^ Doc.string name
+                 ^^ Doc.space
+                 ^^ Doc.string "="
+                 ^^ Doc.indent 2 (Doc.break1 ^^ pp_value names identity))
+            | _ ->
+              Doc.group
+                (Doc.string "val"
+                 ^^ Doc.space
+                 ^^ Doc.string name
+                 ^^ Doc.space
+                 ^^ Doc.string ":"
+                 ^^ Doc.indent 2 (Doc.break1 ^^ pp_ty names ty))
           in
           let level = Name_list.next_level names in
           let names = Name_list.push name names in
@@ -127,7 +136,7 @@ struct
   and collect_fun_params
         names
         (docs : Doc.t list)
-        ({ name; body; param_props = _ } : Syntax.value_fun)
+        ({ name; body; param_modifiers = _ } : Syntax.value_fun)
     =
     let level = Name_list.next_level names in
     let arg = Syntax.Value.free level in
@@ -141,7 +150,7 @@ struct
   and collect_ty_fun_params
         names
         acc_params
-        ({ name; param_ty; param_props; _ } as ty_fun : Syntax.ty_fun)
+        ({ name; param_ty; param_modifiers; _ } as ty_fun : Syntax.ty_fun)
     =
     let param_doc =
       if String.equal name.name "_"
@@ -156,7 +165,7 @@ struct
     in
     let arg = Syntax.Value.free (Name_list.next_level names) in
     let names = Name_list.push name.name names in
-    let body_ty = Evaluate.Fun_ty.app ty_fun { e = arg; param_props } in
+    let body_ty = Evaluate.Fun_ty.app ty_fun { e = arg; param_modifiers } in
     match body_ty with
     | Syntax.Ty_fun ty_fun -> collect_ty_fun_params names (param_doc :: acc_params) ty_fun
     | _ ->
@@ -177,7 +186,7 @@ struct
 
   and pp_ty_atom (names : Name_list.t) (ty : Syntax.ty) =
     match ty with
-    | Ty_universe _ | Ty_core _ | Ty_sing _ -> pp_ty names ty
+    | Ty_universe _ | Ty_core _ -> pp_ty names ty
     | Ty_decode e when is_spine_atom e.spine -> pp_ty names ty
     | _ -> parens (pp_ty names ty)
 
@@ -191,7 +200,7 @@ struct
     in
     doc ^^ Doc.break0 ^^ Doc.char '.' ^^ Doc.string field
 
-  and pp_arg names ({ e; param_props = _ } : Syntax.value_arg) = pp_value_atom names e
+  and pp_arg names ({ e; param_modifiers = _ } : Syntax.value_arg) = pp_value_atom names e
 
   and pp_neutral names ({ head; spine } : Syntax.neutral) =
     match spine with

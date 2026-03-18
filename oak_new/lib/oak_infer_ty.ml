@@ -25,7 +25,9 @@ let rec infer_props (ty_env : ty_env) (ty : ty) =
     { size }
   | Ty_fun ty ->
     let arg : value_arg =
-      { e = Value.free_of_size (Seq.length ty_env); param_props = ty.param_props }
+      { e = Value.free_of_size (Seq.length ty_env)
+      ; param_modifiers = ty.param_modifiers
+      }
     in
     let param_ty_props = infer_props ty_env ty.param_ty in
     let body_ty_props =

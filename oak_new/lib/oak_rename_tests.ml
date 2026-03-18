@@ -25,7 +25,7 @@ let%expect_test "variable" =
     {|
     (Expr_fun (name ((name x) (span ((start 3) (stop 4)))))
      (param_ty ((Expr_core_ty (ty Bool) (span ((start 7) (stop 8))))))
-     (relevancy Relevant) (icit Expl)
+     (param_modifiers ((icit Expl) (relevancy Relevant)))
      (body (Expr_var (index ((index 0))) (span ((start 12) (stop 13)))))
      (span ((start 0) (stop 13))))
     |}]
@@ -37,11 +37,11 @@ let%expect_test "multiple params" =
     {|
     (Expr_fun (name ((name x) (span ((start 3) (stop 4)))))
      (param_ty ((Expr_core_ty (ty Bool) (span ((start 7) (stop 8))))))
-     (relevancy Relevant) (icit Expl)
+     (param_modifiers ((icit Expl) (relevancy Relevant)))
      (body
       (Expr_fun (name ((name y) (span ((start 11) (stop 12)))))
        (param_ty ((Expr_core_ty (ty Bool) (span ((start 15) (stop 16))))))
-       (relevancy Relevant) (icit Expl)
+       (param_modifiers ((icit Expl) (relevancy Relevant)))
        (body (Expr_var (index ((index 0))) (span ((start 20) (stop 21)))))
        (span ((start 0) (stop 21)))))
      (span ((start 0) (stop 21))))
@@ -66,7 +66,7 @@ let%expect_test "function type" =
     {|
     (Expr_ty_fun (name ((name _) (span ((start 0) (stop 5)))))
      (param_ty (Expr_core_ty (ty Bool) (span ((start 0) (stop 1)))))
-     (relevancy Relevant) (icit Expl)
+     (param_modifiers ((icit Expl) (relevancy Relevant)))
      (body_ty (Expr_core_ty (ty Bool) (span ((start 4) (stop 5)))))
      (span ((start 0) (stop 5))))
     |}]
@@ -84,7 +84,7 @@ fun (x : Bool) -> {
     {|
     (Expr_fun (name ((name x) (span ((start 4) (stop 5)))))
      (param_ty ((Expr_core_ty (ty Bool) (span ((start 8) (stop 9))))))
-     (relevancy Relevant) (icit Expl)
+     (param_modifiers ((icit Expl) (relevancy Relevant)))
      (body
       (Expr_let (name ((name y) (span ((start 18) (stop 19)))))
        (rhs
@@ -110,16 +110,17 @@ let%expect_test "application" =
     {|
     (Expr_fun (name ((name f) (span ((start 3) (stop 4)))))
      (param_ty ((Expr_core_ty (ty Bool) (span ((start 7) (stop 8))))))
-     (relevancy Relevant) (icit Expl)
+     (param_modifiers ((icit Expl) (relevancy Relevant)))
      (body
       (Expr_fun (name ((name x) (span ((start 11) (stop 12)))))
        (param_ty ((Expr_core_ty (ty Bool) (span ((start 15) (stop 16))))))
-       (relevancy Relevant) (icit Expl)
+       (param_modifiers ((icit Expl) (relevancy Relevant)))
        (body
         (Expr_app
          (func (Expr_var (index ((index 1))) (span ((start 20) (stop 21)))))
          (arg (Expr_var (index ((index 0))) (span ((start 22) (stop 23)))))
-         (icit Expl) (span ((start 20) (stop 23)))))
+         (param_modifiers ((icit Expl) (relevancy Relevant)))
+         (span ((start 20) (stop 23)))))
        (span ((start 0) (stop 23)))))
      (span ((start 0) (stop 23))))
     |}]
@@ -139,7 +140,7 @@ fun (x : Bool) -> {
     {|
     (Expr_fun (name ((name x) (span ((start 4) (stop 5)))))
      (param_ty ((Expr_core_ty (ty Bool) (span ((start 8) (stop 9))))))
-     (relevancy Relevant) (icit Expl)
+     (param_modifiers ((icit Expl) (relevancy Relevant)))
      (body
       (Expr_let (name ((name y) (span ((start 18) (stop 19)))))
        (rhs
@@ -225,14 +226,14 @@ struct {
          (Expr_ann
           (e
            (Expr_fun (name ((name z) (span ((start 42) (stop 43)))))
-            (param_ty ()) (relevancy Relevant) (icit Expl)
+            (param_ty ()) (param_modifiers ((icit Expl) (relevancy Relevant)))
             (body (Expr_var (index ((index 0))) (span ((start 46) (stop 47)))))
             (span ((start 40) (stop 47)))))
           (ty
            (Expr_ty_fun (name ((name _) (span ((start 32) (stop 37)))))
             (param_ty
              (Expr_var (index ((index 1))) (span ((start 32) (stop 33)))))
-            (relevancy Relevant) (icit Expl)
+            (param_modifiers ((icit Expl) (relevancy Relevant)))
             (body_ty
              (Expr_var (index ((index 2))) (span ((start 36) (stop 37)))))
             (span ((start 32) (stop 37)))))
@@ -243,7 +244,8 @@ struct {
          (Expr_app
           (func (Expr_var (index ((index 0))) (span ((start 56) (stop 57)))))
           (arg (Expr_core_ty (ty Bool) (span ((start 58) (stop 59)))))
-          (icit Expl) (span ((start 56) (stop 59)))))
+          (param_modifiers ((icit Expl) (relevancy Relevant)))
+          (span ((start 56) (stop 59)))))
         (is_abstract false) (span ((start 50) (stop 59))))))
      (span ((start 1) (stop 61))))
     |}]
@@ -306,22 +308,22 @@ struct {
              (((name ((name M) (span ((start 19) (stop 20)))))
                (relevancy Relevant)
                (ty
-                (Expr_ty_struct
-                 (field_specs
-                  (((name ((name M) (span ((start 30) (stop 31)))))
-                    (relevancy Relevant)
-                    (ty
-                     (Expr_ty_struct
-                      (field_specs
-                       (((name ((name T) (span ((start 41) (stop 42)))))
-                         (relevancy Relevant)
-                         (ty
-                          (Expr_universe (size Type)
-                           (span ((start 45) (stop 46)))))
-                         (rhs ()) (span ((start 39) (stop 46))))))
-                      (span ((start 34) (stop 49)))))
-                    (rhs ()) (span ((start 28) (stop 49))))))
-                 (span ((start 23) (stop 52)))))
+                ((Expr_ty_struct
+                  (field_specs
+                   (((name ((name M) (span ((start 30) (stop 31)))))
+                     (relevancy Relevant)
+                     (ty
+                      ((Expr_ty_struct
+                        (field_specs
+                         (((name ((name T) (span ((start 41) (stop 42)))))
+                           (relevancy Relevant)
+                           (ty
+                            ((Expr_universe (size Type)
+                              (span ((start 45) (stop 46))))))
+                           (rhs ()) (span ((start 39) (stop 46))))))
+                        (span ((start 34) (stop 49))))))
+                     (rhs ()) (span ((start 28) (stop 49))))))
+                  (span ((start 23) (stop 52))))))
                (rhs ()) (span ((start 17) (stop 52))))))
             (span ((start 12) (stop 55)))))
           (span ((start 6) (stop 101)))))
@@ -475,21 +477,21 @@ struct {
      (field_specs
       (((name ((name f) (span ((start 8) (stop 9))))) (relevancy Relevant)
         (ty
-         (Expr_ty_fun (name ((name A) (span ((start 15) (stop 16)))))
-          (param_ty (Expr_universe (size Type) (span ((start 19) (stop 20)))))
-          (relevancy Irrelevant) (icit Expl)
-          (body_ty
-           (Expr_ty_fun (name ((name _) (span ((start 13) (stop 29)))))
-            (param_ty
-             (Expr_var (index ((index 0))) (span ((start 24) (stop 25)))))
-            (relevancy Relevant) (icit Expl)
-            (body_ty
-             (Expr_var (index ((index 1))) (span ((start 28) (stop 29)))))
-            (span ((start 13) (stop 29)))))
-          (span ((start 13) (stop 29)))))
+         ((Expr_ty_fun (name ((name A) (span ((start 15) (stop 16)))))
+           (param_ty (Expr_universe (size Type) (span ((start 19) (stop 20)))))
+           (param_modifiers ((icit Expl) (relevancy Irrelevant)))
+           (body_ty
+            (Expr_ty_fun (name ((name _) (span ((start 13) (stop 29)))))
+             (param_ty
+              (Expr_var (index ((index 0))) (span ((start 24) (stop 25)))))
+             (param_modifiers ((icit Expl) (relevancy Relevant)))
+             (body_ty
+              (Expr_var (index ((index 1))) (span ((start 28) (stop 29)))))
+             (span ((start 13) (stop 29)))))
+           (span ((start 13) (stop 29))))))
         (rhs ()) (span ((start 6) (stop 29))))
        ((name ((name T) (span ((start 34) (stop 35))))) (relevancy Irrelevant)
-        (ty (Expr_universe (size Type) (span ((start 38) (stop 39)))))
+        (ty ((Expr_universe (size Type) (span ((start 38) (stop 39))))))
         (rhs ((Expr_core_ty (ty Int) (span ((start 42) (stop 43))))))
         (span ((start 32) (stop 43))))))
      (span ((start 1) (stop 45))))
@@ -499,10 +501,10 @@ struct {
         (e
          (Expr_fun (name ((name A) (span ((start 17) (stop 18)))))
           (param_ty ((Expr_universe (size Type) (span ((start 21) (stop 22))))))
-          (relevancy Irrelevant) (icit Expl)
+          (param_modifiers ((icit Expl) (relevancy Irrelevant)))
           (body
            (Expr_fun (name ((name B) (span ((start 25) (stop 26)))))
-            (param_ty ()) (relevancy Irrelevant) (icit Impl)
+            (param_ty ()) (param_modifiers ((icit Impl) (relevancy Irrelevant)))
             (body (Expr_var (index ((index 1))) (span ((start 30) (stop 31)))))
             (span ((start 12) (stop 31)))))
           (span ((start 12) (stop 31)))))
@@ -511,7 +513,8 @@ struct {
         (e
          (Expr_app
           (func (Expr_var (index ((index 0))) (span ((start 40) (stop 41)))))
-          (arg (Expr_core_ty (ty Int) (span ((start 43) (stop 44))))) (icit Impl)
+          (arg (Expr_core_ty (ty Int) (span ((start 43) (stop 44)))))
+          (param_modifiers ((icit Impl) (relevancy Irrelevant)))
           (span ((start 40) (stop 44)))))
         (is_abstract false) (span ((start 34) (stop 44))))))
      (span ((start 1) (stop 47))))

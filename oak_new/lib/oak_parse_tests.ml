@@ -335,10 +335,10 @@ sig {
     ((Expr_ty_struct
       (field_specs
        (((relevancy Relevant) (name ((name x) (span ((start 8) (stop 9)))))
-         (ty (Expr_core_ty (ty Bool) (span ((start 12) (stop 13))))) (rhs ())
+         (ty ((Expr_core_ty (ty Bool) (span ((start 12) (stop 13)))))) (rhs ())
          (span ((start 6) (stop 13))))
         ((relevancy Relevant) (name ((name y) (span ((start 20) (stop 21)))))
-         (ty (Expr_core_ty (ty Bool) (span ((start 24) (stop 25))))) (rhs ())
+         (ty ((Expr_core_ty (ty Bool) (span ((start 24) (stop 25)))))) (rhs ())
          (span ((start 18) (stop 25))))))
       (span ((start 1) (stop 27)))))
     |}]
@@ -689,11 +689,11 @@ let%expect_test "error: sig missing type" =
   check {|sig { val x }|};
   [%expect
     {|
-    error[E0001]: Expected :
-     --> <input>:1:12
-      |
-    1 | sig { val x }
-      |            ^
+    ((Expr_ty_struct
+      (field_specs
+       (((relevancy Relevant) (name ((name x) (span ((start 6) (stop 7)))))
+         (ty ()) (rhs ()) (span ((start 4) (stop 7))))))
+      (span ((start 0) (stop 9)))))
     |}]
 ;;
 
@@ -1008,17 +1008,17 @@ sig { val T : Type; val U : Type -> Type } where { T = Int; U = List }
        (Expr_ty_struct
         (field_specs
          (((relevancy Relevant) (name ((name T) (span ((start 7) (stop 8)))))
-           (ty (Expr_universe (size Type) (span ((start 11) (stop 12)))))
+           (ty ((Expr_universe (size Type) (span ((start 11) (stop 12))))))
            (rhs ()) (span ((start 5) (stop 12))))
           ((relevancy Relevant) (name ((name U) (span ((start 16) (stop 17)))))
            (ty
-            (Expr_ty_fun
-             (param_tys
-              (((relevancy Relevant) (names ())
-                (ty ((Expr_universe (size Type) (span ((start 20) (stop 21))))))
-                (icit Expl) (span ((start 20) (stop 21))))))
-             (body_ty (Expr_universe (size Type) (span ((start 24) (stop 25)))))
-             (span ((start 20) (stop 25)))))
+            ((Expr_ty_fun
+              (param_tys
+               (((relevancy Relevant) (names ())
+                 (ty ((Expr_universe (size Type) (span ((start 20) (stop 21))))))
+                 (icit Expl) (span ((start 20) (stop 21))))))
+              (body_ty (Expr_universe (size Type) (span ((start 24) (stop 25)))))
+              (span ((start 20) (stop 25))))))
            (rhs ()) (span ((start 14) (stop 25))))))
         (span ((start 1) (stop 27)))))
       (patches
@@ -1125,11 +1125,11 @@ sig { val first : Type; val second : Type } where { T = Int; }
        (Expr_ty_struct
         (field_specs
          (((relevancy Relevant) (name ((name first) (span ((start 7) (stop 8)))))
-           (ty (Expr_universe (size Type) (span ((start 11) (stop 12)))))
+           (ty ((Expr_universe (size Type) (span ((start 11) (stop 12))))))
            (rhs ()) (span ((start 5) (stop 12))))
           ((relevancy Relevant)
            (name ((name second) (span ((start 16) (stop 17)))))
-           (ty (Expr_universe (size Type) (span ((start 20) (stop 21)))))
+           (ty ((Expr_universe (size Type) (span ((start 20) (stop 21))))))
            (rhs ()) (span ((start 14) (stop 21))))))
         (span ((start 1) (stop 23)))))
       (patches
@@ -1230,15 +1230,15 @@ sig {
     ((Expr_ty_struct
       (field_specs
        (((relevancy Relevant) (name ((name first) (span ((start 8) (stop 9)))))
-         (ty (Expr_universe (size Type) (span ((start 12) (stop 13))))) (rhs ())
-         (span ((start 6) (stop 13))))
+         (ty ((Expr_universe (size Type) (span ((start 12) (stop 13))))))
+         (rhs ()) (span ((start 6) (stop 13))))
         ((relevancy Relevant)
          (name ((name second) (span ((start 18) (stop 19)))))
-         (ty (Expr_universe (size Type) (span ((start 22) (stop 23)))))
+         (ty ((Expr_universe (size Type) (span ((start 22) (stop 23))))))
          (rhs ((Expr_core_ty (ty Int) (span ((start 26) (stop 27))))))
          (span ((start 16) (stop 27))))
         ((relevancy Relevant) (name ((name third) (span ((start 32) (stop 33)))))
-         (ty (Expr_universe (size Type) (span ((start 36) (stop 37)))))
+         (ty ((Expr_universe (size Type) (span ((start 36) (stop 37))))))
          (rhs ((Expr_core_ty (ty Bool) (span ((start 40) (stop 41))))))
          (span ((start 30) (stop 41))))))
       (span ((start 1) (stop 43)))))
@@ -1267,70 +1267,70 @@ struct {
       (field_specs
        (((relevancy Relevant) (name ((name f) (span ((start 8) (stop 9)))))
          (ty
-          (Expr_ty_fun
-           (param_tys
-            (((relevancy Irrelevant)
-              (names
-               (((name A) (span ((start 15) (stop 16))))
-                ((name B) (span ((start 17) (stop 18))))))
-              (ty ((Expr_universe (size Type) (span ((start 21) (stop 22))))))
-              (icit Expl) (span ((start 13) (stop 22))))
-             ((relevancy Relevant) (names ())
-              (ty ((Expr_var ((name A) (span ((start 26) (stop 27)))))))
-              (icit Expl) (span ((start 26) (stop 27))))
-             ((relevancy Relevant) (names ())
-              (ty ((Expr_var ((name B) (span ((start 30) (stop 31)))))))
-              (icit Expl) (span ((start 30) (stop 31))))))
-           (body_ty (Expr_var ((name B) (span ((start 34) (stop 35))))))
-           (span ((start 13) (stop 35)))))
+          ((Expr_ty_fun
+            (param_tys
+             (((relevancy Irrelevant)
+               (names
+                (((name A) (span ((start 15) (stop 16))))
+                 ((name B) (span ((start 17) (stop 18))))))
+               (ty ((Expr_universe (size Type) (span ((start 21) (stop 22))))))
+               (icit Expl) (span ((start 13) (stop 22))))
+              ((relevancy Relevant) (names ())
+               (ty ((Expr_var ((name A) (span ((start 26) (stop 27)))))))
+               (icit Expl) (span ((start 26) (stop 27))))
+              ((relevancy Relevant) (names ())
+               (ty ((Expr_var ((name B) (span ((start 30) (stop 31)))))))
+               (icit Expl) (span ((start 30) (stop 31))))))
+            (body_ty (Expr_var ((name B) (span ((start 34) (stop 35))))))
+            (span ((start 13) (stop 35))))))
          (rhs ()) (span ((start 6) (stop 35))))
         ((relevancy Relevant)
          (name ((name second) (span ((start 40) (stop 41)))))
          (ty
-          (Expr_ty_fun
-           (param_tys
-            (((relevancy Irrelevant)
-              (names
-               (((name A) (span ((start 47) (stop 48))))
-                ((name B) (span ((start 49) (stop 50))))))
-              (ty ((Expr_universe (size Type) (span ((start 53) (stop 54))))))
-              (icit Expl) (span ((start 45) (stop 54))))
-             ((relevancy Irrelevant) (names ())
-              (ty ((Expr_var ((name A) (span ((start 60) (stop 61)))))))
-              (icit Expl) (span ((start 60) (stop 61))))
-             ((relevancy Relevant) (names ())
-              (ty ((Expr_var ((name B) (span ((start 64) (stop 65)))))))
-              (icit Expl) (span ((start 64) (stop 65))))))
-           (body_ty (Expr_var ((name B) (span ((start 68) (stop 69))))))
-           (span ((start 45) (stop 69)))))
+          ((Expr_ty_fun
+            (param_tys
+             (((relevancy Irrelevant)
+               (names
+                (((name A) (span ((start 47) (stop 48))))
+                 ((name B) (span ((start 49) (stop 50))))))
+               (ty ((Expr_universe (size Type) (span ((start 53) (stop 54))))))
+               (icit Expl) (span ((start 45) (stop 54))))
+              ((relevancy Irrelevant) (names ())
+               (ty ((Expr_var ((name A) (span ((start 60) (stop 61)))))))
+               (icit Expl) (span ((start 60) (stop 61))))
+              ((relevancy Relevant) (names ())
+               (ty ((Expr_var ((name B) (span ((start 64) (stop 65)))))))
+               (icit Expl) (span ((start 64) (stop 65))))))
+            (body_ty (Expr_var ((name B) (span ((start 68) (stop 69))))))
+            (span ((start 45) (stop 69))))))
          (rhs ()) (span ((start 38) (stop 69))))
         ((relevancy Irrelevant)
          (name ((name third) (span ((start 74) (stop 75)))))
          (ty
-          (Expr_app (func (Expr_var ((name a) (span ((start 76) (stop 77))))))
-           (args
-            (((arg (Expr_var ((name b) (span ((start 78) (stop 79))))))
-              (relevancy Relevant) (icit Expl))
-             ((arg (Expr_var ((name c) (span ((start 80) (stop 81))))))
-              (relevancy Relevant) (icit Expl))))
-           (span ((start 76) (stop 81)))))
+          ((Expr_app (func (Expr_var ((name a) (span ((start 76) (stop 77))))))
+            (args
+             (((arg (Expr_var ((name b) (span ((start 78) (stop 79))))))
+               (relevancy Relevant) (icit Expl))
+              ((arg (Expr_var ((name c) (span ((start 80) (stop 81))))))
+               (relevancy Relevant) (icit Expl))))
+            (span ((start 76) (stop 81))))))
          (rhs ((Expr_core_ty (ty Int) (span ((start 84) (stop 85))))))
          (span ((start 72) (stop 85))))
         ((relevancy Irrelevant)
          (name ((name first) (span ((start 90) (stop 91)))))
-         (ty (Expr_universe (size Type) (span ((start 94) (stop 95)))))
+         (ty ((Expr_universe (size Type) (span ((start 94) (stop 95))))))
          (rhs ((Expr_core_ty (ty Int) (span ((start 98) (stop 99))))))
          (span ((start 88) (stop 99))))
         ((relevancy Irrelevant)
          (name ((name second) (span ((start 104) (stop 105)))))
          (ty
-          (Expr_ty_fun
-           (param_tys
-            (((relevancy Relevant) (names ())
-              (ty ((Expr_universe (size Type) (span ((start 108) (stop 109))))))
-              (icit Expl) (span ((start 108) (stop 109))))))
-           (body_ty (Expr_universe (size Type) (span ((start 112) (stop 113)))))
-           (span ((start 108) (stop 113)))))
+          ((Expr_ty_fun
+            (param_tys
+             (((relevancy Relevant) (names ())
+               (ty ((Expr_universe (size Type) (span ((start 108) (stop 109))))))
+               (icit Expl) (span ((start 108) (stop 109))))))
+            (body_ty (Expr_universe (size Type) (span ((start 112) (stop 113)))))
+            (span ((start 108) (stop 113))))))
          (rhs ()) (span ((start 102) (stop 113))))))
       (span ((start 1) (stop 115)))))
     ((Expr_struct
@@ -1382,26 +1382,26 @@ sig {
       (field_specs
        (((relevancy Relevant) (name ((name f) (span ((start 8) (stop 9)))))
          (ty
-          (Expr_ty_fun
-           (param_tys
-            (((relevancy Irrelevant)
-              (names
-               (((name A) (span ((start 15) (stop 16))))
-                ((name B) (span ((start 17) (stop 18))))))
-              (ty ((Expr_universe (size Type) (span ((start 21) (stop 22))))))
-              (icit Impl) (span ((start 13) (stop 22))))
-             ((relevancy Irrelevant)
-              (names
-               (((name C) (span ((start 27) (stop 28))))
-                ((name D) (span ((start 29) (stop 30))))
-                ((name E) (span ((start 31) (stop 32))))))
-              (ty ()) (icit Impl) (span ((start 27) (stop 32))))))
-           (body_ty (Expr_var ((name A) (span ((start 36) (stop 37))))))
-           (span ((start 13) (stop 37)))))
+          ((Expr_ty_fun
+            (param_tys
+             (((relevancy Irrelevant)
+               (names
+                (((name A) (span ((start 15) (stop 16))))
+                 ((name B) (span ((start 17) (stop 18))))))
+               (ty ((Expr_universe (size Type) (span ((start 21) (stop 22))))))
+               (icit Impl) (span ((start 13) (stop 22))))
+              ((relevancy Irrelevant)
+               (names
+                (((name C) (span ((start 27) (stop 28))))
+                 ((name D) (span ((start 29) (stop 30))))
+                 ((name E) (span ((start 31) (stop 32))))))
+               (ty ()) (icit Impl) (span ((start 27) (stop 32))))))
+            (body_ty (Expr_var ((name A) (span ((start 36) (stop 37))))))
+            (span ((start 13) (stop 37))))))
          (rhs ()) (span ((start 6) (stop 37))))
         ((relevancy Relevant)
          (name ((name another) (span ((start 42) (stop 43)))))
-         (ty (Expr_universe (size Type) (span ((start 46) (stop 47)))))
+         (ty ((Expr_universe (size Type) (span ((start 46) (stop 47))))))
          (rhs
           ((Expr_app (func (Expr_var ((name f) (span ((start 50) (stop 51))))))
             (args

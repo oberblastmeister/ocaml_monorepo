@@ -61,7 +61,7 @@ let rec unify_value (cx : Context.t) (e1 : value) (e2 : value) (ty : ty) : unit 
     ()
   | Ty_fun ty ->
     let var_value = Context.next_free cx in
-    let arg : value_arg = { e = var_value; param_props = ty.param_props } in
+    let arg : value_arg = { e = var_value; param_modifiers = ty.param_modifiers } in
     unify_value
       (Context.bind ty.name ty.param_ty cx)
       (Evaluate.Value.app e1 arg)
@@ -84,8 +84,8 @@ and unify_ty (cx : Context.t) (ty1 : ty) (ty2 : ty) =
     unify_value cx ty1.identity ty2.identity ty1.ty
   | Ty_fun ty1, Ty_fun ty2 ->
     unify_ty cx ty1.param_ty ty2.param_ty;
-    unify_param_props cx ty1.param_props ty2.param_props;
-    let arg = { e = Context.next_free cx; param_props = ty1.param_props } in
+    unify_param_modifiers cx ty1.param_modifiers ty2.param_modifiers;
+    let arg = { e = Context.next_free cx; param_modifiers = ty1.param_modifiers } in
     unify_ty
       (Context.bind ty1.name ty1.param_ty cx)
       (Evaluate.Fun_ty.app ty1 arg)
@@ -162,18 +162,22 @@ and unify_ty (cx : Context.t) (ty1 : ty) (ty2 : ty) =
            ^^ Context.pp_ty cx ty2)
       ]
 
-and unify_param_props (cx : Context.t) (props1 : param_props) (props2 : param_props) =
-  if not (Icit.equal props1.icit props2.icit)
+and unify_param_modifiers
+      (cx : Context.t)
+      (param_modifiers1 : Param_modifiers.t)
+      (param_modifiers2 : Param_modifiers.t)
+  =
+  if not (Icit.equal param_modifiers1.icit param_modifiers2.icit)
   then
     Context.throw
       cx
       [ Diagnostic.Part.create
           (Doc.string "Icitness was not equal: "
-           ^^ Icit.pp props1.icit
+           ^^ Icit.pp param_modifiers1.icit
            ^^ Doc.string " != "
-           ^^ Icit.pp props2.icit)
+           ^^ Icit.pp param_modifiers2.icit)
       ];
-  unify_relevancy cx props1.relevancy props2.relevancy
+  unify_relevancy cx param_modifiers1.relevancy param_modifiers2.relevancy
 
 and unify_relevancy (cx : Context.t) (relevancy1 : Relevancy.t) (relevancy2 : Relevancy.t)
   =
@@ -213,7 +217,7 @@ and unify_neutral (cx : Context.t) (e1 : neutral) (e2 : neutral) : unit =
            ^^ Context.pp_value cx (Value.free e2.head))
       ];
   let spine1 = Bwd.to_list e1.spine in
-  let spine2 = Bwd.to_list e1.spine in
+  let spine2 = Bwd.to_list e2.spine in
   let zipped_spines =
     match List.zip spine1 spine2 with
     | Unequal_lengths ->
@@ -233,9 +237,9 @@ and unify_neutral (cx : Context.t) (e1 : neutral) (e2 : neutral) : unit =
           match frame1, frame2 with
           | Out, _ | _, Out -> failwith "should be whnf"
           | App arg1, App arg2 ->
-            let func_kind = Context.whnf_ty cx ty |> Ty.ty_fun_val_exn in
-            unify_value cx arg1.e arg2.e func_kind.param_ty;
-            Evaluate.Fun_ty.app func_kind arg1
+            let fun_ty = Context.whnf_ty cx ty |> Ty.ty_fun_val_exn in
+            unify_value cx arg1.e arg2.e fun_ty.param_ty;
+            Evaluate.Fun_ty.app fun_ty arg1
           | Proj field1, Proj field2 ->
             if not (field1.index = field2.index)
             then
@@ -262,11 +266,14 @@ and unify_neutral (cx : Context.t) (e1 : neutral) (e2 : neutral) : unit =
   in
   ()
 
+(* TODO: fix this, the runtime_coe is wrong *)
+(* postcondition: if term is None then runtime_coe must be Id_coe *)
 and sub (cx : Context.t) (e : term) (ty1 : ty) (ty2 : ty)
   : term option * Typed.runtime_coe
   =
   match Context.whnf_ty cx ty1, Context.whnf_ty cx ty2 with
   | Ty_universe props1, Ty_universe props2 ->
+    (* TODO: maybe do cumulativity here *)
     unify_ty_props cx props1 props2;
     None, Typed.Id_coe
   | Ty_core ty1, Ty_core ty2 ->
@@ -301,7 +308,7 @@ and sub (cx : Context.t) (e : term) (ty1 : ty) (ty2 : ty)
     unify_value cx (Evaluate.eval_value Seq.empty e') ty2.identity ty2.ty;
     Some (Term_sing_in e'), coe
   | Ty_fun ty1, Ty_fun ty2 ->
-    unify_param_props cx ty1.param_props ty2.param_props;
+    unify_param_modifiers cx ty1.param_modifiers ty2.param_modifiers;
     let free = Context.next_level cx in
     let arg_var_value = Context.next_free cx in
     let cx = Context.bind ty2.name ty2.param_ty cx in
@@ -310,14 +317,14 @@ and sub (cx : Context.t) (e : term) (ty1 : ty) (ty2 : ty)
     let arg_term = Option.value ~default:arg_var_term arg' in
     let arg_value = Evaluate.eval_value Seq.empty arg_term in
     let app_term =
-      Term_app { func = e; arg = { e = arg_term; param_props = ty1.param_props } }
+      Term_app { func = e; arg = { e = arg_term; param_modifiers = ty1.param_modifiers } }
     in
     let body', ret_coe =
       sub
         cx
         app_term
-        (Evaluate.Fun_ty.app ty1 { e = arg_value; param_props = ty1.param_props })
-        (Evaluate.Fun_ty.app ty2 { e = arg_value; param_props = ty2.param_props })
+        (Evaluate.Fun_ty.app ty1 { e = arg_value; param_modifiers = ty1.param_modifiers })
+        (Evaluate.Fun_ty.app ty2 { e = arg_value; param_modifiers = ty2.param_modifiers })
     in
     let runtime_coe = mk_fun_coe arg_coe ret_coe in
     let body_term = Option.value ~default:app_term body' in
@@ -327,7 +334,7 @@ and sub (cx : Context.t) (e : term) (ty1 : ty) (ty2 : ty)
       ( Some
           (Term_fun
              { name = ty2.name
-             ; param_props = ty2.param_props
+             ; param_modifiers = ty2.param_modifiers
              ; body = Evaluate.close_single free body_term
              })
       , runtime_coe )

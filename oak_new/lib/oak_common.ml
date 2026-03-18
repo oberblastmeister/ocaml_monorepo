@@ -64,9 +64,8 @@ end = struct
 
   let to_string = function
     | 0 -> "Type"
-    | 1 -> "Kind"
-    | 2 -> "Sig"
-    | n -> sprintf "Sig%d" (n - 2)
+    | 1 -> "Sig"
+    | _n -> "SIG"
   ;;
 
   let sexp_of_t t = Sexp.Atom (to_string t)
@@ -179,4 +178,12 @@ module Relevancy = struct
     | Relevant -> Doc.string "relevant"
     | Irrelevant -> Doc.string "irrelevant"
   ;;
+end
+
+module Param_modifiers = struct
+  type t =
+    { icit : Icit.t
+    ; relevancy : Relevancy.t
+    }
+  [@@deriving sexp_of]
 end

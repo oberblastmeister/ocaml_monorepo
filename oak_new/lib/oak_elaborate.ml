@@ -18,8 +18,6 @@ open struct
   module Typed = Oak_typed
 end
 
-let placeholder_term = Term_ignore
-
 let expr_ann (cx : Context.t) (span : Span.t) (term : term) (ty : ty) : Typed.expr_ann =
   { span; context = { ty_env = cx.ty_env; name_list = cx.name_list }; ty; term }
 ;;
@@ -101,6 +99,13 @@ let apply_where_patch_stub
   ()
 ;;
 
+let with_elab_context (cx : Context.t) (span : Span.t) (message : string) ~f =
+  Context.with_context
+    cx
+    (Diagnostic.Part.create ~snippet:(Context.snippet cx span) (Doc.string message))
+    ~f
+;;
+
 let rec coerce_singleton cx (e : term) (ty : ty) : term * ty =
   match Context.whnf_ty cx ty with
   | Ty_sing { identity = _; ty = kind } -> coerce_singleton cx (Term_sing_out e) kind
@@ -132,37 +137,36 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
           ~snippet:(Context.snippet cx span)
           (Doc.string "Cannot infer error term")
       ]
-  | Expr_app { func; arg; icit; span } ->
+  | Expr_app { func; arg; param_modifiers; span } ->
     let func = infer cx func in
     let func_ty = extract_fun_ty cx span (Typed.Expr.ty func) in
-    if not (Icit.equal func_ty.param_props.icit icit)
+    if not (Icit.equal func_ty.param_modifiers.icit param_modifiers.icit)
     then
       Context.throw
         cx
         [ Diagnostic.Part.create
             ~snippet:(Context.snippet cx span)
             (Doc.string "Expected "
-             ^^ Icit.pp func_ty.param_props.icit
+             ^^ Icit.pp func_ty.param_modifiers.icit
              ^^ Doc.string " argument, got "
-             ^^ Icit.pp icit
+             ^^ Icit.pp param_modifiers.icit
              ^^ Doc.string " argument")
         ];
     let arg = check cx arg func_ty.param_ty in
     let term_arg : term_arg =
-      { e = Typed.Expr.term arg; param_props = func_ty.param_props }
+      { e = Typed.Expr.term arg; param_modifiers = func_ty.param_modifiers }
     in
     let term = Term_app { func = Typed.Expr.term func; arg = term_arg } in
     let value_arg : value_arg =
-      { e = eval_expr arg; param_props = func_ty.param_props }
+      { e = eval_expr arg; param_modifiers = func_ty.param_modifiers }
     in
     let ty = Evaluate.Fun_ty.app func_ty value_arg in
-    Typed.Expr_app { func; arg; icit; ann = expr_ann cx span term ty }
-  | Expr_fun { name; param_ty = Some param_ty; relevancy; icit; body; span } ->
+    Typed.Expr_app { func; arg; param_modifiers; ann = expr_ann cx span term ty }
+  | Expr_fun { name; param_ty = Some param_ty; param_modifiers; body; span } ->
     let param_ty_typed = check_universe cx param_ty in
     let param_ty = Evaluate.eval_ty Seq.empty (Typed.Ty.term param_ty_typed) in
     let cx' = Context.bind name param_ty cx in
     let body = infer cx' body in
-    let param_props = { icit; relevancy } in
     let body_ty : ty_closure =
       { env = Seq.empty
       ; body =
@@ -173,16 +177,15 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
     let term =
       Term_fun
         { name
-        ; param_props
+        ; param_modifiers
         ; body = Evaluate.close_single (Context.next_level cx) (Typed.Expr.term body)
         }
     in
-    let ty = Ty_fun { name; param_props; param_ty; body_ty } in
+    let ty = Ty_fun { name; param_modifiers; param_ty; body_ty } in
     Typed.Expr_fun
       { name
       ; param_ty = Some param_ty_typed
-      ; relevancy
-      ; icit
+      ; param_modifiers
       ; body
       ; ann = expr_ann cx span term ty
       }
@@ -193,7 +196,7 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
           ~snippet:(Context.snippet cx span)
           (Doc.string "Cannot infer lambda without parameter type annotation")
       ]
-  | Expr_ty_fun { name; param_ty; relevancy; icit; body_ty; span } ->
+  | Expr_ty_fun { name; param_ty; param_modifiers; body_ty; span } ->
     let param_ty_typed = check_universe cx param_ty in
     let param_ty = Evaluate.eval_ty Seq.empty (Typed.Ty.term param_ty_typed) in
     let body_ty_typed = check_universe (Context.bind name param_ty cx) body_ty in
@@ -201,8 +204,7 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
       Typed.Ty_fun
         { name
         ; param_ty = param_ty_typed
-        ; relevancy
-        ; icit
+        ; param_modifiers
         ; body_ty = body_ty_typed
         ; ann =
             ty_ann
@@ -211,7 +213,7 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
               (Term_ty_fun
                  { name
                  ; param_ty = Typed.Ty.term param_ty_typed
-                 ; param_props = { icit; relevancy }
+                 ; param_modifiers
                  ; body_ty =
                      Typed.Ty.term body_ty_typed
                      |> Evaluate.close_ty_single (Context.next_level cx)
@@ -226,10 +228,10 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
     Typed.Expr.of_ty typed_ty
   | Expr_proj { strukt; field; span } ->
     let strukt = infer cx strukt in
-    let strukt_ty = extract_struct_ty cx span (Typed.Expr.ty strukt) in
+    let struct_ty = extract_struct_ty cx span (Typed.Expr.ty strukt) in
     let field_loc =
       match
-        List.find_mapi strukt_ty.field_specs ~f:(fun index field_spec ->
+        List.find_mapi struct_ty.field_specs ~f:(fun index field_spec ->
           if String.equal field_spec.name.name field
           then Some ({ name = field; index } : field_loc)
           else None)
@@ -306,38 +308,53 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
       List.fold
         field_specs
         ~init:(cx, Close.empty, Bwd.Empty, Bwd.Empty, Size.sig_)
-        ~f:
-          (fun
-            (cx_acc, close, typed_field_specs, field_specs, size) abstract_field_spec ->
-          let typed_ty = check_universe cx_acc abstract_field_spec.ty in
-          let ty = Evaluate.eval_ty Seq.empty (Typed.Ty.term typed_ty) in
-          let ty =
-            match abstract_field_spec.rhs with
-            | None -> ty
-            | Some rhs ->
-              let rhs = check cx_acc rhs ty in
+        ~f:(fun (cx_acc, close, typed_field_specs, field_specs, size) field_spec ->
+          let typed_field_ty, typed_rhs, ty =
+            match field_spec.ty, field_spec.rhs with
+            | Some ty, rhs ->
+              let typed_ty = check_universe cx_acc ty in
+              let field_ty = Evaluate.eval_ty Seq.empty (Typed.Ty.term typed_ty) in
+              let typed_rhs, ty =
+                match rhs with
+                | None -> None, field_ty
+                | Some rhs ->
+                  let rhs = check cx_acc rhs field_ty in
+                  let rhs_value = eval_expr rhs in
+                  Some rhs, Ty_sing { identity = rhs_value; ty = field_ty }
+              in
+              Some typed_ty, typed_rhs, ty
+            | None, Some rhs ->
+              let rhs = infer cx_acc rhs in
+              let field_ty = Typed.Expr.ty rhs in
               let rhs_value = eval_expr rhs in
-              Ty_sing { identity = rhs_value; ty }
+              None, Some rhs, Ty_sing { identity = rhs_value; ty = field_ty }
+            | None, None ->
+              failwith "rename should reject signature fields without a type or rhs"
           in
           let typed_field_spec : Typed.field_spec =
-            { name = abstract_field_spec.name
-            ; relevancy = abstract_field_spec.relevancy
-            ; ty = typed_ty
-            ; span = abstract_field_spec.span
+            { name = field_spec.name
+            ; relevancy = field_spec.relevancy
+            ; ty = typed_field_ty
+            ; rhs = typed_rhs
+            ; span = field_spec.span
             }
           in
           let field_spec : term_field_spec =
-            { name = abstract_field_spec.name
+            { name = field_spec.name
             ; ty = Context.quote_ty cx_acc ty |> Evaluate.close_ty close
-            ; relevancy = abstract_field_spec.relevancy
+            ; relevancy = field_spec.relevancy
             }
           in
           let level = Context.next_level cx_acc in
-          ( Context.bind abstract_field_spec.name ty cx_acc
+          ( Context.bind field_spec.name ty cx_acc
           , Close.add_exn level Index.zero (Close.lift 1 close)
           , Bwd.snoc typed_field_specs typed_field_spec
           , Bwd.snoc field_specs field_spec
-          , Size.max size (Typed.Ty.props typed_ty).size ))
+          , Size.max
+              size
+              (match typed_field_ty with
+               | Some typed_ty -> (Typed.Ty.props typed_ty).size
+               | None -> (Infer_ty.infer_props cx_acc.ty_env ty).size) ))
     in
     let typed_field_specs = Bwd.to_list typed_field_specs in
     let field_specs = Bwd.to_list field_specs in
@@ -403,13 +420,10 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
             ~snippet:(Context.snippet cx (Typed.Expr.span body2))
             (Doc.string "The second branch did not have a type in universe Type")
         ];
-    Unify.unify_ty cx (Typed.Expr.ty body1) (Typed.Expr.ty body2);
+    with_elab_context cx span "in the if expression" ~f:(fun () ->
+      Unify.unify_ty cx (Typed.Expr.ty body1) (Typed.Expr.ty body2));
     Typed.Expr_if
-      { cond
-      ; body1
-      ; body2
-      ; ann = expr_ann cx span placeholder_term (Typed.Expr.ty body1)
-      }
+      { cond; body1; body2; ann = expr_ann cx span Term_ignore (Typed.Expr.ty body1) }
   | Expr_ty_pack { ty; span } ->
     let typed_ty = check_universe cx ty in
     let typed_ty =
@@ -423,7 +437,7 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
   | Expr_pack { e; span } ->
     let e = infer cx e in
     let ty = Ty_pack (Typed.Expr.ty e) in
-    Typed.Expr_pack { e; ann = expr_ann cx span placeholder_term ty }
+    Typed.Expr_pack { e; ann = expr_ann cx span Term_ignore ty }
   | Expr_bind { span; _ } ->
     Context.throw
       cx
@@ -433,7 +447,7 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
       ]
   | Expr_literal { literal; span } ->
     let ty = infer_literal_ty cx span literal in
-    Typed.Expr_literal { literal; ann = expr_ann cx span placeholder_term ty }
+    Typed.Expr_literal { literal; ann = expr_ann cx span Term_ignore ty }
   | Expr_rec { decls; span } ->
     let typed_tys, tys =
       List.unzip
@@ -459,7 +473,8 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
         })
     in
     let ty = Ty_struct { env = Seq.empty; field_specs } in
-    Typed.Expr_rec { decls = typed_decls; ann = expr_ann cx span placeholder_term ty }
+    (* Typed.Expr_rec { decls = typed_decls; ann = expr_ann cx span placeholder_term ty } *)
+    failwith ""
   | Expr_where { e; path; rhs; span = _ } ->
     let e =
       match check_universe cx e with
@@ -472,25 +487,35 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
 
 and check (cx : Context.t) (e : Abstract.expr) (ty : ty) : Typed.expr =
   match e with
-  | Expr_error { span } -> Typed.Expr_error { ann = expr_ann cx span placeholder_term ty }
-  | Expr_fun { name; param_ty; relevancy; icit; body; span } ->
+  | Expr_error { span } ->
+    Context.throw
+      cx
+      [ Diagnostic.Part.create
+          ~snippet:(Context.snippet cx span)
+          (Doc.string "Cannot check error term")
+      ]
+  | Expr_fun { name; param_ty; param_modifiers; body; span } ->
     let fun_ty = extract_fun_ty cx span ty in
-    let param_props = { icit; relevancy } in
     Context.with_context
       cx
       (Diagnostic.Part.create
          ~snippet:(Context.snippet cx span)
          (Doc.string "while checking binder"))
-      ~f:(fun () -> Unify.unify_param_props cx fun_ty.param_props param_props);
+      ~f:(fun () -> Unify.unify_param_modifiers cx fun_ty.param_modifiers param_modifiers);
     let param_ty =
       match param_ty with
       | None -> None
       | Some param_ty ->
         let param_ty_typed = check_universe cx param_ty in
-        Unify.unify_ty
+        with_elab_context
           cx
-          (Evaluate.eval_ty Seq.empty (Typed.Ty.term param_ty_typed))
-          fun_ty.param_ty;
+          span
+          "while checking the function parameter annotation"
+          ~f:(fun () ->
+            Unify.unify_ty
+              cx
+              (Evaluate.eval_ty Seq.empty (Typed.Ty.term param_ty_typed))
+              fun_ty.param_ty);
         Some param_ty_typed
     in
     let body =
@@ -499,41 +524,45 @@ and check (cx : Context.t) (e : Abstract.expr) (ty : ty) : Typed.expr =
         body
         (Evaluate.Fun_ty.app
            fun_ty
-           { e = Context.next_free cx; param_props = fun_ty.param_props })
+           { e = Context.next_free cx; param_modifiers = fun_ty.param_modifiers })
     in
     let term =
       Term_fun
         { name
-        ; param_props = fun_ty.param_props
+        ; param_modifiers = fun_ty.param_modifiers
         ; body = Evaluate.close_single (Context.next_level cx) (Typed.Expr.term body)
         }
     in
     Typed.Expr_fun
-      { name; param_ty; relevancy; icit; body; ann = expr_ann cx span term ty }
+      { name; param_ty; param_modifiers; body; ann = expr_ann cx span term ty }
   | Expr_if { cond; body1; body2; span } ->
     let cond = check cx cond (Ty_core Bool) in
     let body1 = check cx body1 ty in
     let body2 = check cx body2 ty in
-    Typed.Expr_if { cond; body1; body2; ann = expr_ann cx span placeholder_term ty }
+    Typed.Expr_if { cond; body1; body2; ann = expr_ann cx span Term_ignore ty }
   | Expr_pack { e; span } ->
     let inner_ty = extract_pack_ty cx span ty in
     let e = check cx e inner_ty in
-    Typed.Expr_pack { e; ann = expr_ann cx span placeholder_term ty }
+    Typed.Expr_pack { e; ann = expr_ann cx span Term_ignore ty }
   | Expr_bind { name; rhs; body; span } ->
     check_ty_ignorable cx ty;
     let rhs = infer cx rhs in
     let rhs_inner_ty = extract_pack_ty cx span (Typed.Expr.ty rhs) in
     let body = check (Context.bind name rhs_inner_ty cx) body ty in
-    Typed.Expr_bind { name; rhs; body; ann = expr_ann cx span placeholder_term ty }
+    (* Typed.Expr_bind { name; rhs; body; ann = expr_ann cx span placeholder_term ty } *)
+    failwith "TODO"
   | _ ->
     let e_typed = infer cx e in
     let term_opt, coe =
-      Unify.sub cx (Typed.Expr.term e_typed) (Typed.Expr.ty e_typed) ty
+      with_elab_context
+        cx
+        (Typed.Expr.span e_typed)
+        "while checking the expression against the expected type"
+        ~f:(fun () -> Unify.sub cx (Typed.Expr.term e_typed) (Typed.Expr.ty e_typed) ty)
     in
-    begin match term_opt, coe with
-    | None, Typed.Id_coe -> e_typed
-    | _ ->
-      let term = Option.value ~default:(Typed.Expr.term e_typed) term_opt in
+    begin match term_opt with
+    | None -> e_typed
+    | Some term ->
       Typed.Expr_coe
         { expr = e_typed; coe; ann = expr_ann cx (Typed.Expr.span e_typed) term ty }
     end

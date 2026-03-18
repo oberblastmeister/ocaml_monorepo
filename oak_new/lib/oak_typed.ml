@@ -14,6 +14,7 @@ module Level = Common.Level
 module Literal = Common.Literal
 module Icit = Common.Icit
 module Relevancy = Common.Relevancy
+module Param_modifiers = Common.Param_modifiers
 module Name_list = Common.Name_list
 
 type context =
@@ -51,14 +52,13 @@ type expr =
   | Expr_app of
       { func : expr
       ; arg : expr
-      ; icit : Icit.t
+      ; param_modifiers : Param_modifiers.t
       ; ann : expr_ann
       }
   | Expr_fun of
       { name : Name.t
       ; param_ty : ty option
-      ; relevancy : Relevancy.t
-      ; icit : Icit.t
+      ; param_modifiers : Param_modifiers.t
       ; body : expr
       ; ann : expr_ann
       }
@@ -128,8 +128,7 @@ and ty =
   | Ty_fun of
       { name : Name.t
       ; param_ty : ty
-      ; relevancy : Relevancy.t
-      ; icit : Icit.t
+      ; param_modifiers : Param_modifiers.t
       ; body_ty : ty
       ; ann : ty_ann
       }
@@ -175,7 +174,8 @@ and expr_decl =
 and field_spec =
   { name : Name.t
   ; relevancy : Relevancy.t
-  ; ty : ty
+  ; ty : ty option
+  ; rhs : expr option
   ; span : Span.t
   }
 [@@deriving sexp_of]

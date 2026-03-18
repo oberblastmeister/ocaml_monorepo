@@ -92,14 +92,17 @@ let rec rename_expr st (expr : Surface.expr) : Abstract.expr =
     Expr_ann { e; ty; span }
   | Surface.Expr_app { func; args; span = _ } ->
     let func = rename_expr st func in
-    List.fold args ~init:func ~f:(fun func ({ arg; icit; _ } : Surface.expr_arg) ->
-      let arg = rename_expr st arg in
-      Abstract.Expr_app
-        { func
-        ; arg
-        ; icit
-        ; span = Span.combine (Abstract.Expr.span func) (Abstract.Expr.span arg)
-        })
+    List.fold
+      args
+      ~init:func
+      ~f:(fun func ({ arg; relevancy; icit } : Surface.expr_arg) ->
+        let arg = rename_expr st arg in
+        Abstract.Expr_app
+          { func
+          ; arg
+          ; param_modifiers = { icit; relevancy }
+          ; span = Span.combine (Abstract.Expr.span func) (Abstract.Expr.span arg)
+          })
   | Surface.Expr_brack { span; _ } ->
     State.add_error st (Spanned.create "Invalid bracket expression" span);
     Expr_error { span }
@@ -215,9 +218,10 @@ and rename_fun st params body span =
   | [] -> rename_expr st body
   | (name, ann, icit, relevancy) :: rest ->
     let param_ty = Option.map ann ~f:(rename_expr st) in
+    let param_modifiers : Common.Param_modifiers.t = { icit; relevancy } in
     State.with_var st name ~f:(fun () ->
       let body = rename_fun st rest body span in
-      Abstract.Expr_fun { name; param_ty; relevancy; icit; body; span })
+      Abstract.Expr_fun { name; param_ty; param_modifiers; body; span })
 
 and rename_ty_fun st params body_ty span =
   match params with
@@ -225,10 +229,11 @@ and rename_ty_fun st params body_ty span =
   | (name, ty, icit, relevancy) :: rest ->
     let param_ty = rename_expr st ty in
     let name = Option.value name ~default:(Name.create "_" span) in
+    let param_modifiers : Common.Param_modifiers.t = { icit; relevancy } in
     let body_ty =
       State.with_var st name ~f:(fun () -> rename_ty_fun st rest body_ty span)
     in
-    Abstract.Expr_ty_fun { name; param_ty; relevancy; icit; body_ty; span }
+    Abstract.Expr_ty_fun { name; param_ty; param_modifiers; body_ty; span }
 
 and rename_block st decls ret span =
   match decls with
@@ -270,12 +275,12 @@ and rename_decls st decls =
     | Surface.Block_decl_bind { span; _ } ->
       State.add_error
         st
-        (Spanned.create "Bind declarations are not allowed at the top level" span);
+        (Spanned.create "Bind declarations are not allowed inside structs" span);
       rename_decls st rest
     | Surface.Block_decl_do { span; _ } ->
       State.add_error
         st
-        (Spanned.create "Expression declarations are not allowed at the top level" span);
+        (Spanned.create "Do declarations are not allowed inside structs" span);
       rename_decls st rest
   end
 
@@ -283,7 +288,14 @@ and rename_field_specs st field_specs =
   match field_specs with
   | [] -> []
   | (decl : Surface.field_spec) :: rest ->
-    let ty = rename_expr st decl.ty in
+    if Option.is_none decl.ty && Option.is_none decl.rhs
+    then
+      State.add_error
+        st
+        (Spanned.create
+           "Signature declarations require either a type annotation or a definition"
+           decl.span);
+    let ty = Option.map decl.ty ~f:(rename_expr st) in
     let rhs = Option.map decl.rhs ~f:(rename_expr st) in
     let d : Abstract.expr_field_spec =
       { name = decl.name; relevancy = decl.relevancy; ty; rhs; span = decl.span }

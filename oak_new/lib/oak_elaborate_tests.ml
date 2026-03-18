@@ -100,7 +100,7 @@ struct {
   val x : T = #t
 }
     |};
-  [%expect {| sig { let T : (= Pack Bool); let x : (= ignore) } |}]
+  [%expect {| sig { val T = Bool; val x = ignore } |}]
 ;;
 
 let%expect_test "struct abstract field" =
@@ -111,7 +111,15 @@ struct {
   val x : T = #t
 }
     |};
-  [%expect {| error: Types were not equal: Bool != T |}]
+  [%expect
+    {|
+    error: Types were not equal: Bool != T
+    error: while checking the expression against the expected type
+     --> <input>:4:15
+      |
+    4 |   val x : T = #t
+      |               ^^
+    |}]
 ;;
 
 let%expect_test "struct annotation subtyping" =
@@ -125,7 +133,7 @@ let%expect_test "struct annotation subtyping" =
   val x : T
 })
     |};
-  [%expect {| sig { let T : Type; let x : T } |}]
+  [%expect {| sig { val T : Type; val x : T } |}]
 ;;
 
 let%expect_test "field reordering" =
@@ -141,5 +149,113 @@ let%expect_test "field reordering" =
   val y : T
 })
     |};
-  [%expect {| sig { let x : Bool; let T : Type; let y : T } |}]
+  [%expect {| sig { val x : Bool; val T : Type; val y : T } |}]
 ;;
+
+let%expect_test "universes" =
+  check
+    {|
+struct {
+  val x = Type
+  val y = Type
+}
+    |};
+  [%expect {| sig { val x = Type; val y = Type } |}];
+  check
+    {|
+struct {
+  val x = Type
+  val y = Type
+  val z = Sig
+}
+    |};
+  [%expect {| sig { val x = Type; val y = Type; val z = Sig } |}];
+  check
+    {|
+struct {
+  val S1 = sig {
+    val x : Type = Int
+    val y : Type = Int
+  }
+  
+  val S2 = sig {
+    val z : Sig = Type
+    val w : Sig
+    val x = sig {
+      val x : Type
+      val z = x
+    }
+  }
+}
+    |};
+  [%expect
+    {|
+    sig {
+      val S1 = sig { val x = Int; val y = Int }
+      val S2 = sig { val z = Type; val w : Sig; val x = sig { val x : Type; val z = x } }
+    }
+    |}];
+  check
+    {|
+struct {
+  val S1 = sig {
+    val T = Int
+  }
+}
+      |};
+  [%expect {| sig { val S1 = sig { val T = Int } } |}];
+  check
+    {|
+struct {
+  val S1 = sig {
+    val T
+  }
+}
+      |};
+  [%expect
+    {|
+    error: Signature declarations require either a type annotation or a definition
+     --> <input>:4:5
+      |
+    4 |     val T
+      |     ^^^^^
+    |}]
+;;
+
+let%expect_test "eta laws" =
+  check
+    {|
+struct {
+  val f : Type -> Type = fun x -> Unit
+  val x : sig { val f = f } = struct { val f : Type -> Type = fun x -> f x }
+}
+    |};
+  [%expect {| sig { val f = fun x -> Unit; val x = struct { val f = fun x -> f x } } |}]
+;;
+
+let%expect_test "eta laws 2" =
+  check
+    {|
+struct {
+  val f : Type -> Type = fun x -> Unit
+  val x : sig { val f = f } = struct { val f : Type -> Type = fun x -> f x }
+  val y : sig { val f = fun (x : Type) -> f x } = struct { val f = f }
+}
+|};
+  [%expect
+    {| sig { val f = fun x -> Unit; val x = struct { val f = fun x -> f x }; val y = struct { val f = f } } |}]
+;;
+
+(* 
+let y : (= fun (x : Type) -> f x) = f
+let S := sig { let T : Type; let U : Type -> Type; let x : T }
+let m : S = mod {
+  let T := Unit
+  let U := fun (x : Type) -> Unit
+  let x : T = ()
+} 
+let z1 : (= m) = mod { let T = m.T; let U = m.U; let x = m.x }
+let z2 : (= m : sig { let T : Type }) = mod { let T = m.T; let U = Unit }
+let z3 : (= m : sig { let T : Type }) = m
+let z4 : (= mod { let T = m.T; let U = m.U; let x = m.x } : S) = m
+let z5 : (= m) = mod { let T = m.T; let U = fun (x : Type) -> m.U x; let x = m.x } *)

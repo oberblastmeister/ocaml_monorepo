@@ -416,7 +416,16 @@ and parse_sig_decl st (group : Shrub.group) : Surface.field_spec =
              | Some group -> Some (parse_expr_group st group))
           | _ -> None
         in
-        ty, rhs
+        Some ty, rhs
+      | Some (Token { token = Equal; _ }) ->
+        Parser.State.next_exn p;
+        let rhs_items = Parser.State.take p in
+        let rhs =
+          match Non_empty_list.of_list rhs_items with
+          | None -> error (Error.token "Expected expression after =" keyword_index)
+          | Some group -> Some (parse_expr_group st group)
+        in
+        None, rhs
       | Some _ ->
         if Surface.Relevancy.equal relevancy Surface.Relevancy.Irrelevant
         then (
@@ -440,9 +449,9 @@ and parse_sig_decl st (group : Shrub.group) : Surface.field_spec =
             | None -> error (Error.token "Expected expression after =" keyword_index)
             | Some group -> Some (parse_expr_group st group)
           in
-          ty, rhs)
+          Some ty, rhs)
         else error (Error.token "Expected :" (Parser.State.curr_pos p))
-      | _ -> error (Error.token "Expected :" (Parser.State.curr_pos p))
+      | _ -> None, None
     in
     if not (Parser.State.is_empty p)
     then
@@ -450,7 +459,12 @@ and parse_sig_decl st (group : Shrub.group) : Surface.field_spec =
         (Error.token
            "Unconsumed tokens in signature declaration"
            (Parser.State.curr_pos p));
-    let stop_span = Option.value_map rhs ~default:(Surface.expr_span ty) ~f:Surface.expr_span in
+    let stop_span =
+      match rhs, ty with
+      | Some rhs, _ -> Surface.expr_span rhs
+      | None, Some ty -> Surface.expr_span ty
+      | None, None -> name.span
+    in
     let span = Span.combine (Span.single keyword_index) stop_span in
     { relevancy; name; ty; rhs; span }
   | _ ->

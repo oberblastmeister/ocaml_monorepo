@@ -137,7 +137,7 @@ and val_decl =
 and field_spec =
   { relevancy : Relevancy.t
   ; name : Name.t
-  ; ty : expr
+  ; ty : expr option
   ; rhs : expr option
   ; span : Span.t
   }

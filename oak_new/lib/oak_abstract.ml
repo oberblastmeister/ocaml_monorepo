@@ -13,6 +13,7 @@ module Level = Common.Level
 module Literal = Common.Literal
 module Icit = Common.Icit
 module Relevancy = Common.Relevancy
+module Param_modifiers = Common.Param_modifiers
 
 type expr =
   | Expr_var of
@@ -27,22 +28,20 @@ type expr =
   | Expr_app of
       { func : expr
       ; arg : expr
-      ; icit : Icit.t
+      ; param_modifiers : Param_modifiers.t
       ; span : Span.t
       }
   | Expr_fun of
       { name : Name.t
       ; param_ty : expr option
-      ; relevancy : Relevancy.t
-      ; icit : Icit.t
+      ; param_modifiers : Param_modifiers.t
       ; body : expr
       ; span : Span.t
       }
   | Expr_ty_fun of
       { name : Name.t
       ; param_ty : expr
-      ; relevancy : Relevancy.t
-      ; icit : Icit.t
+      ; param_modifiers : Param_modifiers.t
       ; body_ty : expr
       ; span : Span.t
       }
@@ -128,7 +127,7 @@ and expr_decl =
 and expr_field_spec =
   { name : Name.t
   ; relevancy : Relevancy.t
-  ; ty : expr
+  ; ty : expr option
   ; rhs : expr option
   ; span : Span.t
   }

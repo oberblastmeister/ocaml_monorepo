@@ -14,6 +14,7 @@ module Level = Common.Level
 module Literal = Common.Literal
 module Icit = Common.Icit
 module Relevancy = Common.Relevancy
+module Param_modifiers = Common.Param_modifiers
 
 module type Seq = sig
   type 'a t [@@deriving sexp]
@@ -75,7 +76,7 @@ type term =
       }
   | Term_fun of
       { name : Name.t
-      ; param_props : param_props
+      ; param_modifiers : Param_modifiers.t
       ; body : term
       }
   | Term_proj of
@@ -95,11 +96,6 @@ type term =
       ; body : term
       }
   | Term_ignore
-
-and param_props =
-  { icit : Icit.t
-  ; relevancy : Relevancy.t
-  }
 
 and field_loc =
   { name : string
@@ -122,7 +118,7 @@ and term_ty =
   | Term_ty_fun of
       { name : Name.t
       ; param_ty : term_ty
-      ; param_props : param_props
+      ; param_modifiers : Param_modifiers.t
       ; body_ty : term_ty
       }
   | Term_ty_struct of term_ty_struct
@@ -175,12 +171,12 @@ and spine = frame Bwd.t
 
 and term_arg =
   { e : term
-  ; param_props : param_props
+  ; param_modifiers : Param_modifiers.t
   }
 
 and value_arg =
   { e : value
-  ; param_props : param_props
+  ; param_modifiers : Param_modifiers.t
   }
 
 and frame =
@@ -192,13 +188,13 @@ and value_struct = { field_impls : value_field_impl list }
 
 and value_fun =
   { name : Name.t
-  ; param_props : param_props
+  ; param_modifiers : Param_modifiers.t
   ; body : value_closure
   }
 
 and ty_fun =
   { name : Name.t
-  ; param_props : param_props
+  ; param_modifiers : Param_modifiers.t
   ; param_ty : ty
   ; body_ty : ty_closure
   }
