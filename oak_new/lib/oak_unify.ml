@@ -27,9 +27,15 @@ let mk_fun_coe (arg_coe : Typed.runtime_coe) (ret_coe : Typed.runtime_coe)
   else Typed.Fun_coe { arg_coe; ret_coe }
 ;;
 
-let mk_struct_coe (field_coes : Typed.runtime_coe list) : Typed.runtime_coe =
-  if List.for_all field_coes ~f:is_id_coe
-  then Typed.Id_coe
+let mk_struct_coe is_same_shape (field_coes : Typed.runtime_field_coe list)
+  : Typed.runtime_coe
+  =
+  if is_same_shape
+  then begin
+    if List.for_all field_coes ~f:(fun field_coe -> is_id_coe field_coe.coe)
+    then Id_coe
+    else Struct_coe field_coes
+  end
   else Typed.Struct_coe field_coes
 ;;
 
@@ -353,10 +359,10 @@ and sub (cx : Context.t) (e : term) (ty1 : ty) (ty2 : ty)
           , Map.set acc ~key:field_name ~data:(field_loc, proj_ty, field_spec.relevancy) ))
     in
     let did_coerce, _, field_impls, field_coes =
-      List.fold
+      List.foldi
         ty2.field_specs
         ~init:(false, ty2.env, Bwd.Empty, Bwd.Empty)
-        ~f:(fun (did_coerce, closure_env, field_impls, field_coes) field_spec2 ->
+        ~f:(fun index (did_coerce, closure_env, field_impls, field_coes) field_spec2 ->
           let field_name = field_spec2.name.name in
           let field_loc1, ty1_proj_ty, relevancy1 =
             match Map.find ty1_map field_name with
@@ -379,6 +385,9 @@ and sub (cx : Context.t) (e : term) (ty1 : ty) (ty2 : ty)
           let field_impl : term_field_impl =
             { name = field_name; e = coerced_proj_term }
           in
+          let field_coe : Typed.runtime_field_coe =
+            { field = { name = field_name; index }; coe = field_coe }
+          in
           ( did_coerce
           , Seq.push (Evaluate.eval_value Seq.empty coerced_proj_term) closure_env
           , Bwd.snoc field_impls field_impl
@@ -386,7 +395,15 @@ and sub (cx : Context.t) (e : term) (ty1 : ty) (ty2 : ty)
     in
     let field_impls = Bwd.to_list field_impls in
     let field_coes = Bwd.to_list field_coes in
-    let runtime_coe = mk_struct_coe field_coes in
+    let is_same_shape =
+      match
+        List.for_all2 ty1.field_specs ty2.field_specs ~f:(fun field_spec1 field_spec2 ->
+          String.equal field_spec1.name.name field_spec2.name.name)
+      with
+      | Ok x -> x
+      | Unequal_lengths -> false
+    in
+    let runtime_coe = mk_struct_coe is_same_shape field_coes in
     if not did_coerce
     then None, Typed.Id_coe
     else Some (Term_struct { field_impls }), runtime_coe

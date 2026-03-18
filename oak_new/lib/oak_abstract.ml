@@ -52,6 +52,7 @@ type expr =
       }
   | Expr_struct of
       { decls : expr_decl list
+      ; is_dependent : bool
       ; span : Span.t
       }
   | Expr_ty_struct of

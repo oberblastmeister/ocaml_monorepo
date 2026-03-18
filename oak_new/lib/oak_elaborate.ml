@@ -251,7 +251,7 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
     in
     let term, ty = coerce_singleton cx term ty in
     Typed.Expr_proj { strukt; field; ann = expr_ann cx span term ty }
-  | Expr_struct { decls; span } ->
+  | Expr_struct { decls; span; is_dependent = true } ->
     let decl_count = List.length decls in
     let _, _, typed_decls, let_bindings, field_specs =
       List.fold
@@ -259,11 +259,13 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
         ~init:(cx, Close.empty, Bwd.Empty, Bwd.Empty, Bwd.Empty)
         ~f:(fun (cx_acc, close, typed_decls, let_bindings, field_specs) decl ->
           let e = infer cx_acc decl.e in
-          let rhs_value = eval_expr e in
           let ty =
             if decl.is_abstract
             then Typed.Expr.ty e
-            else Ty_sing { identity = rhs_value; ty = Typed.Expr.ty e }
+            else begin
+              let rhs_value = eval_expr e in
+              Ty_sing { identity = rhs_value; ty = Typed.Expr.ty e }
+            end
           in
           let typed_decl : Typed.expr_decl =
             { name = decl.name; relevancy = decl.relevancy; e; span = decl.span }
@@ -302,7 +304,50 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
         ~f:(fun (name, rhs) body -> Term_let { name; rhs; body })
     in
     let ty = Ty_struct { env = Seq.empty; field_specs } in
-    Typed.Expr_struct { decls = typed_decls; ann = expr_ann cx span term ty }
+    Typed.Expr_struct
+      { decls = typed_decls; ann = expr_ann cx span term ty; is_dependent = true }
+  | Expr_struct { decls; span; is_dependent = false } ->
+    let _, typed_decls, field_impls, field_specs =
+      List.foldi
+        decls
+        ~init:(Close.empty, Bwd.Empty, Bwd.Empty, Bwd.Empty)
+        ~f:(fun index (close, typed_decls, field_impls, field_specs) decl ->
+          let e = infer cx decl.e in
+          let ty =
+            if decl.is_abstract
+            then Typed.Expr.ty e
+            else begin
+              let rhs_value = eval_expr e in
+              Ty_sing { identity = rhs_value; ty = Typed.Expr.ty e }
+            end
+          in
+          let typed_decl : Typed.expr_decl =
+            { name = decl.name; relevancy = decl.relevancy; e; span = decl.span }
+          in
+          let rhs = maybe_sing_in decl.is_abstract (Typed.Expr.term e) in
+          let field_spec : term_field_spec =
+            { name = decl.name
+            ; ty =
+                Evaluate.quote_ty (Context.size cx + index) ty |> Evaluate.close_ty close
+            ; relevancy = decl.relevancy
+            }
+          in
+          let field_impl : term_field_impl = { name = decl.name.name; e = rhs } in
+          ( Close.add_exn
+              (Level.of_int (Context.size cx + index))
+              Index.zero
+              (Close.lift 1 close)
+          , Bwd.snoc typed_decls typed_decl
+          , Bwd.snoc field_impls field_impl
+          , Bwd.snoc field_specs field_spec ))
+    in
+    let typed_decls = Bwd.to_list typed_decls in
+    let field_impls = Bwd.to_list field_impls in
+    let field_specs = Bwd.to_list field_specs in
+    let term = Term_struct { field_impls } in
+    let ty = Ty_struct { env = Seq.empty; field_specs } in
+    Typed.Expr_struct
+      { decls = typed_decls; ann = expr_ann cx span term ty; is_dependent = false }
   | Expr_ty_struct { field_specs; span } ->
     let _, _, typed_field_specs, field_specs, size =
       List.fold
@@ -384,7 +429,7 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
     in
     let ty =
       Evaluate.eval_ty
-        (Seq.push rhs_value Seq.empty)
+        (Seq.push (if is_abstract then rhs_value else Value_sing_in rhs_value) Seq.empty)
         (Context.quote_ty cx' (Typed.Expr.ty body)
          |> Evaluate.close_ty_single (Context.next_level cx))
     in
@@ -494,6 +539,8 @@ and check (cx : Context.t) (e : Abstract.expr) (ty : ty) : Typed.expr =
           ~snippet:(Context.snippet cx span)
           (Doc.string "Cannot check error term")
       ]
+  (* | Expr_struct { decls; span; is_dependent = false } ->
+    Context.throw cx [ Diagnostic.Part.create (Doc.string "Cannot check structs yet") ] *)
   | Expr_fun { name; param_ty; param_modifiers; body; span } ->
     let fun_ty = extract_fun_ty cx span ty in
     Context.with_context

@@ -42,6 +42,7 @@ type expr =
       }
   | Expr_struct of
       { decls : block_decl list
+      ; is_dependent : bool
       ; span : Span.t
       }
   | Expr_ty_struct of

@@ -136,6 +136,42 @@ let%expect_test "struct annotation subtyping" =
   [%expect {| sig { val T : Type; val x : T } |}]
 ;;
 
+let%expect_test "nondependent struct punning" =
+  check
+    {|
+{
+  val x : Type = Bool
+  struct (val x)
+}
+    |};
+  [%expect {| sig { val x = Bool } |}]
+;;
+
+let%expect_test "nondependent struct fields do not bind later fields" =
+  check
+    {|
+{
+  val x : Type = Bool
+  struct (val x = Unit, val y = x)
+}
+    |};
+  [%expect {| sig { val x = Unit; val y = Bool } |}]
+;;
+
+let%expect_test "nondependent struct checking reorders fields" =
+  check
+    {|
+struct {
+  val T : Type = Bool
+  val x : sig {
+    val T = Bool
+    val y : T = #t
+  } = struct (val y = #t, val T)
+}
+    |};
+  [%expect {| sig { val T = Bool; val x = struct { val y = ignore; val T = T } } |}]
+;;
+
 let%expect_test "field reordering" =
   check
     {|

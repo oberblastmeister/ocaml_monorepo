@@ -253,20 +253,35 @@ and parse_keyword st (p : Parser.State.t) : Surface.expr =
       match keyword with
       | "struct" ->
         let _ = Parser.State.next_exn p in
-        let block =
-          Parser.run_or_thunk
-            p
-            (fun p -> Parser.brace p)
-            (fun () -> State.error st p "Expected {")
-        in
-        let decls =
-          List.map block.groups ~f:(fun { Shrub.group; sep = _ } ->
-            parse_block_decl st group)
-        in
-        let span =
-          Span.combine (Span.single keyword_index) (Span.single block.rdelim.index)
-        in
-        Surface.Expr_struct { decls; span }
+        begin match Parser.State.peek p with
+        | Some (Delim { ldelim = { token = LBrace; _ }; _ }) ->
+          let block =
+            Parser.run_or_thunk
+              p
+              (fun p -> Parser.brace p)
+              (fun () -> State.error st p "Expected {")
+          in
+          let decls =
+            List.map block.groups ~f:(fun { Shrub.group; sep = _ } ->
+              parse_block_decl st group)
+          in
+          let span =
+            Span.combine (Span.single keyword_index) (Span.single block.rdelim.index)
+          in
+          Surface.Expr_struct { decls; is_dependent = true; span }
+        | Some (Delim ({ ldelim = { token = LParen; _ }; rdelim; groups } as delim)) ->
+          Parser.State.next_exn p;
+          let decls =
+            List.map groups ~f:(fun { Shrub.group; sep = _ } ->
+              parse_nondependent_struct_decl st group)
+          in
+          let span =
+            Span.combine (Span.single keyword_index) (Span.single rdelim.index)
+          in
+          ignore delim;
+          Surface.Expr_struct { decls; is_dependent = false; span }
+        | _ -> State.error st p "Expected { or ("
+        end
       | "sig" ->
         let _ = Parser.State.next_exn p in
         let block =
@@ -755,6 +770,67 @@ and parse_block_decl st (group : Shrub.group) : Surface.block_decl =
     Block_decl_bind { name; rhs; span }
   | _ ->
     error (Error.token "Expected block declaration" (Shrub.Group.first_token group).index)
+
+and parse_nondependent_struct_decl st (group : Shrub.group) : Surface.block_decl =
+  let p = Parser.State.create group in
+  let parse_val_decl ~relevancy ~is_abstract ~start_index =
+    let name =
+      Parser.run_or_thunk
+        p
+        (fun p -> Parser.var p)
+        (fun () -> error (Error.token "Expected variable name" (Parser.State.curr_pos p)))
+    in
+    let ann = Parser.run p (fun p -> parse_annotation_cont st p) in
+    let rhs =
+      match Parser.State.peek p with
+      | Some (Token { token = Equal; _ }) ->
+        Parser.State.next_exn p;
+        let rhs_items = Parser.State.take p in
+        (match Non_empty_list.of_list rhs_items with
+         | None -> error (Error.token "Expected expression after =" start_index)
+         | Some group -> parse_expr_group st group)
+      | _ when not is_abstract && Option.is_none ann && Parser.State.is_empty p ->
+        Surface.Expr_var name
+      | _ -> error (Error.token "Expected =" (Parser.State.curr_pos p))
+    in
+    let span = Span.combine (Span.single start_index) (Surface.expr_span rhs) in
+    Surface.Block_decl_val { relevancy; name; ann; is_abstract; rhs; span }
+  in
+  match Parser.State.peek p with
+  | Some (Token { token = Ident "abstract"; index = abstract_index }) ->
+    Parser.State.next_exn p;
+    let _ =
+      Parser.run_or_thunk
+        p
+        (fun p ->
+           match Parser.token p with
+           | { token = (Ident "val" | Ident "type"); _ } -> ()
+           | _ -> Parser.fail p)
+        (fun () ->
+           error
+             (Error.token "Expected val or type after abstract" (Parser.State.curr_pos p)))
+    in
+    parse_val_decl
+      ~relevancy:Surface.Relevancy.Relevant
+      ~is_abstract:true
+      ~start_index:abstract_index
+  | Some (Token { token = Ident "val"; index = val_index }) ->
+    Parser.State.next_exn p;
+    parse_val_decl
+      ~relevancy:Surface.Relevancy.Relevant
+      ~is_abstract:false
+      ~start_index:val_index
+  | Some (Token { token = Ident "type"; index = type_index }) ->
+    Parser.State.next_exn p;
+    parse_val_decl
+      ~relevancy:Surface.Relevancy.Irrelevant
+      ~is_abstract:false
+      ~start_index:type_index
+  | _ ->
+    error
+      (Error.token
+         "Expected val or type declaration in nondependent struct"
+         (Shrub.Group.first_token group).index)
 
 and parse_expr_ann st (p : Parser.State.t) : Surface.expr =
   let e = parse_expr st p in

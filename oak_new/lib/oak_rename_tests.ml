@@ -247,7 +247,19 @@ struct {
           (param_modifiers ((icit Expl) (relevancy Relevant)))
           (span ((start 56) (stop 59)))))
         (is_abstract false) (span ((start 50) (stop 59))))))
-     (span ((start 1) (stop 61))))
+     (is_dependent true) (span ((start 1) (stop 61))))
+    |}]
+;;
+
+let%expect_test "nondependent struct does not bind later fields" =
+  check {|struct (val x = Bool, val y = x)|};
+  [%expect
+    {|
+    error: Failed to find variable: x
+     --> <input>:1:31
+      |
+    1 | struct (val x = Bool, val y = x)
+      |                               ^
     |}]
 ;;
 
@@ -297,11 +309,11 @@ struct {
                          (e
                           (Expr_core_ty (ty Bool) (span ((start 91) (stop 92)))))
                          (is_abstract false) (span ((start 85) (stop 92))))))
-                      (span ((start 80) (stop 95)))))
+                      (is_dependent true) (span ((start 80) (stop 95)))))
                     (is_abstract false) (span ((start 74) (stop 95))))))
-                 (span ((start 69) (stop 98)))))
+                 (is_dependent true) (span ((start 69) (stop 98)))))
                (is_abstract false) (span ((start 63) (stop 98))))))
-            (span ((start 58) (stop 101)))))
+            (is_dependent true) (span ((start 58) (stop 101)))))
           (ty
            (Expr_ty_struct
             (field_specs
@@ -341,7 +353,7 @@ struct {
             (field M) (span ((start 111) (stop 116)))))
           (field T) (span ((start 111) (stop 118)))))
         (is_abstract false) (span ((start 105) (stop 118))))))
-     (span ((start 1) (stop 120))))
+     (is_dependent true) (span ((start 1) (stop 120))))
     |}]
 ;;
 
@@ -517,7 +529,7 @@ struct {
           (param_modifiers ((icit Impl) (relevancy Irrelevant)))
           (span ((start 40) (stop 44)))))
         (is_abstract false) (span ((start 34) (stop 44))))))
-     (span ((start 1) (stop 47))))
+     (is_dependent true) (span ((start 1) (stop 47))))
     |}]
 ;;
 

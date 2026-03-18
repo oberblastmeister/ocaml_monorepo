@@ -132,7 +132,7 @@ let rec rename_expr st (expr : Surface.expr) : Abstract.expr =
   | Surface.Expr_proj { strukt; field; span } ->
     let strukt = rename_expr st strukt in
     Expr_proj { strukt; field; span }
-  | Surface.Expr_struct { decls; span } ->
+  | Surface.Expr_struct { decls; is_dependent; span } ->
     let names =
       List.filter_map decls ~f:(function
         | Surface.Block_decl_val decl -> Some decl.name
@@ -142,8 +142,10 @@ let rec rename_expr st (expr : Surface.expr) : Abstract.expr =
     if check_names_distinct st names ~error_message:"Duplicate variable in struct"
     then Expr_error { span }
     else (
-      let decls = rename_decls st decls in
-      Expr_struct { decls; span })
+      let decls =
+        if is_dependent then rename_decls st decls else rename_decls_nondependent st decls
+      in
+      Expr_struct { decls; is_dependent; span })
   | Surface.Expr_ty_struct { field_specs; span } ->
     let names = List.map field_specs ~f:(fun decl -> decl.name) in
     if check_names_distinct st names ~error_message:"Duplicate variable in signature"
@@ -282,6 +284,27 @@ and rename_decls st decls =
         st
         (Spanned.create "Do declarations are not allowed inside structs" span);
       rename_decls st rest
+  end
+
+and rename_decls_nondependent st decls =
+  match decls with
+  | [] -> []
+  | (decl : Surface.block_decl) :: rest -> begin
+    match decl with
+    | Surface.Block_decl_val { name; ann; rhs; relevancy; is_abstract; span } ->
+      let rhs = rename_rhs st ann rhs span in
+      let d : Abstract.expr_decl = { name; relevancy; e = rhs; is_abstract; span } in
+      d :: rename_decls_nondependent st rest
+    | Surface.Block_decl_bind { span; _ } ->
+      State.add_error
+        st
+        (Spanned.create "Bind declarations are not allowed inside structs" span);
+      rename_decls_nondependent st rest
+    | Surface.Block_decl_do { span; _ } ->
+      State.add_error
+        st
+        (Spanned.create "Do declarations are not allowed inside structs" span);
+      rename_decls_nondependent st rest
   end
 
 and rename_field_specs st field_specs =

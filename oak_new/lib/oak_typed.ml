@@ -69,6 +69,7 @@ type expr =
       }
   | Expr_struct of
       { decls : expr_decl list
+      ; is_dependent : bool
       ; ann : expr_ann
       }
   | Expr_let of
@@ -156,7 +157,12 @@ and runtime_coe =
       ; ret_coe : runtime_coe
       }
   | Id_coe
-  | Struct_coe of runtime_coe list
+  | Struct_coe of runtime_field_coe list
+
+and runtime_field_coe = { 
+  field : Core.field_loc;
+  coe : runtime_coe
+}
 
 and expr_rec_decl =
   { name : Name.t

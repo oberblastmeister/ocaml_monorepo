@@ -317,7 +317,7 @@ struct {
           (is_abstract false)
           (rhs (Expr_literal (literal (Int 1324)) (span ((start 51) (stop 52)))))
           (span ((start 45) (stop 52)))))))
-      (span ((start 1) (stop 54)))))
+      (is_dependent true) (span ((start 1) (stop 54)))))
     |}]
 ;;
 
@@ -596,7 +596,7 @@ let%expect_test "error: struct missing brace" =
   check {|struct x|};
   [%expect
     {|
-    error[E0001]: Expected {
+    error[E0001]: Expected { or (
      --> <input>:1:8
       |
     1 | struct x
@@ -1369,7 +1369,7 @@ struct {
                (relevancy Irrelevant) (icit Expl))))
             (span ((start 54) (stop 60)))))
           (span ((start 48) (stop 60)))))))
-      (span ((start 1) (stop 63)))))
+      (is_dependent true) (span ((start 1) (stop 63)))))
     |}];
   check {|
 sig {
