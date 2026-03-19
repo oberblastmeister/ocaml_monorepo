@@ -377,3 +377,147 @@ struct {
       |};
   [%expect {| sig { val r = fun U -> struct (val x = ignore, val T = U) } |}]
 ;;
+
+let%expect_test "record patching" =
+  check
+    ~show_singletons:true
+    {|
+struct {
+  val S = sig { val T : Type; val x : T }
+  val S' = S where { T = Int }
+}
+    |};
+  [%expect
+    {| sig { val S = sig { val T : Type; val x : T }; val S' = sig { val T = Int; val x : T.out } } |}];
+  check
+    ~show_singletons:true
+    {|
+  struct {
+    val S = sig {
+      val m : sig {
+        val m : sig {
+          val T : Type
+          val x : T
+        }
+        val x : m.T
+      }
+      val x : m.m.T
+    }
+    val S' = S where { m.m.T = Int }
+  }
+        |};
+  [%expect
+    {|
+    sig {
+      val S =
+        sig { val m : sig { val m : sig { val T : Type; val x : T }; val x : m.T }; val x : m.m.T }
+      val S' =
+        sig {
+          val m : sig { val m : sig { val T = Int; val x : T.out }; val x : m.T.out }
+          val x : m.m.T.out
+        }
+    }
+    |}];
+  check
+    ~show_singletons:true
+    {|
+  struct {
+    val S = sig {
+      val m : sig {
+        val m : sig {
+          val T : Type
+          val U : Type
+          val V : Type
+          val x : T
+          val y : U
+          val z : V
+        }
+        val x = m.T
+        val y = m.U
+        val z = m.V
+      }
+      val x = m.m.T
+      val y = m.m.U
+      val z = m.m.V
+    }
+    val m = struct {
+      val T = Int
+      val U = Bool
+      val V = Unit
+      val x = 123
+      val y = #t
+      val z = ()
+    }
+    val S' = S where { m.m = m }
+  }
+        |};
+  [%expect
+    {|
+    sig {
+      val S =
+        sig {
+          val m :
+            sig {
+              val m : sig { val T : Type; val U : Type; val V : Type; val x : T; val y : U; val z : V }
+              val x = m.T
+              val y = m.U
+              val z = m.V
+            }
+          val x = m.m.T
+          val y = m.m.U
+          val z = m.m.V
+        }
+      val m =
+        struct (
+          val T = in Int,
+          val U = in Bool,
+          val V = in Unit,
+          val x = in ignore,
+          val y = in ignore,
+          val z = in ignore
+        )
+      val S' =
+        sig {
+          val m :
+            sig {
+              val m =
+                struct (
+                  val T = m.out.T.out,
+                  val U = m.out.U.out,
+                  val V = m.out.V.out,
+                  val x = m.out.x.out,
+                  val y = m.out.y.out,
+                  val z = m.out.z.out
+                )
+              val x = m.out.T
+              val y = m.out.U
+              val z = m.out.V
+            }
+          val x = m.m.out.T
+          val y = m.m.out.U
+          val z = m.m.out.V
+        }
+    }
+    |}]
+;;
+
+let%expect_test "loop" =
+  check
+    {|
+struct {
+  abstract val m : sig {
+    val T : Type
+    val x : T
+  } = struct {
+    val T = Int
+    val x = 123
+  }
+  
+  val another : sig {
+    val T : Type
+    val x : T
+  } = m
+}
+    |};
+  [%expect {| sig { val m : sig { val T : Type; val x : T }; val another = m } |}]
+;;

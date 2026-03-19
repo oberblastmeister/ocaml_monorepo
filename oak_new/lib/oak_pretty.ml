@@ -44,12 +44,7 @@ struct
   let args docs =
     Doc.group
       (Doc.char '('
-       ^^ Doc.indent
-            2
-            (Doc.break0
-             ^^ Doc.concat
-                  docs
-                  ~sep:(Doc.choice ~flat:(Doc.string ", ") ~expanded:Doc.newline))
+       ^^ Doc.indent 2 (Doc.break0 ^^ Doc.concat docs ~sep:(Doc.char ',' ^^ Doc.break1))
        ^^ Doc.break0
        ^^ Doc.char ')')
   ;;
@@ -195,6 +190,7 @@ struct
     | Value_ignore -> pp_value names value
     | Value_neutral { head; spine } when is_spine_atom spine ->
       Doc.group (pp_neutral names { head; spine })
+    | Value_encode_ty { ty; props = _ } -> pp_ty_atom names ty
     | _ -> parens (pp_value names value)
 
   and pp_ty_atom (names : Name_list.t) (ty : Syntax.ty) =

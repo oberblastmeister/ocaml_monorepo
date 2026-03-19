@@ -86,6 +86,23 @@ and out_value (sing : value) =
   | Value_neutral { head; spine } -> Value_neutral { head; spine = spine <: Out }
   | _ -> failwith "Expected a singleton value"
 
+(* precondition: strukt is whnf, postcondition: result is whnf *)
+and app_whnf (ty_env : ty_env) (func : value) (arg : value_arg) =
+  match func with
+  | Value_ignore ->
+    (* Function types can have kind Type *)
+    Value_ignore
+  | Value_fun func -> whnf_value ty_env (app_fun func arg)
+  | Value_neutral { head; spine } -> Value_neutral { head; spine = spine <: App arg }
+  | _ -> failwith "Expected function value"
+
+(* precondition: strukt is whnf, postcondition: result is whnf *)
+and proj_whnf (ty_env : ty_env) (strukt : value) (field : field_loc) =
+  match strukt with
+  | Value_struct strukt -> whnf_value ty_env (proj_struct strukt field)
+  | Value_neutral { head; spine } -> Value_neutral { head; spine = spine <: Proj field }
+  | _ -> failwith "Expected a struct value"
+
 and proj_struct (strukt : value_struct) (field : field_loc) =
   let field_impl = List.drop strukt.field_impls field.index |> List.hd_exn in
   field_impl.e
@@ -138,9 +155,10 @@ and whnf_neutral (ty_env : ty_env) (e : neutral) : value =
       ~init:
         (Value_neutral { head = e.head; spine = Empty }, Seq.get_level_exn ty_env e.head)
       ~f:(fun (e, ty) frame ->
+        (* invariant: e is whnf, ty may not be whnf *)
         match frame with
-        | App arg -> whnf_value ty_env (app_value e arg), app_ty ty_env ty arg
-        | Proj field -> whnf_value ty_env (proj_value e field), proj_ty ty_env e ty field
+        | App arg -> app_whnf ty_env e arg, app_ty ty_env ty arg
+        | Proj field -> proj_whnf ty_env e field, proj_ty ty_env e ty field
         | Out ->
           let ty =
             match whnf_ty ty_env ty with

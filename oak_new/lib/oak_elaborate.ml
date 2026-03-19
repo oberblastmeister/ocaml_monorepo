@@ -691,16 +691,30 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
     let ty = Ty_struct { env = Seq.empty; field_specs } in
     (* Typed.Expr_rec { decls = typed_decls; ann = expr_ann cx span placeholder_term ty } *) *)
     failwith ""
-  | Expr_where { e; path; rhs; span = _ } ->
-    (* let e =
-      match check_universe cx e with
-      | Typed.Ty_decode { expr; _ } -> expr
-      | _ -> failwith "check_universe must return Ty_decode"
+  | Expr_where { e; path; rhs; span } ->
+    let e_typed = check_universe cx e in
+    let rhs_typed = infer cx rhs in
+    let original_ty = Evaluate.eval_ty Seq.empty (Typed.Ty.term e_typed) in
+    let patched_ty =
+      try
+        apply_patch
+          cx
+          (Non_empty_list.to_list path)
+          (Term_free (Context.next_level cx))
+          original_ty
+          (Typed.Expr.term rhs_typed)
+          (Typed.Expr.ty rhs_typed)
+        |> snd
+      with
+      | Same_signature -> original_ty
     in
-    let rhs = infer cx rhs in
-    let () = apply_patch cx path rhs in
-    e *)
-    failwith ""
+    Typed.Expr.of_ty
+      (Ty_where
+         { e = e_typed
+         ; path
+         ; rhs = rhs_typed
+         ; ann = ty_ann cx span (Evaluate.Ty.quote patched_ty) (Typed.Ty.props e_typed)
+         })
 
 and check (cx : Context.t) (e : Abstract.expr) (ty : ty) : Typed.expr =
   match e with

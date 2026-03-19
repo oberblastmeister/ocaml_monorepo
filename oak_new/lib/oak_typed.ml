@@ -105,12 +105,6 @@ type expr =
       { decls : expr_rec_decl list
       ; ann : expr_ann
       }
-  | Expr_where of
-      { e : expr
-      ; path : string Non_empty_list.t
-      ; rhs : expr
-      ; ann : expr_ann
-      }
   | Expr_encode_ty of
       { ty : ty
       ; ann : expr_ann
@@ -149,6 +143,12 @@ and ty =
       { ty : ty
       ; ann : ty_ann
       }
+  | Ty_where of
+      { e : ty
+      ; path : string Non_empty_list.t
+      ; rhs : expr
+      ; ann : ty_ann
+      }
 
 and runtime_coe =
   | Fun_coe of
@@ -159,10 +159,10 @@ and runtime_coe =
   | Id_coe
   | Struct_coe of runtime_field_coe list
 
-and runtime_field_coe = { 
-  field : Core.field_loc;
-  coe : runtime_coe
-}
+and runtime_field_coe =
+  { field : Core.field_loc
+  ; coe : runtime_coe
+  }
 
 and expr_rec_decl =
   { name : Name.t
@@ -211,7 +211,8 @@ module Ty = struct
     | Ty_struct { ann; _ }
     | Ty_core { ann; _ }
     | Ty_universe { ann; _ }
-    | Ty_pack { ann; _ } -> ann
+    | Ty_pack { ann; _ }
+    | Ty_where { ann; _ } -> ann
   ;;
 
   let props t = (ann t).ty_props
@@ -236,7 +237,6 @@ module Expr = struct
     | Expr_literal { ann; _ }
     | Expr_error { ann; _ }
     | Expr_rec { ann; _ }
-    | Expr_where { ann; _ }
     | Expr_coe { ann; _ }
     | Expr_encode_ty { ann; _ } -> ann
   ;;
