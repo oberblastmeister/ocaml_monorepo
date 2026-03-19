@@ -84,9 +84,50 @@ let maybe_sing_in (is_abstract : bool) (rhs : term) : term =
   if is_abstract then rhs else Term_sing_in rhs
 ;;
 
-let check_ty_ignorable (_cx : Context.t) (_ty : ty) : unit =
-  (* TODO: port the ignorable judgement once bind/rec are fully implemented. *)
-  ()
+let rec synthesize_transparent_ty (cx : Context.t) (ty : ty) : term =
+  match Context.whnf_ty cx ty with
+  | Ty_universe _ ->
+    Context.throw
+      cx
+      [ Diagnostic.Part.create
+          (Doc.string "Universes are not transparent: " ^^ Context.pp_ty cx ty)
+      ]
+  | Ty_sing { identity; ty = _ } -> Term_sing_in (Context.quote cx identity)
+  | Ty_struct { env; field_specs } ->
+    let _, _, field_impls =
+      List.fold
+        field_specs
+        ~init:(cx, env, Bwd.Empty)
+        ~f:(fun (cx, closure_env, field_impls) { name; ty; relevancy } ->
+          let ty = Evaluate.eval_ty closure_env ty in
+          let e = synthesize_transparent_ty cx ty in
+          let field_impl : term_field_impl = { name = name.name; e; relevancy } in
+          ( Context.bind name ty cx
+          , Seq.push (Context.next_free cx) closure_env
+          , Bwd.snoc field_impls field_impl ))
+    in
+    let field_impls = Bwd.to_list field_impls in
+    Term_struct { field_impls }
+  | Ty_fun ({ name; param_ty; param_modifiers; _ } as ty) ->
+    let body =
+      synthesize_transparent_ty
+        (Context.bind name param_ty cx)
+        (Evaluate.Fun_ty.app ty { e = Context.next_free cx; param_modifiers })
+    in
+    Term_fun
+      { name; param_modifiers; body = Evaluate.close_single (Context.next_level cx) body }
+  | Ty_core _ | Ty_pack _ -> Term_ignore
+  | Ty_decode e ->
+    let ty_props = Infer_ty.infer_neutral_universe cx.ty_env e in
+    if Size.is_type ty_props.size
+    then Term_ignore
+    else
+      Context.throw
+        cx
+        [ Diagnostic.Part.create
+            (Doc.string "This type was not transparent since its universe was not Type: "
+             ^^ Context.pp_value cx (Value_neutral e))
+        ]
 ;;
 
 let apply_where_patch_stub
@@ -295,9 +336,10 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
         ~init:
           (Term_struct
              { field_impls =
-                 List.mapi decls ~f:(fun i decl ->
-                   ({ name = decl.name.name
+                 List.mapi decls ~f:(fun i { name; relevancy; _ } ->
+                   ({ name = name.name
                     ; e = Term_bound (Index.of_int (decl_count - i - 1))
+                    ; relevancy
                     }
                     : term_field_impl))
              })
@@ -332,7 +374,9 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
             ; relevancy = decl.relevancy
             }
           in
-          let field_impl : term_field_impl = { name = decl.name.name; e = rhs } in
+          let field_impl : term_field_impl =
+            { name = decl.name.name; e = rhs; relevancy = decl.relevancy }
+          in
           ( Close.add_exn
               (Level.of_int (Context.size cx + index))
               Index.zero
@@ -494,12 +538,12 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
     let ty = infer_literal_ty cx span literal in
     Typed.Expr_literal { literal; ann = expr_ann cx span Term_ignore ty }
   | Expr_rec { decls; span } ->
-    let typed_tys, tys =
+    (* let typed_tys, tys =
       List.unzip
         (List.map decls ~f:(fun decl ->
            let typed_ty = check_universe cx decl.ty in
            let ty = Evaluate.eval_ty Seq.empty (Typed.Ty.term typed_ty) in
-           check_ty_ignorable cx ty;
+           check_ty_transparent cx ty;
            typed_ty, (decl.name, ty)))
     in
     let cx' =
@@ -518,7 +562,7 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
         })
     in
     let ty = Ty_struct { env = Seq.empty; field_specs } in
-    (* Typed.Expr_rec { decls = typed_decls; ann = expr_ann cx span placeholder_term ty } *)
+    (* Typed.Expr_rec { decls = typed_decls; ann = expr_ann cx span placeholder_term ty } *) *)
     failwith ""
   | Expr_where { e; path; rhs; span = _ } ->
     let e =
@@ -592,12 +636,17 @@ and check (cx : Context.t) (e : Abstract.expr) (ty : ty) : Typed.expr =
     let e = check cx e inner_ty in
     Typed.Expr_pack { e; ann = expr_ann cx span Term_ignore ty }
   | Expr_bind { name; rhs; body; span } ->
-    check_ty_ignorable cx ty;
-    let rhs = infer cx rhs in
-    let rhs_inner_ty = extract_pack_ty cx span (Typed.Expr.ty rhs) in
-    let body = check (Context.bind name rhs_inner_ty cx) body ty in
-    (* Typed.Expr_bind { name; rhs; body; ann = expr_ann cx span placeholder_term ty } *)
-    failwith "TODO"
+    let result_term =
+      with_elab_context cx span "while checking the bind expression" ~f:(fun () ->
+        synthesize_transparent_ty cx ty)
+    in
+    let rhs_typed = infer cx rhs in
+    let rhs_inner_ty =
+      extract_pack_ty cx (Typed.Expr.span rhs_typed) (Typed.Expr.ty rhs_typed)
+    in
+    let body_typed = check (Context.bind name rhs_inner_ty cx) body ty in
+    Typed.Expr_bind
+      { name; rhs = rhs_typed; body = body_typed; ann = expr_ann cx span result_term ty }
   | _ ->
     let e_typed = infer cx e in
     let term_opt, coe =

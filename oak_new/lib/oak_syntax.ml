@@ -105,6 +105,7 @@ and field_loc =
 and term_field_impl =
   { name : string
   ; e : term
+  ; relevancy : Relevancy.t
   }
 
 and term_field_spec =
@@ -212,6 +213,7 @@ and value_closure =
 and value_field_impl =
   { name : string
   ; e : value
+  ; relevancy : Relevancy.t
   }
 
 and env = value Seq.t

@@ -383,7 +383,10 @@ and sub (cx : Context.t) (e : term) (ty1 : ty) (ty2 : ty)
           let coerced_proj_term = Option.value ~default:proj_term coerced_proj in
           let did_coerce = did_coerce || Option.is_some coerced_proj in
           let field_impl : term_field_impl =
-            { name = field_name; e = coerced_proj_term }
+            { name = field_name
+            ; e = coerced_proj_term
+            ; relevancy = field_spec2.relevancy
+            }
           in
           let field_coe : Typed.runtime_field_coe =
             { field = { name = field_name; index }; coe = field_coe }

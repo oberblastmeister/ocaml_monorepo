@@ -50,9 +50,9 @@ and eval_ty (env : env) (ty : term_ty) : ty =
   | Term_ty_core ty -> Ty_core ty
   | Term_ty_universe props -> Ty_universe props
 
-and eval_field_impl env ({ name; e } : term_field_impl) : value_field_impl =
+and eval_field_impl env ({ name; e; relevancy } : term_field_impl) : value_field_impl =
   let e = eval_value env e in
-  { name; e }
+  { name; e; relevancy }
 
 and eval_arg env ({ e; param_modifiers } : term_arg) : value_arg =
   let e = eval_value env e in
@@ -103,12 +103,12 @@ and whnf_value ty_env (e : value) : value =
 
 and whnf_ty (ty_env : ty_env) (ty : ty) : ty =
   match ty with
-  | Ty_decode e ->
-    begin match whnf_neutral ty_env e with
+  | Ty_decode e -> begin
+    match whnf_neutral ty_env e with
     | Value_encode_ty { ty; props = _ } -> whnf_ty ty_env ty
     | Value_neutral e -> Ty_decode e
     | _ -> failwith "Expected a type code"
-    end
+  end
   | Ty_universe _ | Ty_sing _ | Ty_struct _ | Ty_fun _ | Ty_core _ | Ty_pack _ -> ty
 
 and app_fun_ty (func_ty : ty_fun) (arg : value_arg) : ty =
@@ -258,11 +258,11 @@ and quote_arg context_size (arg : value_arg) : term_arg =
   let e = quote context_size arg.e in
   { e; param_modifiers = arg.param_modifiers }
 
-and quote_field_impl (context_size : int) (field_impl : value_field_impl)
+and quote_field_impl (context_size : int) ({ name; e; relevancy } : value_field_impl)
   : term_field_impl
   =
-  let e = quote context_size field_impl.e in
-  { name = field_impl.name; e }
+  let e = quote context_size e in
+  { name; e; relevancy }
 
 and close (c : Close.t) (e : term) : term =
   match e with
@@ -315,8 +315,8 @@ and close_ty (c : Close.t) (ty : term_ty) : term_ty =
   | Term_ty_core ty -> Term_ty_core ty
   | Term_ty_universe props -> Term_ty_universe props
 
-and close_field_impl (c : Close.t) ({ name; e } : term_field_impl) =
-  { name; e = close c e }
+and close_field_impl (c : Close.t) ({ name; e; relevancy } : term_field_impl) =
+  { name; e = close c e; relevancy }
 
 and close_arg (c : Close.t) ({ e; param_modifiers } : term_arg) =
   { e = close c e; param_modifiers }

@@ -301,3 +301,78 @@ struct {
     }
     |}]
 ;;
+
+let%expect_test "bind" =
+  check
+    {|
+struct{
+  val r : Bool = {
+    bind x = pack #t
+    #t
+  }
+}
+    |};
+  [%expect {| sig { val r = ignore } |}];
+  check
+    {|
+struct{
+  val r : Bool = {
+    bind x = #t
+    #t
+  }
+}
+    |};
+  [%expect
+    {|
+    error: Expected pack type, got Bool
+     --> <input>:4:14
+      |
+    4 |     bind x = #t
+      |              ^^
+    |}];
+  check
+    {|
+struct {
+  val r : Type = {
+    bind x = #t
+    Int
+  }
+}
+      |};
+  [%expect
+    {|
+    error: Universes are not transparent: Type
+    error: while checking the bind expression
+     --> <input>:4:5
+      |
+    4 |     bind x = #t
+      |     ^^^^^^^^^^^
+    |}];
+  check
+    {|
+struct {
+  val r : sig { val x : Bool; val T = Int } = {
+    bind x = pack #t
+    struct (val x = #t, val T = Int)
+  }
+  val z : sig { val x = r } = struct(val x = struct(val x = #t, val T = Int))
+}
+    |};
+  [%expect
+    {|
+    sig {
+      val r = struct (val x = ignore, val T = Int)
+      val z = struct (val x = struct (val x = ignore, val T = Int))
+    }
+    |}];
+  check
+    {|
+  struct {
+    val r : (U : Type) -> sig { val x : Bool; val T = U } = {
+      bind x = pack #t
+      fun (U : Type) -> struct(val x = #t, val T = U)
+    }
+  }
+      |};
+  [%expect {| sig { val r = fun U -> struct (val x = ignore, val T = U) } |}]
+;;
