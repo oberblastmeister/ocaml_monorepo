@@ -440,7 +440,15 @@ struct {
       val y = m.m.U
       val z = m.m.V
     }
-    val m = struct {
+    
+    abstract val m : sig {
+      val T : Type
+      val U : Type
+      val V : Type
+      val x : T
+      val y : U
+      val z : V
+    } = struct {
       val T = Int
       val U = Bool
       val V = Unit
@@ -448,6 +456,7 @@ struct {
       val y = #t
       val z = ()
     }
+    
     val S' = S where { m.m = m }
   }
         |};
@@ -467,32 +476,10 @@ struct {
           val y = m.m.U
           val z = m.m.V
         }
-      val m =
-        struct (
-          val T = in Int,
-          val U = in Bool,
-          val V = in Unit,
-          val x = in ignore,
-          val y = in ignore,
-          val z = in ignore
-        )
+      val m : sig { val T : Type; val U : Type; val V : Type; val x : T; val y : U; val z : V }
       val S' =
         sig {
-          val m :
-            sig {
-              val m =
-                struct (
-                  val T = m.out.T.out,
-                  val U = m.out.U.out,
-                  val V = m.out.V.out,
-                  val x = m.out.x.out,
-                  val y = m.out.y.out,
-                  val z = m.out.z.out
-                )
-              val x = m.out.T
-              val y = m.out.U
-              val z = m.out.V
-            }
+          val m : sig { val m = m; val x = m.out.T; val y = m.out.U; val z = m.out.V }
           val x = m.m.out.T
           val y = m.m.out.U
           val z = m.m.out.V
