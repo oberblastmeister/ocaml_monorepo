@@ -414,3 +414,8 @@ and sub (cx : Context.t) (e : term) (ty1 : ty) (ty2 : ty)
     unify_ty cx ty1 ty2;
     None, Typed.Id_coe
 ;;
+
+let coerce cx e ty1 ty2 =
+  let e', _ = sub cx e ty1 ty2 in
+  Option.value e' ~default:e
+;;

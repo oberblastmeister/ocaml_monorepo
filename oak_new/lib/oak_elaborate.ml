@@ -28,38 +28,35 @@ let ty_ann (cx : Context.t) (span : Span.t) (term : term_ty) (ty_props : Ty_prop
   { span; context = { ty_env = cx.ty_env; name_list = cx.name_list }; ty_props; term }
 ;;
 
-let extract_fun_ty (cx : Context.t) (span : Span.t) (func_ty : ty) : ty_fun =
+let extract_fun_ty (cx : Context.t) (func_ty : ty) : ty_fun =
   match Context.whnf_ty cx func_ty with
   | Ty_fun func_ty -> func_ty
   | ty ->
     Context.throw
       cx
       [ Diagnostic.Part.create
-          ~snippet:(Context.snippet cx span)
           (Doc.string "Expected function type, got " ^^ Context.pp_ty cx ty)
       ]
 ;;
 
-let extract_struct_ty (cx : Context.t) (span : Span.t) (strukt_ty : ty) : ty_struct =
+let extract_struct_ty (cx : Context.t) (strukt_ty : ty) : ty_struct =
   match Context.whnf_ty cx strukt_ty with
   | Ty_struct strukt_ty -> strukt_ty
   | ty ->
     Context.throw
       cx
       [ Diagnostic.Part.create
-          ~snippet:(Context.snippet cx span)
           (Doc.string "Expected struct type, got " ^^ Context.pp_ty cx ty)
       ]
 ;;
 
-let extract_pack_ty (cx : Context.t) (span : Span.t) (packed_ty : ty) : ty =
+let extract_pack_ty (cx : Context.t) (packed_ty : ty) : ty =
   match Context.whnf_ty cx packed_ty with
   | Ty_pack ty -> ty
   | ty ->
     Context.throw
       cx
       [ Diagnostic.Part.create
-          ~snippet:(Context.snippet cx span)
           (Doc.string "Expected pack type, got " ^^ Context.pp_ty cx ty)
       ]
 ;;
@@ -130,14 +127,139 @@ let rec synthesize_transparent_ty (cx : Context.t) (ty : ty) : term =
         ]
 ;;
 
-let apply_where_patch_stub
-      (_cx : Context.t)
-      (_path : string Non_empty_list.t)
-      (_rhs : Typed.expr)
-  : unit
+exception Same_signature
+
+let rec apply_patch
+          (cx : Context.t)
+          (path : string list)
+          (term_to_coerced_to_original_ty : term)
+          (original_ty : ty)
+          (patch_with : term)
+          (patch_with_ty : ty)
+  : term * ty
   =
-  (* TODO: port `where` patching once the patch/coercion machinery lands. *)
-  ()
+  match path with
+  | [] -> begin
+    match Context.whnf_ty cx original_ty with
+    | Ty_sing value_to_patch_ty ->
+      (* already a singleton, just check for equality *)
+      let patch_with = Unify.coerce cx patch_with patch_with_ty value_to_patch_ty.ty in
+      Unify.unify_value
+        cx
+        (Evaluate.eval_value Seq.empty patch_with)
+        value_to_patch_ty.identity
+        value_to_patch_ty.ty;
+      raise_notrace Same_signature
+    | _ ->
+      let patch_with_coerced =
+        Unify.coerce cx patch_with patch_with_ty original_ty
+        |> Evaluate.eval_value Seq.empty
+      in
+      ( Term_sing_out term_to_coerced_to_original_ty
+      , Ty_sing { identity = patch_with_coerced; ty = original_ty } )
+  end
+  | path_part :: path ->
+    let original_ty = extract_struct_ty cx original_ty in
+    let _, _, _, coerced_fields, patched_field_specs, did_find_field =
+      List.foldi
+        original_ty.field_specs
+        ~init:(cx, original_ty.env, Close.empty, Bwd.Empty, Bwd.Empty, false)
+        ~f:
+          (fun
+            index
+            (cx, closure_env, close, coerced_fields, patched_field_specs, did_find_field)
+            { name; ty = original_field_ty; relevancy }
+          ->
+          let original_field_ty = Evaluate.eval_ty closure_env original_field_ty in
+          let coerced_term, patched_field_ty, did_find_field =
+            if (not did_find_field) && String.equal name.name path_part
+            then begin
+              match original_field_ty with
+              | Ty_sing original_field_ty ->
+                let coerced_term, patched_field_ty =
+                  apply_patch
+                    cx
+                    path
+                    (Term_sing_out (Term_free (Context.next_level cx)))
+                    original_field_ty.ty
+                    patch_with
+                    patch_with_ty
+                in
+                let coerced_term = Term_sing_in coerced_term in
+                let coerced_identity =
+                  Unify.coerce
+                    cx
+                    (Context.quote cx original_field_ty.identity)
+                    original_field_ty.ty
+                    patched_field_ty
+                in
+                let patched_field_ty =
+                  Ty_sing
+                    { identity = Evaluate.eval_value Seq.empty coerced_identity
+                    ; ty = patched_field_ty
+                    }
+                in
+                coerced_term, patched_field_ty, true
+              | _ ->
+                let coerced_term, patched_field_ty =
+                  apply_patch
+                    cx
+                    path
+                    (Term_free (Context.next_level cx))
+                    original_field_ty
+                    patch_with
+                    patch_with_ty
+                in
+                coerced_term, patched_field_ty, true
+            end
+            else Term_free (Context.next_level cx), original_field_ty, did_find_field
+          in
+          let cx' = Context.bind name patched_field_ty cx in
+          let coerced_field : term_field_impl =
+            { name = name.name
+            ; e =
+                coerced_term
+                |> Evaluate.close_single (Context.next_level cx)
+                |> Evaluate.eval_value
+                     (Seq.push
+                        (Evaluate.eval_value
+                           Seq.empty
+                           (Term_proj
+                              { strukt = term_to_coerced_to_original_ty
+                              ; field = { name = name.name; index }
+                              }))
+                        Seq.empty)
+                |> Context.quote cx
+            ; relevancy
+            }
+          in
+          let patched_field_spec : term_field_spec =
+            { name
+            ; ty = Context.quote_ty cx patched_field_ty |> Evaluate.close_ty close
+            ; relevancy
+            }
+          in
+          let closure_env' =
+            Seq.push (Evaluate.eval_value Seq.empty coerced_term) closure_env
+          in
+          let close' =
+            Close.add_exn (Context.next_level cx) Index.zero (Close.lift 1 close)
+          in
+          let coerced_fields' = Bwd.snoc coerced_fields coerced_field in
+          let patched_field_specs' = Bwd.snoc patched_field_specs patched_field_spec in
+          cx', closure_env', close', coerced_fields', patched_field_specs', did_find_field)
+    in
+    if not did_find_field
+    then
+      Context.throw
+        cx
+        [ Diagnostic.Part.create
+            (Doc.string "Field "
+             ^^ Doc.string path_part
+             ^^ Doc.string " not found in struct")
+        ];
+    ( Term_struct { field_impls = Bwd.to_list coerced_fields }
+    , Ty_struct { env = Seq.empty; field_specs = Bwd.to_list patched_field_specs } )
 ;;
 
 let with_elab_context (cx : Context.t) (span : Span.t) (message : string) ~f =
@@ -180,7 +302,10 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
       ]
   | Expr_app { func; arg; param_modifiers; span } ->
     let func = infer cx func in
-    let func_ty = extract_fun_ty cx span (Typed.Expr.ty func) in
+    let func_ty =
+      with_elab_context cx span "while inferring the function application" ~f:(fun () ->
+        extract_fun_ty cx (Typed.Expr.ty func))
+    in
     if not (Icit.equal func_ty.param_modifiers.icit param_modifiers.icit)
     then
       Context.throw
@@ -269,7 +394,10 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
     Typed.Expr.of_ty typed_ty
   | Expr_proj { strukt; field; span } ->
     let strukt = infer cx strukt in
-    let struct_ty = extract_struct_ty cx span (Typed.Expr.ty strukt) in
+    let struct_ty =
+      with_elab_context cx span "while projecting a struct field" ~f:(fun () ->
+        extract_struct_ty cx (Typed.Expr.ty strukt))
+    in
     let field_loc =
       match
         List.find_mapi struct_ty.field_specs ~f:(fun index field_spec ->
@@ -565,14 +693,15 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
     (* Typed.Expr_rec { decls = typed_decls; ann = expr_ann cx span placeholder_term ty } *) *)
     failwith ""
   | Expr_where { e; path; rhs; span = _ } ->
-    let e =
+    (* let e =
       match check_universe cx e with
       | Typed.Ty_decode { expr; _ } -> expr
       | _ -> failwith "check_universe must return Ty_decode"
     in
     let rhs = infer cx rhs in
-    let () = apply_where_patch_stub cx path rhs in
-    e
+    let () = apply_patch cx path rhs in
+    e *)
+    failwith ""
 
 and check (cx : Context.t) (e : Abstract.expr) (ty : ty) : Typed.expr =
   match e with
@@ -586,7 +715,13 @@ and check (cx : Context.t) (e : Abstract.expr) (ty : ty) : Typed.expr =
   (* | Expr_struct { decls; span; is_dependent = false } ->
     Context.throw cx [ Diagnostic.Part.create (Doc.string "Cannot check structs yet") ] *)
   | Expr_fun { name; param_ty; param_modifiers; body; span } ->
-    let fun_ty = extract_fun_ty cx span ty in
+    let fun_ty =
+      with_elab_context
+        cx
+        span
+        "while checking the function against the expected type"
+        ~f:(fun () -> extract_fun_ty cx ty)
+    in
     Context.with_context
       cx
       (Diagnostic.Part.create
@@ -632,7 +767,10 @@ and check (cx : Context.t) (e : Abstract.expr) (ty : ty) : Typed.expr =
     let body2 = check cx body2 ty in
     Typed.Expr_if { cond; body1; body2; ann = expr_ann cx span Term_ignore ty }
   | Expr_pack { e; span } ->
-    let inner_ty = extract_pack_ty cx span ty in
+    let inner_ty =
+      with_elab_context cx span "while checking the pack expression" ~f:(fun () ->
+        extract_pack_ty cx ty)
+    in
     let e = check cx e inner_ty in
     Typed.Expr_pack { e; ann = expr_ann cx span Term_ignore ty }
   | Expr_bind { name; rhs; body; span } ->
@@ -642,7 +780,11 @@ and check (cx : Context.t) (e : Abstract.expr) (ty : ty) : Typed.expr =
     in
     let rhs_typed = infer cx rhs in
     let rhs_inner_ty =
-      extract_pack_ty cx (Typed.Expr.span rhs_typed) (Typed.Expr.ty rhs_typed)
+      with_elab_context
+        cx
+        (Typed.Expr.span rhs_typed)
+        "while checking the right-hand side of the bind expression"
+        ~f:(fun () -> extract_pack_ty cx (Typed.Expr.ty rhs_typed))
     in
     let body_typed = check (Context.bind name rhs_inner_ty cx) body ty in
     Typed.Expr_bind

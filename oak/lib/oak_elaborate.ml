@@ -257,7 +257,8 @@ let rec apply_patch
                 }
             in
             ( (cx', closure_env', close', coerced_fields', true)
-            , ({ var = ty_decls.var
+            , (
+              { var = ty_decls.var
                ; ty = Context.quote cx patched_ty |> Evaluate.close close
                }
                : term_ty_decl) )
