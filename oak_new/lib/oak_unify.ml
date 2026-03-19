@@ -318,7 +318,7 @@ and sub (cx : Context.t) (e : term) (ty1 : ty) (ty2 : ty)
     let free = Context.next_level cx in
     let arg_var_value = Context.next_free cx in
     let cx = Context.bind ty2.name ty2.param_ty cx in
-    let arg_var_term = Context.quote cx arg_var_value in
+    let arg_var_term = Evaluate.Value.quote arg_var_value in
     let arg', arg_coe = sub cx arg_var_term ty2.param_ty ty1.param_ty in
     let arg_term = Option.value ~default:arg_var_term arg' in
     let arg_value = Evaluate.eval_value Seq.empty arg_term in

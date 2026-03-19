@@ -325,6 +325,7 @@ struct{
   [%expect
     {|
     error: Expected pack type, got Bool
+    error: while checking the right-hand side of the bind expression
      --> <input>:4:14
       |
     4 |     bind x = #t

@@ -192,7 +192,7 @@ module Close = struct
   ;;
 end
 
-let rec quote context_size (e : value) : term =
+let rec quote_value context_size (e : value) : term =
   match e with
   | Value_ignore -> Term_ignore
   | Value_struct { field_impls } ->
@@ -201,11 +201,11 @@ let rec quote context_size (e : value) : term =
   | Value_fun { name; body; param_modifiers } ->
     let body =
       eval_closure1 body (Value.free_of_size context_size)
-      |> quote (context_size + 1)
+      |> quote_value (context_size + 1)
       |> close_single (Level.of_int context_size)
     in
     Term_fun { name; body; param_modifiers }
-  | Value_sing_in e -> Term_sing_in (quote context_size e)
+  | Value_sing_in e -> Term_sing_in (quote_value context_size e)
   | Value_neutral e -> quote_neutral context_size e
   | Value_encode_ty { ty; props } ->
     let ty = quote_ty context_size ty in
@@ -215,7 +215,7 @@ and quote_ty context_size (ty : ty) : term_ty =
   match ty with
   | Ty_universe props -> Term_ty_universe props
   | Ty_sing { identity; ty } ->
-    let identity = quote context_size identity in
+    let identity = quote_value context_size identity in
     let ty = quote_ty context_size ty in
     Term_ty_sing { identity; ty }
   | Ty_struct { env; field_specs } ->
@@ -246,6 +246,7 @@ and quote_ty context_size (ty : ty) : term_ty =
     Term_ty_decode e
 
 and quote_neutral context_size (e : neutral) : term =
+  assert (e.head.level < context_size);
   Bwd.fold_left e.spine ~init:(Term_free e.head) ~f:(fun e elim ->
     match elim with
     | Proj field -> Term_proj { strukt = e; field }
@@ -255,13 +256,13 @@ and quote_neutral context_size (e : neutral) : term =
     | Out -> Term_sing_out e)
 
 and quote_arg context_size (arg : value_arg) : term_arg =
-  let e = quote context_size arg.e in
+  let e = quote_value context_size arg.e in
   { e; param_modifiers = arg.param_modifiers }
 
 and quote_field_impl (context_size : int) ({ name; e; relevancy } : value_field_impl)
   : term_field_impl
   =
-  let e = quote context_size e in
+  let e = quote_value context_size e in
   { name; e; relevancy }
 
 and close (c : Close.t) (e : term) : term =
@@ -339,6 +340,8 @@ module Fun_ty = struct
 end
 
 module Value = struct
+  (* Since we only use the context size to generate fresh free variables, we can just use a really large context size *)
+  let quote = quote_value (Int.max_value / 2)
   let proj = proj_value
   let app = app_value
   let out = out_value
@@ -346,6 +349,7 @@ module Value = struct
 end
 
 module Ty = struct
+  let quote = quote_ty (Int.max_value / 2)
   let proj = proj_ty
   let app = app_ty
   let out = out_ty

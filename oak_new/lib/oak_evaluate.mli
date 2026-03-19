@@ -7,8 +7,6 @@ val eval_closure1 : value_closure -> value -> value
 val whnf_value : ty_env -> value -> value
 val whnf_neutral : ty_env -> neutral -> value
 val whnf_ty : ty_env -> ty -> ty
-val quote : int -> value -> term
-val quote_ty : int -> ty -> term_ty
 
 module Close : sig
   type t
@@ -43,6 +41,7 @@ module Fun_ty : sig
 end
 
 module Value : sig
+  val quote : value -> term
   val proj : value -> field_loc -> value
   val app : value -> value_arg -> value
   val out : value -> value
@@ -50,6 +49,7 @@ module Value : sig
 end
 
 module Ty : sig
+  val quote : ty -> term_ty
   val proj : ty_env -> value -> ty -> field_loc -> ty
   val app : ty_env -> ty -> value_arg -> ty
   val out : ty_env -> ty -> ty

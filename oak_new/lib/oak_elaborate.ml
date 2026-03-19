@@ -89,7 +89,7 @@ let rec synthesize_transparent_ty (cx : Context.t) (ty : ty) : term =
       [ Diagnostic.Part.create
           (Doc.string "Universes are not transparent: " ^^ Context.pp_ty cx ty)
       ]
-  | Ty_sing { identity; ty = _ } -> Term_sing_in (Context.quote cx identity)
+  | Ty_sing { identity; ty = _ } -> Term_sing_in (Evaluate.Value.quote identity)
   | Ty_struct { env; field_specs } ->
     let _, _, field_impls =
       List.fold
@@ -189,7 +189,7 @@ let rec apply_patch
                 let coerced_identity =
                   Unify.coerce
                     cx
-                    (Context.quote cx original_field_ty.identity)
+                    (Evaluate.Value.quote original_field_ty.identity)
                     original_field_ty.ty
                     patched_field_ty
                 in
@@ -229,13 +229,13 @@ let rec apply_patch
                               ; field = { name = name.name; index }
                               }))
                         Seq.empty)
-                |> Context.quote cx
+                |> Evaluate.Value.quote
             ; relevancy
             }
           in
           let patched_field_spec : term_field_spec =
             { name
-            ; ty = Context.quote_ty cx patched_field_ty |> Evaluate.close_ty close
+            ; ty = Evaluate.Ty.quote patched_field_ty |> Evaluate.close_ty close
             ; relevancy
             }
           in
@@ -336,7 +336,7 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
     let body_ty : ty_closure =
       { env = Seq.empty
       ; body =
-          Evaluate.quote_ty (Context.size cx') (Typed.Expr.ty body)
+          Evaluate.Ty.quote (Typed.Expr.ty body)
           |> Evaluate.close_ty_single (Context.next_level cx)
       }
     in
@@ -444,7 +444,7 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
           in
           let field_spec : term_field_spec =
             { name = decl.name
-            ; ty = Evaluate.quote_ty (Context.size cx_acc) ty |> Evaluate.close_ty close
+            ; ty = Evaluate.Ty.quote ty |> Evaluate.close_ty close
             ; relevancy = decl.relevancy
             }
           in
@@ -497,8 +497,7 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
           let rhs = maybe_sing_in decl.is_abstract (Typed.Expr.term e) in
           let field_spec : term_field_spec =
             { name = decl.name
-            ; ty =
-                Evaluate.quote_ty (Context.size cx + index) ty |> Evaluate.close_ty close
+            ; ty = Evaluate.Ty.quote ty |> Evaluate.close_ty close
             ; relevancy = decl.relevancy
             }
           in
@@ -558,7 +557,7 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
           in
           let field_spec : term_field_spec =
             { name = field_spec.name
-            ; ty = Context.quote_ty cx_acc ty |> Evaluate.close_ty close
+            ; ty = Evaluate.Ty.quote ty |> Evaluate.close_ty close
             ; relevancy = field_spec.relevancy
             }
           in
@@ -602,7 +601,7 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
     let ty =
       Evaluate.eval_ty
         (Seq.push (if is_abstract then rhs_value else Value_sing_in rhs_value) Seq.empty)
-        (Context.quote_ty cx' (Typed.Expr.ty body)
+        (Evaluate.Ty.quote (Typed.Expr.ty body)
          |> Evaluate.close_ty_single (Context.next_level cx))
     in
     Typed.Expr_let
