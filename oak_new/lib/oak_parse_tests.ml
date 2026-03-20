@@ -228,8 +228,8 @@ let%expect_test "base types" =
     {|
 {
   val x = ()
-  val y : Bool = #t
-  val z = #f
+  val y : Bool = true
+  val z = false
   val another = first.T#first
   ()
 }
@@ -791,8 +791,8 @@ let%expect_test "error: block without return expression" =
   check
     {|
 {
-  val x = #t
-  val y = #f
+  val x = true
+  val y = false
 }
     |};
   [%expect
@@ -800,7 +800,7 @@ let%expect_test "error: block without return expression" =
     error[E0001]: Unconsumed tokens when parsing expression
      --> <input>:4:9
       |
-    4 |   val y = #f
+    4 |   val y = false
       |         ^
     |}]
 ;;
@@ -809,7 +809,7 @@ let%expect_test "let with annotation" =
   check
     {|
 {
-  val x : Bool = #t
+  val x : Bool = true
   x
 }
     |};
@@ -832,7 +832,7 @@ let%expect_test "let with annotation" =
 let%expect_test "application of block" =
   check
     {|
-f { val x = #t
+f { val x = true
     x }
     |};
   [%expect

@@ -50,7 +50,7 @@ let whnf_ty (cx : t) e = Evaluate.whnf_ty cx.ty_env e
 let whnf_neutral cx e = Evaluate.whnf_neutral cx.ty_env e
 let level_var_ty cx (var : Level.t) = Seq.get_level_exn cx.ty_env var
 let pp_value cx value = Pretty.pp_value cx.name_list value
-let pp_ty cx ty = Pretty.pp_ty cx.name_list ty
+let pp_ty ?show_singletons cx ty = Pretty.pp_ty ?show_singletons cx.name_list ty
 
 let snippet cx (span : Utility.Span.t) : Utility.File_span.t =
   { file = cx.source.filename

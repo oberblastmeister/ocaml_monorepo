@@ -96,14 +96,16 @@ struct
 
   and pp_struct names ({ field_impls } : Syntax.value_struct) =
     let decls =
-      List.map field_impls ~f:(fun ({ name; e } : Syntax.value_field_impl) ->
-        Doc.group
-          (Doc.string "val"
-           ^^ Doc.space
-           ^^ Doc.string name
-           ^^ Doc.space
-           ^^ Doc.string "="
-           ^^ Doc.indent 2 (Doc.break1 ^^ pp_value names e)))
+      List.map
+        field_impls
+        ~f:(fun ({ name; e; relevancy = _ } : Syntax.value_field_impl) ->
+          Doc.group
+            (Doc.string "val"
+             ^^ Doc.space
+             ^^ Doc.string name
+             ^^ Doc.space
+             ^^ Doc.string "="
+             ^^ Doc.indent 2 (Doc.break1 ^^ pp_value names e)))
     in
     Doc.group (Doc.string "struct" ^^ Doc.space ^^ args decls)
 
@@ -117,12 +119,15 @@ struct
           let name = field_spec.name.name in
           let doc =
             match ty with
-            | Ty_sing { identity; ty = _ } ->
+            | Ty_sing { identity; ty } ->
               Doc.group
                 (Doc.string "val"
                  ^^ Doc.space
                  ^^ Doc.string name
                  ^^ Doc.space
+                 ^^ Doc.string ":"
+                 ^^ Doc.indent 2 (Doc.break1 ^^ pp_ty names ty)
+                 ^^ Doc.break1
                  ^^ Doc.string "="
                  ^^ Doc.indent 2 (Doc.break1 ^^ pp_value names identity))
             | _ ->

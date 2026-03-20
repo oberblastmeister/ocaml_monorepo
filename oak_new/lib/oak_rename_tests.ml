@@ -100,7 +100,7 @@ fun (x : Bool) -> {
 ;;
 
 let%expect_test "bool literal" =
-  check {|#t|};
+  check {|true|};
   [%expect {| (Expr_literal (literal (Bool true)) (span ((start 0) (stop 1)))) |}]
 ;;
 

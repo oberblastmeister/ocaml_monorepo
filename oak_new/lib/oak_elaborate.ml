@@ -132,32 +132,14 @@ exception Same_signature
 let rec apply_patch
           (cx : Context.t)
           (path : string list)
-          (term_to_coerced_to_original_ty : term)
+          (term_to_coerce_to_original_ty : term)
           (original_ty : ty)
           (patch_with : term)
           (patch_with_ty : ty)
   : term * ty
   =
   match path with
-  | [] -> begin
-    match Context.whnf_ty cx original_ty with
-    | Ty_sing value_to_patch_ty ->
-      (* already a singleton, just check for equality *)
-      let patch_with = Unify.coerce cx patch_with patch_with_ty value_to_patch_ty.ty in
-      Unify.unify_value
-        cx
-        (Evaluate.eval_value Seq.empty patch_with)
-        value_to_patch_ty.identity
-        value_to_patch_ty.ty;
-      raise_notrace Same_signature
-    | _ ->
-      let patch_with_coerced =
-        Unify.coerce cx patch_with patch_with_ty original_ty
-        |> Evaluate.eval_value Seq.empty
-      in
-      ( Term_sing_out term_to_coerced_to_original_ty
-      , Ty_sing { identity = patch_with_coerced; ty = original_ty } )
-  end
+  | [] -> failwith "expected nonempty list"
   | path_part :: path ->
     let original_ty = extract_struct_ty cx original_ty in
     let _, _, _, coerced_fields, patched_field_specs, did_find_field =
@@ -171,48 +153,73 @@ let rec apply_patch
             { name; ty = original_field_ty; relevancy }
           ->
           let original_field_ty = Evaluate.eval_ty closure_env original_field_ty in
-          let coerced_term, patched_field_ty, did_find_field =
+          let (coerced_term, patched_field_ty), did_find_field =
             if (not did_find_field) && String.equal name.name path_part
-            then begin
-              match original_field_ty with
-              | Ty_sing original_field_ty ->
-                let coerced_term, patched_field_ty =
-                  apply_patch
-                    cx
-                    path
-                    (Term_sing_out (Term_free (Context.next_level cx)))
-                    original_field_ty.ty
-                    patch_with
-                    patch_with_ty
-                in
-                let coerced_term = Term_sing_in coerced_term in
-                let coerced_identity =
-                  Unify.coerce
-                    cx
-                    (Evaluate.Value.quote original_field_ty.identity)
-                    original_field_ty.ty
-                    patched_field_ty
-                in
-                let patched_field_ty =
-                  Ty_sing
-                    { identity = Evaluate.eval_value Seq.empty coerced_identity
-                    ; ty = patched_field_ty
-                    }
-                in
-                coerced_term, patched_field_ty, true
-              | _ ->
-                let coerced_term, patched_field_ty =
-                  apply_patch
-                    cx
-                    path
-                    (Term_free (Context.next_level cx))
-                    original_field_ty
-                    patch_with
-                    patch_with_ty
-                in
-                coerced_term, patched_field_ty, true
-            end
-            else Term_free (Context.next_level cx), original_field_ty, did_find_field
+            then
+              ( begin match path with
+                | [] -> begin
+                  match Context.whnf_ty cx original_field_ty with
+                  | Ty_sing original_ty ->
+                    (* already a singleton, just check for equality *)
+                    let patch_with_coerced =
+                      Unify.coerce cx patch_with patch_with_ty original_ty.ty
+                    in
+                    Unify.unify_value
+                      cx
+                      (Evaluate.eval_value Seq.empty patch_with_coerced)
+                      original_ty.identity
+                      original_ty.ty;
+                    raise_notrace Same_signature
+                  | _ ->
+                    let patch_with_coerced =
+                      Unify.coerce cx patch_with patch_with_ty original_field_ty
+                      |> Evaluate.eval_value Seq.empty
+                    in
+                    ( Term_sing_out (Term_free (Context.next_level cx))
+                    , Ty_sing { identity = patch_with_coerced; ty = original_field_ty } )
+                end
+                | _ :: _ -> begin
+                  match Context.whnf_ty cx original_field_ty with
+                  | Ty_sing original_field_ty ->
+                    let coerced_term, patched_field_ty =
+                      apply_patch
+                        cx
+                        path
+                        (Term_sing_out (Term_free (Context.next_level cx)))
+                        original_field_ty.ty
+                        patch_with
+                        patch_with_ty
+                    in
+                    let coerced_term = Term_sing_in coerced_term in
+                    let coerced_identity =
+                      Unify.coerce
+                        cx
+                        (Evaluate.Value.quote original_field_ty.identity)
+                        original_field_ty.ty
+                        patched_field_ty
+                    in
+                    let patched_field_ty =
+                      Ty_sing
+                        { identity = Evaluate.eval_value Seq.empty coerced_identity
+                        ; ty = patched_field_ty
+                        }
+                    in
+                    coerced_term, patched_field_ty
+                  | _ ->
+                    let coerced_term, patched_field_ty =
+                      apply_patch
+                        cx
+                        path
+                        (Term_free (Context.next_level cx))
+                        original_field_ty
+                        patch_with
+                        patch_with_ty
+                    in
+                    coerced_term, patched_field_ty
+                end
+                end
+              , true )
+            else (Term_free (Context.next_level cx), original_field_ty), did_find_field
           in
           let cx' = Context.bind name patched_field_ty cx in
           let coerced_field : term_field_impl =
@@ -225,7 +232,7 @@ let rec apply_patch
                         (Evaluate.eval_value
                            Seq.empty
                            (Term_proj
-                              { strukt = term_to_coerced_to_original_ty
+                              { strukt = term_to_coerce_to_original_ty
                               ; field = { name = name.name; index }
                               }))
                         Seq.empty)
