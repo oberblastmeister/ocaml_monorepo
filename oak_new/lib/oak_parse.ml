@@ -334,6 +334,25 @@ and parse_keyword st (p : Parser.State.t) : Surface.expr =
           Span.combine (Span.single keyword_index) (Span.single block.rdelim.index)
         in
         Expr_rec { decls; span }
+      | "data_rec" ->
+        let _ = Parser.State.next_exn p in
+        let block =
+          Parser.run_or_thunk
+            p
+            (fun p -> Parser.brace p)
+            (fun () -> State.error st p "Expected {")
+        in
+        let decls =
+          List.map block.groups ~f:(fun { Shrub.group; sep = _ } ->
+            parse_data_decl st group)
+        in
+        let span =
+          Span.combine (Span.single keyword_index) (Span.single block.rdelim.index)
+        in
+        Surface.Expr_data_rec { decls; span }
+      | "data" ->
+        let _ = Parser.State.next_exn p in
+        parse_data_expr st p ~start_index:keyword_index
       | _ -> parse_app st p
     end
     | _ -> parse_app st p
@@ -395,6 +414,106 @@ and parse_dot_path (p : Parser.State.t) : string list =
        name :: parse_dot_path p
      | _ -> error (Error.token "Expected identifier after dot" (Parser.State.curr_pos p)))
   | _ -> []
+
+and parse_data_expr st (p : Parser.State.t) ~start_index : Surface.expr =
+  let params = parse_data_params st p in
+  let block =
+    Parser.run_or_thunk
+      p
+      (fun p -> Parser.brace p)
+      (fun () -> State.error st p "Expected {")
+  in
+  if not (Parser.State.is_empty p)
+  then
+    error (Error.token "Unconsumed tokens in data expression" (Parser.State.curr_pos p));
+  let span = Span.combine (Span.single start_index) (Span.single block.rdelim.index) in
+  Surface.Expr_data { params; body = parse_data_body st block.groups; span }
+
+and parse_data_decl st (group : Shrub.group) : Surface.data_decl =
+  let p = Parser.State.create group in
+  let data_index =
+    Parser.run_or_thunk
+      p
+      (fun p ->
+         match Parser.token p with
+         | { token = Ident "data"; index } -> index
+         | _ -> Parser.fail p)
+      (fun () ->
+         error
+           (Error.token "Expected data declaration" (Shrub.Group.first_token group).index))
+  in
+  let name =
+    Parser.run_or_thunk
+      p
+      (fun p -> Parser.var p)
+      (fun () -> error (Error.token "Expected type name" (Parser.State.curr_pos p)))
+  in
+  let params = parse_data_params st p in
+  let block =
+    Parser.run_or_thunk
+      p
+      (fun p -> Parser.brace p)
+      (fun () -> State.error st p "Expected {")
+  in
+  if not (Parser.State.is_empty p)
+  then
+    error (Error.token "Unconsumed tokens in data declaration" (Parser.State.curr_pos p));
+  let span = Span.combine (Span.single data_index) (Span.single block.rdelim.index) in
+  { name; data = { params; body = parse_data_body st block.groups; span }; span }
+
+and parse_data_params st (p : Parser.State.t) : Surface.param list =
+  match Parser.State.peek p with
+  | Some (Delim { ldelim = { token = LParen | LBrack; _ }; _ })
+  | Some (Token { token = Ident _; _ }) ->
+    let param =
+      Parser.run_or_thunk
+        p
+        (fun p -> parse_param st p)
+        (fun () ->
+           error (Error.token "Expected data parameter" (Parser.State.curr_pos p)))
+    in
+    param :: parse_data_params st p
+  | _ -> []
+
+and parse_data_body st groups =
+  List.map groups ~f:(fun { Shrub.group; sep = _ } -> parse_data_member st group)
+
+and parse_data_member st (group : Shrub.group)
+  : (Surface.data_field, Surface.data_constructor) Either.t
+  =
+  let p = Parser.State.create group in
+  let name =
+    Parser.run_or_thunk
+      p
+      (fun p -> Parser.var p)
+      (fun () ->
+         error
+           (Error.token "Expected data member name" (Shrub.Group.first_token group).index))
+  in
+  match Parser.State.peek p with
+  | Some (Token { token = Colon; _ }) ->
+    let ty =
+      Parser.run_or_thunk
+        p
+        (fun p -> parse_annotation_cont st p)
+        (fun () -> error (Error.token "Expected :" (Parser.State.curr_pos p)))
+    in
+    if not (Parser.State.is_empty p)
+    then error (Error.token "Unconsumed tokens in data field" (Parser.State.curr_pos p));
+    First { name; ty }
+  | Some (Token { token = Ident "of"; _ }) ->
+    Parser.State.next_exn p;
+    let ty_items = Parser.State.take p in
+    let ty =
+      match Non_empty_list.of_list ty_items with
+      | None -> error (Error.token "Expected expression after of" name.span.start)
+      | Some ty_group -> Some (parse_expr_group st ty_group)
+    in
+    Second { name; ty }
+  | Some _ ->
+    error
+      (Error.token "Expected : or of after data member name" (Parser.State.curr_pos p))
+  | None -> Second { name; ty = None }
 
 and parse_sig_decl st (group : Shrub.group) : Surface.field_spec =
   let p = Parser.State.create group in

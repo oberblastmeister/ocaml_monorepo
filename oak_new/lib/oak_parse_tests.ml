@@ -1256,13 +1256,15 @@ sig {
   type second : Type -> Type
 }
     |};
-  check {|
+  check
+    {|
 struct {
   val first = fun (type A : Type) (type B : Type) (A : Type) -> A
   type some_type = first (type Int)
 }
     |};
-  [%expect {|
+  [%expect
+    {|
     ((Expr_ty_struct
       (field_specs
        (((relevancy Relevant) (name ((name f) (span ((start 8) (stop 9)))))
@@ -1371,13 +1373,15 @@ struct {
           (span ((start 48) (stop 60)))))))
       (is_dependent true) (span ((start 1) (stop 63)))))
     |}];
-  check {|
+  check
+    {|
 sig {
   val f : [type A B : Type] -> [C D E] -> A
   val another : Type = f [type A B] [C D]
 }
     |};
-  [%expect {|
+  [%expect
+    {|
     ((Expr_ty_struct
       (field_specs
        (((relevancy Relevant) (name ((name f) (span ((start 8) (stop 9)))))
@@ -1426,5 +1430,154 @@ sig {
             (span ((start 50) (stop 64))))))
          (span ((start 40) (stop 64))))))
       (span ((start 1) (stop 67)))))
+    |}]
+;;
+
+let%expect_test "data struct" =
+  check
+    {|
+struct {
+  val Types = data_rec {
+    data First (A : Type) (B : Type) {
+      first : A
+      second : B
+    }
+    
+    data Second (A : Type) {
+      third : First A A
+      fourth : Bool
+    }
+    
+    data Another (A : Type) {
+      Some of data {
+        first : A
+        second : A
+      }
+      None
+    }
+  }
+  
+  val Option = data (A : Type) {
+    Some of A
+    None
+  }
+}
+    |};
+  [%expect
+    {|
+    ((Expr_struct
+      (decls
+       ((Block_decl_val
+         ((relevancy Relevant) (name ((name Types) (span ((start 8) (stop 9)))))
+          (ann ()) (is_abstract false)
+          (rhs
+           (Expr_data_rec
+            (decls
+             (((name ((name First) (span ((start 19) (stop 20)))))
+               (data
+                ((params
+                  (((relevancy Relevant)
+                    (names (((name A) (span ((start 22) (stop 23))))))
+                    (ann
+                     ((Expr_universe (size Type) (span ((start 26) (stop 27))))))
+                    (icit Expl) (span ((start 22) (stop 27))))
+                   ((relevancy Relevant)
+                    (names (((name B) (span ((start 30) (stop 31))))))
+                    (ann
+                     ((Expr_universe (size Type) (span ((start 34) (stop 35))))))
+                    (icit Expl) (span ((start 30) (stop 35))))))
+                 (body
+                  ((First
+                    ((name ((name first) (span ((start 40) (stop 41)))))
+                     (ty (Expr_var ((name A) (span ((start 44) (stop 45))))))))
+                   (First
+                    ((name ((name second) (span ((start 48) (stop 49)))))
+                     (ty (Expr_var ((name B) (span ((start 52) (stop 53))))))))))
+                 (span ((start 17) (stop 56)))))
+               (span ((start 17) (stop 56))))
+              ((name ((name Second) (span ((start 63) (stop 64)))))
+               (data
+                ((params
+                  (((relevancy Relevant)
+                    (names (((name A) (span ((start 66) (stop 67))))))
+                    (ann
+                     ((Expr_universe (size Type) (span ((start 70) (stop 71))))))
+                    (icit Expl) (span ((start 66) (stop 71))))))
+                 (body
+                  ((First
+                    ((name ((name third) (span ((start 76) (stop 77)))))
+                     (ty
+                      (Expr_app
+                       (func
+                        (Expr_var ((name First) (span ((start 80) (stop 81))))))
+                       (args
+                        (((arg
+                           (Expr_var ((name A) (span ((start 82) (stop 83))))))
+                          (relevancy Relevant) (icit Expl))
+                         ((arg
+                           (Expr_var ((name A) (span ((start 84) (stop 85))))))
+                          (relevancy Relevant) (icit Expl))))
+                       (span ((start 80) (stop 85)))))))
+                   (First
+                    ((name ((name fourth) (span ((start 88) (stop 89)))))
+                     (ty (Expr_core_ty (ty Bool) (span ((start 92) (stop 93)))))))))
+                 (span ((start 61) (stop 96)))))
+               (span ((start 61) (stop 96))))
+              ((name ((name Another) (span ((start 103) (stop 104)))))
+               (data
+                ((params
+                  (((relevancy Relevant)
+                    (names (((name A) (span ((start 106) (stop 107))))))
+                    (ann
+                     ((Expr_universe (size Type) (span ((start 110) (stop 111))))))
+                    (icit Expl) (span ((start 106) (stop 111))))))
+                 (body
+                  ((Second
+                    ((name ((name Some) (span ((start 116) (stop 117)))))
+                     (ty
+                      ((Expr_data
+                        ((params ())
+                         (body
+                          ((First
+                            ((name
+                              ((name first) (span ((start 125) (stop 126)))))
+                             (ty
+                              (Expr_var
+                               ((name A) (span ((start 129) (stop 130))))))))
+                           (First
+                            ((name
+                              ((name second) (span ((start 133) (stop 134)))))
+                             (ty
+                              (Expr_var
+                               ((name A) (span ((start 137) (stop 138))))))))))
+                         (span ((start 120) (stop 141)))))))))
+                   (Second
+                    ((name ((name None) (span ((start 144) (stop 145)))))
+                     (ty ())))))
+                 (span ((start 101) (stop 148)))))
+               (span ((start 101) (stop 148))))))
+            (span ((start 12) (stop 151)))))
+          (span ((start 6) (stop 151)))))
+        (Block_decl_val
+         ((relevancy Relevant)
+          (name ((name Option) (span ((start 158) (stop 159))))) (ann ())
+          (is_abstract false)
+          (rhs
+           (Expr_data
+            ((params
+              (((relevancy Relevant)
+                (names (((name A) (span ((start 165) (stop 166))))))
+                (ann
+                 ((Expr_universe (size Type) (span ((start 169) (stop 170))))))
+                (icit Expl) (span ((start 165) (stop 170))))))
+             (body
+              ((Second
+                ((name ((name Some) (span ((start 175) (stop 176)))))
+                 (ty ((Expr_var ((name A) (span ((start 179) (stop 180)))))))))
+               (Second
+                ((name ((name None) (span ((start 183) (stop 184))))) (ty ())))))
+             (span ((start 162) (stop 187))))))
+          (span ((start 156) (stop 187)))))))
+      (is_dependent true) (span ((start 1) (stop 189)))))
     |}]
 ;;
