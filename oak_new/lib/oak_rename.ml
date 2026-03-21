@@ -206,6 +206,26 @@ let rec rename_expr st (expr : Surface.expr) : Abstract.expr =
       in
       Expr_rec { decls; span }
     end
+  | Surface.Expr_data { params; body; span } ->
+    (match rename_data_expr st { params; body; span } with
+     | Some data -> Expr_data data
+     | None -> Expr_error { span })
+  | Surface.Expr_data_rec { decls; span } ->
+    let names = List.map decls ~f:(fun decl -> decl.name) in
+    if check_names_distinct st names ~error_message:"Duplicate data declaration"
+    then Expr_error { span }
+    else begin
+      List.iter decls ~f:(fun decl -> State.push_var st decl.name);
+      let decls =
+        List.map decls ~f:(fun (decl : Surface.data_decl) ->
+          Option.map (rename_data_expr st decl.data) ~f:(fun data ->
+            ({ name = decl.name; data; span = decl.span } : Abstract.data_decl)))
+      in
+      List.iter decls ~f:(fun _ -> State.pop_var st);
+      match Option.all decls with
+      | Some decls -> Expr_data_rec { decls; span }
+      | None -> Expr_error { span }
+    end
 
 and rename_rhs st ann rhs span =
   match ann with
@@ -236,6 +256,70 @@ and rename_ty_fun st params body_ty span =
       State.with_var st name ~f:(fun () -> rename_ty_fun st rest body_ty span)
     in
     Abstract.Expr_ty_fun { name; param_ty; param_modifiers; body_ty; span }
+
+and rename_data_expr st ({ params; body; span } : Surface.expr_data)
+  : Abstract.expr_data option
+  =
+  let params = rename_data_params st params in
+  let body = rename_data_body st body ~span in
+  List.iter params ~f:(fun _ -> State.pop_var st);
+  Option.map body ~f:(fun body -> ({ params; body; span } : Abstract.expr_data))
+
+and rename_data_params st (params : Surface.param list) : Abstract.data_param list =
+  let params =
+    List.concat_map params ~f:(fun (param : Surface.param) ->
+      Non_empty_list.to_list param.names
+      |> List.map ~f:(fun name -> name, param.ann, param.span))
+  in
+  let rec loop params =
+    match params with
+    | [] -> []
+    | (name, ann, span) :: rest ->
+      let ty =
+        match ann with
+        | Some ty -> rename_expr st ty
+        | None ->
+          State.add_error st (Spanned.create "Data parameters require type annotations" span);
+          Expr_error { span }
+      in
+      State.push_var st name;
+      ({ name; ty } : Abstract.data_param) :: loop rest
+  in
+  loop params
+
+and rename_data_body st body ~span : Abstract.data_body option =
+  let fields, constructors = List.partition_map body ~f:Fn.id in
+  if List.is_empty constructors
+  then (
+    let names = List.map fields ~f:(fun (field : Surface.data_field) -> field.name) in
+    if check_names_distinct st names ~error_message:"Duplicate field in data record"
+    then None
+    else
+      Some
+        (Data_record
+           { fields =
+               List.map fields ~f:(fun ({ name; ty } : Surface.data_field) ->
+                 ({ name; ty = rename_expr st ty } : Abstract.data_field))
+           }))
+  else if List.is_empty fields
+  then (
+    let names =
+      List.map constructors ~f:(fun (constructor : Surface.data_constructor) ->
+        constructor.name)
+    in
+    if check_names_distinct st names ~error_message:"Duplicate constructor in data variant"
+    then None
+    else
+      Some
+        (Data_variant
+           { constructors =
+               List.map constructors ~f:(fun ({ name; ty } : Surface.data_constructor) ->
+                 ({ name; ty = Option.map ty ~f:(rename_expr st) }
+                  : Abstract.data_constructor))
+           }))
+  else (
+    State.add_error st (Spanned.create "Data body cannot mix fields and constructors" span);
+    None)
 
 and rename_block st decls ret span =
   match decls with

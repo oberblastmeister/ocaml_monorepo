@@ -7,6 +7,10 @@ val eval_closure1 : value_closure -> value -> value
 val whnf_value : ty_env -> value -> value
 val whnf_neutral : ty_env -> neutral -> value
 val whnf_ty : ty_env -> ty -> ty
+val infer_props : ty_env -> ty -> Ty_props.t
+val infer_neutral : ty_env -> neutral -> ty
+val infer_head : ty_env -> head -> ty
+val infer_neutral_universe : ty_env -> neutral -> Ty_props.t
 
 module Close : sig
   type t

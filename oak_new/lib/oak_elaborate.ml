@@ -12,7 +12,6 @@ open struct
   module Pretty = Oak_pretty
   module Context = Oak_context
   module Evaluate = Oak_evaluate
-  module Infer_ty = Oak_infer_ty
   module Close = Evaluate.Close
   module Abstract = Oak_abstract
   module Typed = Oak_typed
@@ -115,7 +114,7 @@ let rec synthesize_transparent_ty (cx : Context.t) (ty : ty) : term =
       { name; param_modifiers; body = Evaluate.close_single (Context.next_level cx) body }
   | Ty_core _ | Ty_pack _ -> Term_ignore
   | Ty_decode e ->
-    let ty_props = Infer_ty.infer_neutral_universe cx.ty_env e in
+    let ty_props = Evaluate.infer_neutral_universe cx.ty_env e in
     if Size.is_type ty_props.size
     then Term_ignore
     else
@@ -577,7 +576,7 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
               size
               (match typed_field_ty with
                | Some typed_ty -> (Typed.Ty.props typed_ty).size
-               | None -> (Infer_ty.infer_props cx_acc.ty_env ty).size) ))
+               | None -> (Evaluate.infer_props cx_acc.ty_env ty).size) ))
     in
     let typed_field_specs = Bwd.to_list typed_field_specs in
     let field_specs = Bwd.to_list field_specs in
@@ -625,8 +624,8 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
     let cond = check cx cond (Ty_core Bool) in
     let body1 = infer cx body1 in
     let body2 = infer cx body2 in
-    let body1_props = Infer_ty.infer_props cx.ty_env (Typed.Expr.ty body1) in
-    let body2_props = Infer_ty.infer_props cx.ty_env (Typed.Expr.ty body2) in
+    let body1_props = Evaluate.infer_props cx.ty_env (Typed.Expr.ty body1) in
+    let body2_props = Evaluate.infer_props cx.ty_env (Typed.Expr.ty body2) in
     if not (Size.is_type body1_props.size)
     then
       Context.throw

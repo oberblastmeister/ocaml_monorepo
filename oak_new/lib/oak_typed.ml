@@ -114,6 +114,11 @@ type expr =
       ; coe : runtime_coe
       ; ann : expr_ann
       }
+  | Expr_data_rec of
+      { decls : data_decl list
+      ; span : Span.t
+      ; ann : expr_ann
+      }
 
 and ty =
   | Ty_decode of
@@ -149,6 +154,39 @@ and ty =
       ; rhs : expr
       ; ann : ty_ann
       }
+  | Ty_data of ty_data
+
+and data_decl =
+  { name : Name.t
+  ; data : ty_data
+  ; span : Span.t
+  }
+
+and ty_data =
+  { params : data_param list
+  ; body : data_body
+  ; span : Span.t
+  ; ann : ty_ann
+  }
+
+and data_body =
+  | Data_record of { fields : data_field list }
+  | Data_variant of { constructors : data_constructor list }
+
+and data_field =
+  { name : Name.t
+  ; ty : ty
+  }
+
+and data_constructor =
+  { name : Name.t
+  ; ty : ty option
+  }
+
+and data_param =
+  { name : Name.t
+  ; ty : expr
+  }
 
 and runtime_coe =
   | Fun_coe of

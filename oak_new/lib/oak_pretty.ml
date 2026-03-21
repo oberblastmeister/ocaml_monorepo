@@ -225,7 +225,12 @@ struct
       then pp_proj names { head; spine } "out"
       else pp_neutral names { head; spine }
     | Snoc (spine, Proj { name; index = _ }) -> pp_proj names { head; spine } name
-    | Empty -> pp_var names head
+    | Empty -> pp_head names head
+
+  and pp_head names (head : Syntax.head) =
+    match head with
+    | Syntax.Free free -> pp_var names free
+    | Syntax.Data _ | Syntax.Data_rec _ -> failwith ""
   ;;
 end
 

@@ -96,6 +96,39 @@ type term =
       ; body : term
       }
   | Term_ignore
+  | Term_data of term_data
+  | Term_data_rec of term_data_rec
+
+and term_data =
+  { params : term_data_param list
+  ; body : term_data_body
+  }
+
+and term_data_rec = { decls : term_data_decl list }
+
+and term_data_decl =
+  { name : Name.t
+  ; data : term_data
+  }
+
+and term_data_param =
+  { name : Name.t
+  ; ty : term_ty
+  }
+
+and term_data_body =
+  | Term_data_record of { fields : term_data_field list }
+  | Term_data_variant of { constructor : term_data_constructor list }
+
+and term_data_field =
+  { name : Name.t
+  ; ty : term_ty
+  }
+
+and term_data_constructor =
+  { name : Name.t
+  ; ty : term_ty option
+  }
 
 and field_loc =
   { name : string
@@ -153,6 +186,21 @@ and ty =
   | Ty_pack of ty
   | Ty_decode of neutral
 
+and value_data_rec =
+  { env : env
+  ; decls : term_data_decl list
+  }
+
+and value_data_decl =
+  { name : Name.t
+  ; data : value_data
+  }
+
+and value_data =
+  { params : term_data_param list
+  ; body : term_data_body
+  }
+
 and ty_sing =
   { identity : value
   ; ty : ty
@@ -163,8 +211,16 @@ and ty_struct =
   ; field_specs : term_field_spec list
   }
 
+and head =
+  | Free of Level.t
+  | Data of
+      { env : env
+      ; data : value_data
+      }
+  | Data_rec of value_data_rec
+
 and neutral =
-  { head : Level.t
+  { head : head
   ; spine : spine
   }
 
@@ -219,10 +275,16 @@ and value_field_impl =
 and env = value Seq.t
 and ty_env = ty Seq.t [@@deriving sexp_of]
 
+module Neutral = struct
+  type t = neutral
+
+  let of_head head : t = { head; spine = Bwd.Empty }
+end
+
 module Value = struct
   type t = value
 
-  let free head = Value_neutral { head; spine = Empty }
+  let free head = Value_neutral (Neutral.of_head (Free head))
   let free_of_size size = free (Level.of_int size)
 
   let abs_val_exn = function

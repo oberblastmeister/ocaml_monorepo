@@ -10,7 +10,6 @@ open struct
   module Context = Oak_context
   module Evaluate = Oak_evaluate
   module Close = Evaluate.Close
-  module Infer_ty = Oak_infer_ty
   module Typed = Oak_typed
 end
 
@@ -74,7 +73,7 @@ let rec unify_value (cx : Context.t) (e1 : value) (e2 : value) (ty : ty) : unit 
       (Evaluate.Value.app e2 arg)
       (Evaluate.Fun_ty.app ty arg)
   | Ty_decode ty ->
-    let props = Infer_ty.infer_neutral_universe cx.ty_env ty in
+    let props = Evaluate.infer_neutral_universe cx.ty_env ty in
     if not (Size.is_type props.size)
     then begin
       let e1 = Context.whnf_value cx e1 |> Value.neutral_val_exn in
@@ -212,16 +211,7 @@ and unify_ty_props (cx : Context.t) (props1 : Ty_props.t) (props2 : Ty_props.t) 
 
 (* precondition: should be whnf *)
 and unify_neutral (cx : Context.t) (e1 : neutral) (e2 : neutral) : unit =
-  if not (Level.equal e1.head e2.head)
-  then
-    Context.throw
-      cx
-      [ Diagnostic.Part.create
-          (Doc.string "Variables were not equal: "
-           ^^ Context.pp_value cx (Value.free e1.head)
-           ^^ Doc.string " != "
-           ^^ Context.pp_value cx (Value.free e2.head))
-      ];
+  unify_head cx e1.head e2.head;
   let spine1 = Bwd.to_list e1.spine in
   let spine2 = Bwd.to_list e2.spine in
   let zipped_spines =
@@ -237,7 +227,7 @@ and unify_neutral (cx : Context.t) (e1 : neutral) (e2 : neutral) : unit =
   let _ =
     List.fold
       zipped_spines
-      ~init:(Bwd.Empty, Context.level_var_ty cx e1.head)
+      ~init:(Bwd.Empty, Evaluate.infer_head cx.ty_env e1.head)
       ~f:(fun (spine, ty) (frame1, frame2) ->
         let ty =
           match frame1, frame2 with
@@ -271,6 +261,21 @@ and unify_neutral (cx : Context.t) (e1 : neutral) (e2 : neutral) : unit =
         spine <: frame1, ty)
   in
   ()
+
+and unify_head (cx : Context.t) (e1 : head) (e2 : head) : unit =
+  match e1, e2 with
+  | Free e1, Free e2 ->
+    if not (Level.equal e1 e2)
+    then
+      Context.throw
+        cx
+        [ Diagnostic.Part.create
+            (Doc.string "Variables were not equal: "
+             ^^ Context.pp_value cx (Value.free e1)
+             ^^ Doc.string " != "
+             ^^ Context.pp_value cx (Value.free e2))
+        ]
+  | _ -> failwith ""
 
 (* TODO: fix this, the runtime_coe is wrong *)
 (* postcondition: if term is None then runtime_coe must be Id_coe *)

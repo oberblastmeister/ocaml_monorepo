@@ -110,6 +110,42 @@ type expr =
       ; rhs : expr
       ; span : Span.t
       }
+  | Expr_data_rec of
+      { decls : data_decl list
+      ; span : Span.t
+      }
+  | Expr_data of expr_data
+
+and data_decl =
+  { name : Name.t
+  ; data : expr_data
+  ; span : Span.t
+  }
+
+and expr_data =
+  { params : data_param list
+  ; body : data_body
+  ; span : Span.t
+  }
+
+and data_body =
+  | Data_record of { fields : data_field list }
+  | Data_variant of { constructors : data_constructor list }
+
+and data_field =
+  { name : Name.t
+  ; ty : expr
+  }
+
+and data_constructor =
+  { name : Name.t
+  ; ty : expr option
+  }
+
+and data_param =
+  { name : Name.t
+  ; ty : expr
+  }
 
 and expr_rec_decl =
   { name : Name.t
@@ -154,6 +190,8 @@ module Expr = struct
     | Expr_literal { span; _ }
     | Expr_rec { span; _ }
     | Expr_where { span; _ }
+    | Expr_data { span; _ }
+    | Expr_data_rec { span; _ }
     | Expr_bind { span; _ } -> span
   ;;
 end

@@ -30,6 +30,7 @@ let rec eval_value (env : env) (e : term) : value =
   | Term_encode_ty { ty; props } ->
     let ty = eval_ty env ty in
     Value_encode_ty { ty; props }
+(* | Term_data data ->  *)
 
 and eval_ty (env : env) (ty : term_ty) : ty =
   match ty with
@@ -152,8 +153,7 @@ and whnf_neutral (ty_env : ty_env) (e : neutral) : value =
   let e, _ty =
     Bwd.fold_left
       e.spine
-      ~init:
-        (Value_neutral { head = e.head; spine = Empty }, Seq.get_level_exn ty_env e.head)
+      ~init:(Value_neutral { head = e.head; spine = Empty }, infer_head ty_env e.head)
       ~f:(fun (e, ty) frame ->
         (* invariant: e is whnf, ty may not be whnf *)
         match frame with
@@ -168,6 +168,56 @@ and whnf_neutral (ty_env : ty_env) (e : neutral) : value =
           whnf_value ty_env ty.identity, ty.ty)
   in
   e
+
+and infer_props (ty_env : ty_env) (ty : ty) =
+  match ty with
+  | Ty_universe props -> props
+  | Ty_sing _ -> { size = Size.sig_ }
+  | Ty_struct ty ->
+    let size, _, _ =
+      List.fold
+        ty.field_specs
+        ~init:(Size.sig_, ty_env, ty.env)
+        ~f:(fun (size, ty_env, closure_env) field_spec ->
+          let ty = eval_ty closure_env field_spec.ty in
+          let props = infer_props ty_env ty in
+          ( Size.max size props.size
+          , Seq.push ty ty_env
+          , Seq.push (Value.free_of_size (Seq.length ty_env)) closure_env ))
+    in
+    { size }
+  | Ty_fun ty ->
+    let arg : value_arg =
+      { e = Value.free_of_size (Seq.length ty_env); param_modifiers = ty.param_modifiers }
+    in
+    let param_ty_props = infer_props ty_env ty.param_ty in
+    let body_ty_props = infer_props (Seq.push ty.param_ty ty_env) (app_fun_ty ty arg) in
+    { size = Size.max param_ty_props.size body_ty_props.size }
+  | Ty_pack _ | Ty_core _ -> { size = Size.type_ }
+  | Ty_decode ty -> infer_neutral_universe ty_env ty
+
+and infer_neutral (ty_env : ty_env) (e : neutral) : ty =
+  Bwd.fold_left
+    e.spine
+    ~init:(Bwd.Empty, infer_head ty_env e.head)
+    ~f:(fun (spine, ty) frame ->
+      let ty =
+        match frame with
+        | App arg -> app_ty ty_env ty arg
+        | Proj field -> proj_ty ty_env (Value_neutral { head = e.head; spine }) ty field
+        | Out -> out_ty ty_env ty
+      in
+      spine <: frame, ty)
+  |> snd
+
+and infer_head (ty_env : ty_env) (head : head) : ty =
+  match head with
+  | Free free -> Seq.get_level_exn ty_env free
+  | Data _ | Data_rec _ -> failwith ""
+
+and infer_neutral_universe (ty_env : ty_env) (e : neutral) : Ty_props.t =
+  let ty = infer_neutral ty_env e in
+  whnf_ty ty_env ty |> Ty.ty_universe_val_exn
 ;;
 
 (* Substitutes free variables into bound variables *)
@@ -264,14 +314,15 @@ and quote_ty context_size (ty : ty) : term_ty =
     Term_ty_decode e
 
 and quote_neutral context_size (e : neutral) : term =
-  assert (e.head.level < context_size);
-  Bwd.fold_left e.spine ~init:(Term_free e.head) ~f:(fun e elim ->
+  Bwd.fold_left e.spine ~init:(quote_head context_size e.head) ~f:(fun e elim ->
     match elim with
     | Proj field -> Term_proj { strukt = e; field }
     | App arg ->
       let arg = quote_arg context_size arg in
       Term_app { func = e; arg }
     | Out -> Term_sing_out e)
+
+and quote_head context_size (head : head) : term = failwith ""
 
 and quote_arg context_size (arg : value_arg) : term_arg =
   let e = quote_value context_size arg.e in

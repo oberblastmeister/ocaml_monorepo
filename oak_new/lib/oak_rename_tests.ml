@@ -541,7 +541,8 @@ struct {
   val T = 1324
 }
     |};
-  [%expect {|
+  [%expect
+    {|
     error: Duplicate variable in struct
      --> <input>:4:7
       |
@@ -565,5 +566,172 @@ sig {
       |
     4 |   val T : Type
       |       ^
+    |}]
+;;
+
+let%expect_test "data params scope over body" =
+  check
+    {|
+data (A : Type) {
+  field : A
+}
+    |};
+  [%expect
+    {|
+    (Expr_data
+     ((params
+       (((name ((name A) (span ((start 4) (stop 5)))))
+         (ty (Expr_universe (size Type) (span ((start 8) (stop 9))))))))
+      (body
+       (Data_record
+        (fields
+         (((name ((name field) (span ((start 14) (stop 15)))))
+           (ty (Expr_var (index ((index 0))) (span ((start 18) (stop 19))))))))))
+      (span ((start 1) (stop 21)))))
+    |}]
+;;
+
+let%expect_test "data rec is mutually recursive" =
+  check
+    {|
+data_rec {
+  data First (A : Type) {
+    second : Second A
+  }
+  
+  data Second (A : Type) {
+    first : First A
+  }
+}
+    |};
+  [%expect
+    {|
+    (Expr_data_rec
+     (decls
+      (((name ((name First) (span ((start 8) (stop 9)))))
+        (data
+         ((params
+           (((name ((name A) (span ((start 11) (stop 12)))))
+             (ty (Expr_universe (size Type) (span ((start 15) (stop 16))))))))
+          (body
+           (Data_record
+            (fields
+             (((name ((name second) (span ((start 21) (stop 22)))))
+               (ty
+                (Expr_app
+                 (func
+                  (Expr_var (index ((index 1))) (span ((start 25) (stop 26)))))
+                 (arg
+                  (Expr_var (index ((index 0))) (span ((start 27) (stop 28)))))
+                 (param_modifiers ((icit Expl) (relevancy Relevant)))
+                 (span ((start 25) (stop 28))))))))))
+          (span ((start 6) (stop 31)))))
+        (span ((start 6) (stop 31))))
+       ((name ((name Second) (span ((start 38) (stop 39)))))
+        (data
+         ((params
+           (((name ((name A) (span ((start 41) (stop 42)))))
+             (ty (Expr_universe (size Type) (span ((start 45) (stop 46))))))))
+          (body
+           (Data_record
+            (fields
+             (((name ((name first) (span ((start 51) (stop 52)))))
+               (ty
+                (Expr_app
+                 (func
+                  (Expr_var (index ((index 2))) (span ((start 55) (stop 56)))))
+                 (arg
+                  (Expr_var (index ((index 0))) (span ((start 57) (stop 58)))))
+                 (param_modifiers ((icit Expl) (relevancy Relevant)))
+                 (span ((start 55) (stop 58))))))))))
+          (span ((start 36) (stop 61)))))
+        (span ((start 36) (stop 61))))))
+     (span ((start 1) (stop 63))))
+    |}]
+;;
+
+let%expect_test "data body cannot mix fields and constructors" =
+  check
+    {|
+data {
+  field : Bool
+  Constructor
+}
+    |};
+  [%expect
+    {|
+    error: Data body cannot mix fields and constructors
+     --> <input>:2:1
+      |
+    2 | data {
+      | ^^^^^^...
+    |}]
+;;
+
+let%expect_test "data rec duplicates" =
+  check
+    {|
+data_rec {
+  data T {}
+  data T {}
+}
+    |};
+  [%expect
+    {|
+    error: Duplicate data declaration
+     --> <input>:4:8
+      |
+    4 |   data T {}
+      |        ^
+    |}]
+;;
+
+let%expect_test "duplicate fields" =
+  check
+    {|
+data {
+  field1 : Int
+  field2 : Int
+  field1 : Int
+}
+    |};
+  [%expect
+    {|
+    error: Duplicate field in data record
+     --> <input>:5:3
+      |
+    5 |   field1 : Int
+      |   ^^^^^^
+    |}]
+;;
+
+let%expect_test "empty data is a record" =
+  check
+    {|
+data {}
+    |};
+  [%expect
+    {|
+    (Expr_data
+     ((params ()) (body (Data_record (fields ()))) (span ((start 1) (stop 5)))))
+    |}]
+;;
+
+let%expect_test "duplicate constructors" =
+  check
+    {|
+data {
+  First
+  Second of Int
+  First
+}
+    |};
+  [%expect
+    {|
+    error: Duplicate constructor in data variant
+     --> <input>:5:3
+      |
+    5 |   First
+      |   ^^^^^
     |}]
 ;;
