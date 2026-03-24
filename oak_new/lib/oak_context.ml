@@ -1,5 +1,5 @@
 open Prelude
-open Oak_syntax
+open Oak_core_syntax
 
 open struct
   module Spanned = Utility.Spanned
@@ -8,7 +8,7 @@ open struct
   module Diagnostic = Oak_diagnostic
   module Pretty = Oak_pretty
   module Source = Oak_source
-  module Evaluate = Oak_evaluate
+  module Evaluate = Oak_core_evaluate
 end
 
 exception Error of Diagnostic.t

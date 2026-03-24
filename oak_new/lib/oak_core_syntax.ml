@@ -99,16 +99,24 @@ type term =
   | Term_data of term_data
   | Term_data_rec of term_data_rec
 
+(* binds num_params variables *)
 and term_data =
-  { params : term_data_param list
+  { num_params : int
   ; body : term_data_body
+  ; ty : term_ty
   }
 
-and term_data_rec = { decls : term_data_decl list }
+(* binds one variable which is self *)
+and term_data_rec =
+  { decls : term_data_decl list
+  ; ty : term_ty
+  }
 
+(* binds num_params variables *)
 and term_data_decl =
   { name : Name.t
-  ; data : term_data
+  ; num_params : int
+  ; body : term_data_body
   }
 
 and term_data_param =
@@ -186,9 +194,12 @@ and ty =
   | Ty_pack of ty
   | Ty_decode of neutral
 
+(* env takes one argument, which is self, env is scoped in decls *)
 and value_data_rec =
   { env : env
   ; decls : term_data_decl list
+  ; ty : ty
+    (* ty should be a non-dependent structure type with Type valued function types *)
   }
 
 and value_data_decl =
@@ -196,9 +207,12 @@ and value_data_decl =
   ; data : value_data
   }
 
+(* env takes zero arguments env is scoped in decls *)
 and value_data =
-  { params : term_data_param list
+  { env : env
+  ; num_params : int
   ; body : term_data_body
+  ; ty : ty (* ty should be Type valued function type *)
   }
 
 and ty_sing =
@@ -213,10 +227,7 @@ and ty_struct =
 
 and head =
   | Free of Level.t
-  | Data of
-      { env : env
-      ; data : value_data
-      }
+  | Data of value_data
   | Data_rec of value_data_rec
 
 and neutral =
@@ -284,7 +295,8 @@ end
 module Value = struct
   type t = value
 
-  let free head = Value_neutral (Neutral.of_head (Free head))
+  let of_head head = Value_neutral (Neutral.of_head head)
+  let free head = of_head (Free head)
   let free_of_size size = free (Level.of_int size)
 
   let abs_val_exn = function

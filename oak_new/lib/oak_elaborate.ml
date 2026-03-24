@@ -1,5 +1,5 @@
 open Prelude
-open Oak_syntax
+open Oak_core_syntax
 
 open struct
   module Bwd = Utility.Bwd
@@ -11,7 +11,7 @@ open struct
   module Unify = Oak_unify
   module Pretty = Oak_pretty
   module Context = Oak_context
-  module Evaluate = Oak_evaluate
+  module Evaluate = Oak_core_evaluate
   module Close = Evaluate.Close
   module Abstract = Oak_abstract
   module Typed = Oak_typed
@@ -284,6 +284,9 @@ let rec coerce_singleton cx (e : term) (ty : ty) : term * ty =
 (* postcondition: the type in Typed.expr should be the type of the core term *)
 let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
   match e with
+  | Expr_data_rec { decls; span } -> 
+    failwith ""
+  | Expr_data data -> failwith ""
   | Expr_var { index; span } ->
     let term = Term_free (Index.to_level (Context.size cx) index) in
     let ty = Seq.get_index_exn cx.ty_env index in

@@ -1,5 +1,5 @@
 open Prelude
-open Oak_syntax
+open Oak_core_syntax
 
 open struct
   module Bwd = Utility.Bwd
@@ -8,7 +8,7 @@ open struct
   module Name_list = Common.Name_list
   module Diagnostic = Oak_diagnostic
   module Context = Oak_context
-  module Evaluate = Oak_evaluate
+  module Evaluate = Oak_core_evaluate
   module Close = Evaluate.Close
   module Typed = Oak_typed
 end

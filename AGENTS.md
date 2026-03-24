@@ -234,6 +234,38 @@ Benefits:
 - Often more concise, especially with or-patterns
 - Binds values directly without needing to extract from records
 
+### Avoid Unnecessary Constructor Qualification
+
+Variant constructors use type-based name resolution. When the argument type is known during pattern matching, or the result type is known during construction, do not qualify constructors like `Value_neutral` or `Term_app` with their module name.
+
+If type inference needs help, prefer adding a type annotation to the matched parameter or the result type rather than qualifying the constructor. Do not use `let open ... in` as the workaround for this.
+
+```ocaml
+module Core = Oak_core_syntax
+
+(* Good: scrutinee type is known, so constructors need not be qualified. Also, result type is known, so constructors don't need to be qualified when returning. *)
+let out_value (sing : Core.value) : Core.value =
+  match sing with
+  | Value_sing_in e -> e
+  | Value_neutral { head; spine } -> Value_neutral { head; spine = spine <: Core.Out }
+  | _ -> failwith "Expected a singleton value"
+
+(* Bad: scrutinee type is not known, so constructors need to be qualified, but result type is known so constructors don't need to be qualified when returning *)
+let eval_ty (env : Core.env) ty : Core.ty =
+  match ty with
+  | Core.Term_ty_core ty -> Ty_core ty
+  | Core.Term_ty_universe props -> Ty_universe props
+  | _ -> failwith "..."
+
+(* Bad: both scrutinee type and result type are not known. *)
+let out_value (sing) : Core.value =
+  match sing with
+  | Core.Value_sing_in e -> e
+  | Core.Value_neutral { head; spine } ->
+    Core.Value_neutral { head; spine = spine <: Core.Out }
+  | _ -> failwith "Expected a singleton value"
+```
+
 ### Use Or-Patterns for Common Field Extraction
 
 When multiple variants share a common field and the same operation is performed on all of them, use or-patterns to consolidate the cases:

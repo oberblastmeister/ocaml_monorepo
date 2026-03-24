@@ -1,6 +1,6 @@
 open Prelude
 open Core
-module Syntax = Oak_syntax
+module Syntax = Oak_core_syntax
 module Typed = Oak_typed
 module Snippet = Utility.Diagnostic.Snippet
 module Pretty = Oak_pretty

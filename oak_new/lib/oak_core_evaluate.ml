@@ -1,10 +1,10 @@
 open Prelude
-open Oak_syntax
+module Core = Oak_core_syntax
 
-let rec eval_value (env : env) (e : term) : value =
+let rec eval_value (env : Core.env) (e : Core.term) : Core.value =
   match e with
-  | Term_bound index -> Seq.get_index_exn env index
-  | Term_free level -> Value.free level
+  | Term_bound index -> Core.Seq.get_index_exn env index
+  | Term_free level -> Core.Value.free level
   | Term_app { func; arg } ->
     let func = eval_value env func in
     let arg = eval_arg env arg in
@@ -25,14 +25,17 @@ let rec eval_value (env : env) (e : term) : value =
     out_value e
   | Term_let { name = _; rhs; body } ->
     let rhs = eval_value env rhs in
-    eval_value (Seq.push rhs env) body
+    eval_value (Core.Seq.push rhs env) body
   | Term_ignore -> Value_ignore
   | Term_encode_ty { ty; props } ->
     let ty = eval_ty env ty in
     Value_encode_ty { ty; props }
-(* | Term_data data ->  *)
+  | Term_data { num_params; body; ty } ->
+    Core.Value.of_head (Data { env; num_params; body; ty = eval_ty env ty })
+  | Term_data_rec { decls; ty } ->
+    Core.Value.of_head (Data_rec { env; decls; ty = eval_ty env ty })
 
-and eval_ty (env : env) (ty : term_ty) : ty =
+and eval_ty (env : Core.env) (ty : Core.term_ty) : Core.ty =
   match ty with
   | Term_ty_decode e ->
     let e = eval_value env e in
@@ -51,75 +54,81 @@ and eval_ty (env : env) (ty : term_ty) : ty =
   | Term_ty_core ty -> Ty_core ty
   | Term_ty_universe props -> Ty_universe props
 
-and eval_field_impl env ({ name; e; relevancy } : term_field_impl) : value_field_impl =
+and eval_field_impl env ({ name; e; relevancy } : Core.term_field_impl) : Core.value_field_impl =
   let e = eval_value env e in
   { name; e; relevancy }
 
-and eval_arg env ({ e; param_modifiers } : term_arg) : value_arg =
+and eval_arg env ({ e; param_modifiers } : Core.term_arg) : Core.value_arg =
   let e = eval_value env e in
   { e; param_modifiers }
 
-and decode_value (ty : value) : ty =
+and decode_value (ty : Core.value) : Core.ty =
   match ty with
   | Value_encode_ty { ty; props = _ } -> ty
   | Value_neutral e -> Ty_decode e
   | _ -> failwith "Expected a type code"
 
-and app_value (func : value) (arg : value_arg) =
+and app_value (func : Core.value) (arg : Core.value_arg) : Core.value =
   match func with
   | Value_ignore ->
     (* Function types can have kind Type *)
     Value_ignore
   | Value_fun func -> app_fun func arg
-  | Value_neutral { head; spine } -> Value_neutral { head; spine = spine <: App arg }
+  | Value_neutral { head; spine } ->
+    Value_neutral { head; spine = spine <: App arg }
   | _ -> failwith "Expected function value"
 
-and proj_value (strukt : value) (field : field_loc) =
+and proj_value (strukt : Core.value) (field : Core.field_loc) : Core.value =
   (* No ignore case here because structures always have kind Sig *)
   match strukt with
   | Value_struct strukt -> proj_struct strukt field
-  | Value_neutral { head; spine } -> Value_neutral { head; spine = spine <: Proj field }
+  | Value_neutral { head; spine } ->
+    Value_neutral { head; spine = spine <: Proj field }
   | _ -> failwith "Expected a struct value"
 
-and out_value (sing : value) =
+and out_value (sing : Core.value) : Core.value =
   match sing with
   | Value_sing_in e -> e
   | Value_neutral { head; spine } -> Value_neutral { head; spine = spine <: Out }
   | _ -> failwith "Expected a singleton value"
 
 (* precondition: strukt is whnf, postcondition: result is whnf *)
-and app_whnf (ty_env : ty_env) (func : value) (arg : value_arg) =
+and app_whnf (ty_env : Core.ty_env) (func : Core.value) (arg : Core.value_arg) : Core.value =
   match func with
   | Value_ignore ->
     (* Function types can have kind Type *)
     Value_ignore
   | Value_fun func -> whnf_value ty_env (app_fun func arg)
-  | Value_neutral { head; spine } -> Value_neutral { head; spine = spine <: App arg }
+  | Value_neutral { head; spine } ->
+    Value_neutral { head; spine = spine <: App arg }
   | _ -> failwith "Expected function value"
 
 (* precondition: strukt is whnf, postcondition: result is whnf *)
-and proj_whnf (ty_env : ty_env) (strukt : value) (field : field_loc) =
+and proj_whnf (ty_env : Core.ty_env) (strukt : Core.value) (field : Core.field_loc)
+  : Core.value
+  =
   match strukt with
   | Value_struct strukt -> whnf_value ty_env (proj_struct strukt field)
-  | Value_neutral { head; spine } -> Value_neutral { head; spine = spine <: Proj field }
+  | Value_neutral { head; spine } ->
+    Value_neutral { head; spine = spine <: Proj field }
   | _ -> failwith "Expected a struct value"
 
-and proj_struct (strukt : value_struct) (field : field_loc) =
+and proj_struct (strukt : Core.value_struct) (field : Core.field_loc) =
   let field_impl = List.drop strukt.field_impls field.index |> List.hd_exn in
   field_impl.e
 
-and app_fun (abs : value_fun) (arg : value_arg) = eval_closure1 abs.body arg.e
-and eval_closure1 closure arg = eval_value (Seq.push arg closure.env) closure.body
+and app_fun (abs : Core.value_fun) (arg : Core.value_arg) = eval_closure1 abs.body arg.e
+and eval_closure1 closure arg = eval_value (Core.Seq.push arg closure.env) closure.body
 
-and eval_ty_closure1 (closure : ty_closure) arg =
-  eval_ty (Seq.push arg closure.env) closure.body
+and eval_ty_closure1 (closure : Core.ty_closure) arg =
+  eval_ty (Core.Seq.push arg closure.env) closure.body
 
-and whnf_value ty_env (e : value) : value =
+and whnf_value ty_env (e : Core.value) : Core.value =
   match e with
   | Value_neutral neutral -> whnf_neutral ty_env neutral
   | Value_ignore | Value_struct _ | Value_fun _ | Value_sing_in _ | Value_encode_ty _ -> e
 
-and whnf_ty (ty_env : ty_env) (ty : ty) : ty =
+and whnf_ty (ty_env : Core.ty_env) (ty : Core.ty) : Core.ty =
   match ty with
   | Ty_decode e -> begin
     match whnf_neutral ty_env e with
@@ -129,32 +138,44 @@ and whnf_ty (ty_env : ty_env) (ty : ty) : ty =
   end
   | Ty_universe _ | Ty_sing _ | Ty_struct _ | Ty_fun _ | Ty_core _ | Ty_pack _ -> ty
 
-and app_fun_ty (func_ty : ty_fun) (arg : value_arg) : ty =
+and app_fun_ty (func_ty : Core.ty_fun) (arg : Core.value_arg) : Core.ty =
   eval_ty_closure1 func_ty.body_ty arg.e
 
-and app_ty (ty_env : ty_env) (ty : ty) (arg : value_arg) : ty =
-  app_fun_ty (Ty.ty_fun_val_exn (whnf_ty ty_env ty)) arg
+and app_ty (ty_env : Core.ty_env) (ty : Core.ty) (arg : Core.value_arg) : Core.ty =
+  app_fun_ty (Core.Ty.ty_fun_val_exn (whnf_ty ty_env ty)) arg
 
-and out_ty (ty_env : ty_env) (ty : ty) : ty = (Ty.ty_sing_val_exn (whnf_ty ty_env ty)).ty
+and out_ty (ty_env : Core.ty_env) (ty : Core.ty) : Core.ty =
+  (Core.Ty.ty_sing_val_exn (whnf_ty ty_env ty)).ty
 
-and proj_struct_ty (strukt : value) (struct_ty : ty_struct) (field : field_loc) : ty =
+and proj_struct_ty
+      (strukt : Core.value)
+      (struct_ty : Core.ty_struct)
+      (field : Core.field_loc)
+  : Core.ty
+  =
   let field_spec = List.drop struct_ty.field_specs field.index |> List.hd_exn in
   let env =
     List.take struct_ty.field_specs field.index
     |> List.foldi ~init:struct_ty.env ~f:(fun index env field_spec ->
-      Seq.push (proj_value strukt { name = field_spec.name.name; index }) env)
+      Core.Seq.push (proj_value strukt { name = field_spec.name.name; index }) env)
   in
   eval_ty env field_spec.ty
 
-and proj_ty (ty_env : ty_env) (strukt : value) (ty : ty) (field : field_loc) : ty =
-  proj_struct_ty strukt (Ty.ty_struct_val_exn (whnf_ty ty_env ty)) field
+and proj_ty
+      (ty_env : Core.ty_env)
+      (strukt : Core.value)
+      (ty : Core.ty)
+      (field : Core.field_loc)
+  : Core.ty
+  =
+  proj_struct_ty strukt (Core.Ty.ty_struct_val_exn (whnf_ty ty_env ty)) field
 
-and whnf_neutral (ty_env : ty_env) (e : neutral) : value =
+and whnf_neutral (ty_env : Core.ty_env) (e : Core.neutral) : Core.value =
   let e, _ty =
     Bwd.fold_left
       e.spine
       ~init:(Value_neutral { head = e.head; spine = Empty }, infer_head ty_env e.head)
-      ~f:(fun (e, ty) frame ->
+      ~f:(fun (e, ty) (frame : Core.frame) ->
         (* invariant: e is whnf, ty may not be whnf *)
         match frame with
         | App arg -> app_whnf ty_env e arg, app_ty ty_env ty arg
@@ -169,38 +190,42 @@ and whnf_neutral (ty_env : ty_env) (e : neutral) : value =
   in
   e
 
-and infer_props (ty_env : ty_env) (ty : ty) =
+and infer_props (ty_env : Core.ty_env) (ty : Core.ty) =
   match ty with
   | Ty_universe props -> props
-  | Ty_sing _ -> { size = Size.sig_ }
+  | Ty_sing _ -> { size = Core.Size.sig_ }
   | Ty_struct ty ->
     let size, _, _ =
       List.fold
         ty.field_specs
-        ~init:(Size.sig_, ty_env, ty.env)
+        ~init:(Core.Size.sig_, ty_env, ty.env)
         ~f:(fun (size, ty_env, closure_env) field_spec ->
           let ty = eval_ty closure_env field_spec.ty in
           let props = infer_props ty_env ty in
-          ( Size.max size props.size
-          , Seq.push ty ty_env
-          , Seq.push (Value.free_of_size (Seq.length ty_env)) closure_env ))
+          ( Core.Size.max size props.size
+          , Core.Seq.push ty ty_env
+          , Core.Seq.push (Core.Value.free_of_size (Core.Seq.length ty_env)) closure_env ))
     in
     { size }
   | Ty_fun ty ->
-    let arg : value_arg =
-      { e = Value.free_of_size (Seq.length ty_env); param_modifiers = ty.param_modifiers }
+    let arg : Core.value_arg =
+      { e = Core.Value.free_of_size (Core.Seq.length ty_env)
+      ; param_modifiers = ty.param_modifiers
+      }
     in
     let param_ty_props = infer_props ty_env ty.param_ty in
-    let body_ty_props = infer_props (Seq.push ty.param_ty ty_env) (app_fun_ty ty arg) in
-    { size = Size.max param_ty_props.size body_ty_props.size }
-  | Ty_pack _ | Ty_core _ -> { size = Size.type_ }
+    let body_ty_props =
+      infer_props (Core.Seq.push ty.param_ty ty_env) (app_fun_ty ty arg)
+    in
+    { size = Core.Size.max param_ty_props.size body_ty_props.size }
+  | Ty_pack _ | Ty_core _ -> { size = Core.Size.type_ }
   | Ty_decode ty -> infer_neutral_universe ty_env ty
 
-and infer_neutral (ty_env : ty_env) (e : neutral) : ty =
+and infer_neutral (ty_env : Core.ty_env) (e : Core.neutral) : Core.ty =
   Bwd.fold_left
     e.spine
     ~init:(Bwd.Empty, infer_head ty_env e.head)
-    ~f:(fun (spine, ty) frame ->
+    ~f:(fun (spine, ty) (frame : Core.frame) ->
       let ty =
         match frame with
         | App arg -> app_ty ty_env ty arg
@@ -210,14 +235,15 @@ and infer_neutral (ty_env : ty_env) (e : neutral) : ty =
       spine <: frame, ty)
   |> snd
 
-and infer_head (ty_env : ty_env) (head : head) : ty =
+and infer_head (ty_env : Core.ty_env) (head : Core.head) : Core.ty =
   match head with
-  | Free free -> Seq.get_level_exn ty_env free
-  | Data _ | Data_rec _ -> failwith ""
+  | Free free -> Core.Seq.get_level_exn ty_env free
+  | Data { ty; _ } -> ty
+  | Data_rec { ty; _ } -> ty
 
-and infer_neutral_universe (ty_env : ty_env) (e : neutral) : Ty_props.t =
+and infer_neutral_universe (ty_env : Core.ty_env) (e : Core.neutral) : Core.Ty_props.t =
   let ty = infer_neutral ty_env e in
-  whnf_ty ty_env ty |> Ty.ty_universe_val_exn
+  whnf_ty ty_env ty |> Core.Ty.ty_universe_val_exn
 ;;
 
 (* Substitutes free variables into bound variables *)
@@ -231,11 +257,11 @@ module Close = struct
   let empty = { map = Int.Map.empty; lift = 0 }
   let lift n (close : t) = { close with lift = close.lift + n }
 
-  let singleton (level : Level.t) (index : Index.t) : t =
+  let singleton (level : Core.Level.t) (index : Core.Index.t) : t =
     { map = Int.Map.singleton level.level index.index; lift = 0 }
   ;;
 
-  let add_exn (level : Level.t) (index : Index.t) (close : t) =
+  let add_exn (level : Core.Level.t) (index : Core.Index.t) (close : t) =
     { close with
       map = Map.add_exn close.map ~key:level.level ~data:(index.index - close.lift)
     }
@@ -253,14 +279,14 @@ module Close = struct
     { first with map }
   ;;
 
-  let find (close : t) (level : Level.t) =
+  let find (close : t) (level : Core.Level.t) =
     Option.map
-      ~f:(fun i -> Index.of_int (i + close.lift))
+      ~f:(fun i -> Core.Index.of_int (i + close.lift))
       (Map.find close.map level.level)
   ;;
 end
 
-let rec quote_value context_size (e : value) : term =
+let rec quote_value context_size (e : Core.value) : Core.term =
   match e with
   | Value_ignore -> Term_ignore
   | Value_struct { field_impls } ->
@@ -268,9 +294,9 @@ let rec quote_value context_size (e : value) : term =
     Term_struct { field_impls }
   | Value_fun { name; body; param_modifiers } ->
     let body =
-      eval_closure1 body (Value.free_of_size context_size)
+      eval_closure1 body (Core.Value.free_of_size context_size)
       |> quote_value (context_size + 1)
-      |> close_single (Level.of_int context_size)
+      |> close_single (Core.Level.of_int context_size)
     in
     Term_fun { name; body; param_modifiers }
   | Value_sing_in e -> Term_sing_in (quote_value context_size e)
@@ -279,7 +305,7 @@ let rec quote_value context_size (e : value) : term =
     let ty = quote_ty context_size ty in
     Term_encode_ty { ty; props }
 
-and quote_ty context_size (ty : ty) : term_ty =
+and quote_ty context_size (ty : Core.ty) : Core.term_ty =
   match ty with
   | Ty_universe props -> Term_ty_universe props
   | Ty_sing { identity; ty } ->
@@ -294,17 +320,20 @@ and quote_ty context_size (ty : ty) : term_ty =
         ~f:(fun (context_size, closure_env, c) { name; ty; relevancy } ->
           let ty = eval_ty closure_env ty |> quote_ty context_size |> close_ty c in
           ( ( context_size + 1
-            , Seq.push (Value.free_of_size context_size) closure_env
-            , Close.add_exn (Level.of_int context_size) Index.zero (Close.lift 1 c) )
-          , ({ name; ty; relevancy } : term_field_spec) ))
+            , Core.Seq.push (Core.Value.free_of_size context_size) closure_env
+            , Close.add_exn
+                (Core.Level.of_int context_size)
+                Core.Index.zero
+                (Close.lift 1 c) )
+          , ({ name; ty; relevancy } : Core.term_field_spec) ))
     in
     Term_ty_struct { field_specs }
   | Ty_fun { name; param_modifiers; param_ty; body_ty } ->
     let param_ty = quote_ty context_size param_ty in
     let body_ty =
-      eval_ty_closure1 body_ty (Value.free_of_size context_size)
+      eval_ty_closure1 body_ty (Core.Value.free_of_size context_size)
       |> quote_ty (context_size + 1)
-      |> close_ty_single (Level.of_int context_size)
+      |> close_ty_single (Core.Level.of_int context_size)
     in
     Term_ty_fun { name; param_modifiers; param_ty; body_ty }
   | Ty_core ty -> Term_ty_core ty
@@ -313,8 +342,8 @@ and quote_ty context_size (ty : ty) : term_ty =
     let e = quote_neutral context_size e in
     Term_ty_decode e
 
-and quote_neutral context_size (e : neutral) : term =
-  Bwd.fold_left e.spine ~init:(quote_head context_size e.head) ~f:(fun e elim ->
+and quote_neutral context_size (e : Core.neutral) : Core.term =
+  Bwd.fold_left e.spine ~init:(quote_head context_size e.head) ~f:(fun e (elim : Core.frame) : Core.term ->
     match elim with
     | Proj field -> Term_proj { strukt = e; field }
     | App arg ->
@@ -322,19 +351,26 @@ and quote_neutral context_size (e : neutral) : term =
       Term_app { func = e; arg }
     | Out -> Term_sing_out e)
 
-and quote_head context_size (head : head) : term = failwith ""
+and quote_head context_size (head : Core.head) : Core.term =
+  match head with
+  | Free free ->
+    assert (free.level < context_size);
+    Term_free free
+  | Data _ | Data_rec _ -> failwith ""
 
-and quote_arg context_size (arg : value_arg) : term_arg =
+and quote_arg context_size (arg : Core.value_arg) : Core.term_arg =
   let e = quote_value context_size arg.e in
   { e; param_modifiers = arg.param_modifiers }
 
-and quote_field_impl (context_size : int) ({ name; e; relevancy } : value_field_impl)
-  : term_field_impl
+and quote_field_impl
+      (context_size : int)
+      ({ name; e; relevancy } : Core.value_field_impl)
+  : Core.term_field_impl
   =
   let e = quote_value context_size e in
   { name; e; relevancy }
 
-and close (c : Close.t) (e : term) : term =
+and close (c : Close.t) (e : Core.term) : Core.term =
   match e with
   | Term_bound v -> Term_bound v
   | Term_free i ->
@@ -353,13 +389,26 @@ and close (c : Close.t) (e : term) : term =
   | Term_let { name; rhs; body } ->
     Term_let { name; rhs = close c rhs; body = close (Close.lift 1 c) body }
   | Term_ignore -> Term_ignore
+  | Term_data { num_params; body; ty } ->
+    let c = Close.lift num_params c in
+    Term_data { num_params; body = close_data_body c body; ty = close_ty c ty }
+  | Term_data_rec { decls; ty } ->
+    let c = Close.lift 1 c in
+    let decls =
+      List.map decls ~f:(fun ({ name; num_params; body } : Core.term_data_decl) ->
+        let c = Close.lift num_params c in
+        ({ name; num_params; body = close_data_body c body } : Core.term_data_decl))
+    in
+    let ty = close_ty c ty in
+    Term_data_rec { decls; ty }
 
-and close_single (level : Level.t) e = close (Close.singleton level (Index.of_int 0)) e
+and close_single (level : Core.Level.t) e =
+  close (Close.singleton level (Core.Index.of_int 0)) e
 
-and close_ty_single (level : Level.t) ty =
-  close_ty (Close.singleton level (Index.of_int 0)) ty
+and close_ty_single (level : Core.Level.t) ty =
+  close_ty (Close.singleton level (Core.Index.of_int 0)) ty
 
-and close_ty (c : Close.t) (ty : term_ty) : term_ty =
+and close_ty (c : Close.t) (ty : Core.term_ty) : Core.term_ty =
   match ty with
   | Term_ty_decode e ->
     let e = close c e in
@@ -372,7 +421,8 @@ and close_ty (c : Close.t) (ty : term_ty) : term_ty =
     let _, field_specs =
       List.fold_map field_specs ~init:0 ~f:(fun under { name; ty; relevancy } ->
         ( under + 1
-        , ({ name; ty = close_ty (Close.lift under c) ty; relevancy } : term_field_spec) ))
+        , ({ name; ty = close_ty (Close.lift under c) ty; relevancy }
+           : Core.term_field_spec) ))
     in
     Term_ty_struct { field_specs }
   | Term_ty_sing { identity; ty } ->
@@ -385,10 +435,30 @@ and close_ty (c : Close.t) (ty : term_ty) : term_ty =
   | Term_ty_core ty -> Term_ty_core ty
   | Term_ty_universe props -> Term_ty_universe props
 
-and close_field_impl (c : Close.t) ({ name; e; relevancy } : term_field_impl) =
+and close_data_body (c : Close.t) (body : Core.term_data_body) : Core.term_data_body =
+  match body with
+  | Term_data_record { fields } -> Term_data_record { fields = List.map fields ~f:(close_data_field c) }
+  | Term_data_variant { constructor } ->
+    Term_data_variant { constructor = List.map constructor ~f:(close_data_constructor c) }
+
+and close_data_field
+      (c : Close.t)
+      ({ name; ty } : Core.term_data_field)
+  : Core.term_data_field
+  =
+  { name; ty = close_ty c ty }
+
+and close_data_constructor
+      (c : Close.t)
+      ({ name; ty } : Core.term_data_constructor)
+  : Core.term_data_constructor
+  =
+  { name; ty = Option.map ty ~f:(close_ty c) }
+
+and close_field_impl (c : Close.t) ({ name; e; relevancy } : Core.term_field_impl) =
   { name; e = close c e; relevancy }
 
-and close_arg (c : Close.t) ({ e; param_modifiers } : term_arg) =
+and close_arg (c : Close.t) ({ e; param_modifiers } : Core.term_arg) =
   { e = close c e; param_modifiers }
 ;;
 

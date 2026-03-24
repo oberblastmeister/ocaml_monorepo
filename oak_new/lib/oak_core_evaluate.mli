@@ -1,5 +1,5 @@
 open Prelude
-open Oak_syntax
+open Oak_core_syntax
 
 val eval_value : env -> term -> value
 val eval_ty : env -> term_ty -> ty

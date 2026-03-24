@@ -2,8 +2,8 @@ open Prelude
 
 open struct
   module Name_list = Oak_common.Name_list
-  module Syntax = Oak_syntax
-  module Evaluate = Oak_evaluate
+  module Syntax = Oak_core_syntax
+  module Evaluate = Oak_core_evaluate
 end
 
 module Make (Config : sig

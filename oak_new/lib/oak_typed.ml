@@ -3,7 +3,7 @@ open Prelude
 open struct
   module Span = Utility.Span
   module Common = Oak_common
-  module Core = Oak_syntax
+  module Core = Oak_core_syntax
 end
 
 module Core_ty = Common.Core_ty
@@ -119,6 +119,7 @@ type expr =
       ; span : Span.t
       ; ann : expr_ann
       }
+  | Expr_data of expr_data
 
 and ty =
   | Ty_decode of
@@ -154,19 +155,18 @@ and ty =
       ; rhs : expr
       ; ann : ty_ann
       }
-  | Ty_data of ty_data
 
 and data_decl =
   { name : Name.t
-  ; data : ty_data
+  ; data : expr_data
   ; span : Span.t
   }
 
-and ty_data =
+and expr_data =
   { params : data_param list
   ; body : data_body
   ; span : Span.t
-  ; ann : ty_ann
+  ; ann : expr_ann
   }
 
 and data_body =
@@ -276,6 +276,8 @@ module Expr = struct
     | Expr_error { ann; _ }
     | Expr_rec { ann; _ }
     | Expr_coe { ann; _ }
+    | Expr_data_rec { ann; _ }
+    | Expr_data { ann; _ }
     | Expr_encode_ty { ann; _ } -> ann
   ;;
 
