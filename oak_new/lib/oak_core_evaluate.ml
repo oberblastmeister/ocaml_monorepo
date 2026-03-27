@@ -54,7 +54,9 @@ and eval_ty (env : Core.env) (ty : Core.term_ty) : Core.ty =
   | Term_ty_core ty -> Ty_core ty
   | Term_ty_universe props -> Ty_universe props
 
-and eval_field_impl env ({ name; e; relevancy } : Core.term_field_impl) : Core.value_field_impl =
+and eval_field_impl env ({ name; e; relevancy } : Core.term_field_impl)
+  : Core.value_field_impl
+  =
   let e = eval_value env e in
   { name; e; relevancy }
 
@@ -74,16 +76,14 @@ and app_value (func : Core.value) (arg : Core.value_arg) : Core.value =
     (* Function types can have kind Type *)
     Value_ignore
   | Value_fun func -> app_fun func arg
-  | Value_neutral { head; spine } ->
-    Value_neutral { head; spine = spine <: App arg }
+  | Value_neutral { head; spine } -> Value_neutral { head; spine = spine <: App arg }
   | _ -> failwith "Expected function value"
 
 and proj_value (strukt : Core.value) (field : Core.field_loc) : Core.value =
   (* No ignore case here because structures always have kind Sig *)
   match strukt with
   | Value_struct strukt -> proj_struct strukt field
-  | Value_neutral { head; spine } ->
-    Value_neutral { head; spine = spine <: Proj field }
+  | Value_neutral { head; spine } -> Value_neutral { head; spine = spine <: Proj field }
   | _ -> failwith "Expected a struct value"
 
 and out_value (sing : Core.value) : Core.value =
@@ -93,14 +93,15 @@ and out_value (sing : Core.value) : Core.value =
   | _ -> failwith "Expected a singleton value"
 
 (* precondition: strukt is whnf, postcondition: result is whnf *)
-and app_whnf (ty_env : Core.ty_env) (func : Core.value) (arg : Core.value_arg) : Core.value =
+and app_whnf (ty_env : Core.ty_env) (func : Core.value) (arg : Core.value_arg)
+  : Core.value
+  =
   match func with
   | Value_ignore ->
     (* Function types can have kind Type *)
     Value_ignore
   | Value_fun func -> whnf_value ty_env (app_fun func arg)
-  | Value_neutral { head; spine } ->
-    Value_neutral { head; spine = spine <: App arg }
+  | Value_neutral { head; spine } -> Value_neutral { head; spine = spine <: App arg }
   | _ -> failwith "Expected function value"
 
 (* precondition: strukt is whnf, postcondition: result is whnf *)
@@ -109,8 +110,7 @@ and proj_whnf (ty_env : Core.ty_env) (strukt : Core.value) (field : Core.field_l
   =
   match strukt with
   | Value_struct strukt -> whnf_value ty_env (proj_struct strukt field)
-  | Value_neutral { head; spine } ->
-    Value_neutral { head; spine = spine <: Proj field }
+  | Value_neutral { head; spine } -> Value_neutral { head; spine = spine <: Proj field }
   | _ -> failwith "Expected a struct value"
 
 and proj_struct (strukt : Core.value_struct) (field : Core.field_loc) =
@@ -343,13 +343,16 @@ and quote_ty context_size (ty : Core.ty) : Core.term_ty =
     Term_ty_decode e
 
 and quote_neutral context_size (e : Core.neutral) : Core.term =
-  Bwd.fold_left e.spine ~init:(quote_head context_size e.head) ~f:(fun e (elim : Core.frame) : Core.term ->
-    match elim with
-    | Proj field -> Term_proj { strukt = e; field }
-    | App arg ->
-      let arg = quote_arg context_size arg in
-      Term_app { func = e; arg }
-    | Out -> Term_sing_out e)
+  Bwd.fold_left
+    e.spine
+    ~init:(quote_head context_size e.head)
+    ~f:(fun e (elim : Core.frame) : Core.term ->
+      match elim with
+      | Proj field -> Term_proj { strukt = e; field }
+      | App arg ->
+        let arg = quote_arg context_size arg in
+        Term_app { func = e; arg }
+      | Out -> Term_sing_out e)
 
 and quote_head context_size (head : Core.head) : Core.term =
   match head with
@@ -362,9 +365,7 @@ and quote_arg context_size (arg : Core.value_arg) : Core.term_arg =
   let e = quote_value context_size arg.e in
   { e; param_modifiers = arg.param_modifiers }
 
-and quote_field_impl
-      (context_size : int)
-      ({ name; e; relevancy } : Core.value_field_impl)
+and quote_field_impl (context_size : int) ({ name; e; relevancy } : Core.value_field_impl)
   : Core.term_field_impl
   =
   let e = quote_value context_size e in
@@ -437,20 +438,17 @@ and close_ty (c : Close.t) (ty : Core.term_ty) : Core.term_ty =
 
 and close_data_body (c : Close.t) (body : Core.term_data_body) : Core.term_data_body =
   match body with
-  | Term_data_record { fields } -> Term_data_record { fields = List.map fields ~f:(close_data_field c) }
+  | Term_data_record { fields } ->
+    Term_data_record { fields = List.map fields ~f:(close_data_field c) }
   | Term_data_variant { constructor } ->
     Term_data_variant { constructor = List.map constructor ~f:(close_data_constructor c) }
 
-and close_data_field
-      (c : Close.t)
-      ({ name; ty } : Core.term_data_field)
+and close_data_field (c : Close.t) ({ name; ty } : Core.term_data_field)
   : Core.term_data_field
   =
   { name; ty = close_ty c ty }
 
-and close_data_constructor
-      (c : Close.t)
-      ({ name; ty } : Core.term_data_constructor)
+and close_data_constructor (c : Close.t) ({ name; ty } : Core.term_data_constructor)
   : Core.term_data_constructor
   =
   { name; ty = Option.map ty ~f:(close_ty c) }
@@ -462,6 +460,10 @@ and close_arg (c : Close.t) ({ e; param_modifiers } : Core.term_arg) =
   { e = close c e; param_modifiers }
 ;;
 
+(* Since we only use the context size to generate fresh free variables, we can just use a really large context size *)
+let quote_value = quote_value (Int.max_value / 2)
+let quote_ty = quote_ty (Int.max_value / 2)
+
 module Struct = struct
   let proj = proj_struct
 end
@@ -469,6 +471,8 @@ end
 module Struct_ty = struct
   let proj = proj_struct_ty
 end
+
+module Ty_struct = Struct_ty
 
 module Fun = struct
   let app = app_fun
@@ -478,9 +482,11 @@ module Fun_ty = struct
   let app = app_fun_ty
 end
 
+module Ty_fun = Fun_ty
+
 module Value = struct
-  (* Since we only use the context size to generate fresh free variables, we can just use a really large context size *)
-  let quote = quote_value (Int.max_value / 2)
+  let eval = eval_value
+  let quote = quote_value
   let proj = proj_value
   let app = app_value
   let out = out_value
@@ -488,7 +494,8 @@ module Value = struct
 end
 
 module Ty = struct
-  let quote = quote_ty (Int.max_value / 2)
+  let eval = eval_ty
+  let quote = quote_ty
   let proj = proj_ty
   let app = app_ty
   let out = out_ty

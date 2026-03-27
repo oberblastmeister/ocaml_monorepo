@@ -63,8 +63,10 @@ end
 
 module Seq : Seq = List_seq
 
+type ty_props = { size : Size.t } [@@deriving sexp_of]
+
 module Ty_props = struct
-  type t = { size : Size.t } [@@deriving sexp_of]
+  type t = ty_props [@@deriving sexp_of]
 end
 
 type term =
