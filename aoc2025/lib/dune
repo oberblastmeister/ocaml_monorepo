@@ -3,8 +3,7 @@
  (libraries core functional)
  (inline_tests)
  (flags
-  ; turn pattern matching into error 
-  (:standard -warn-error -A+8 -w -23))
+  (:standard -warn-error -A+49 -w -23))
  (preprocess
   (pps
     ppx_jane

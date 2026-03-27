@@ -1,4 +1,6 @@
 (executable
  (public_name staged)
  (name main)
+ (flags
+  (:standard -warn-error -A+49 -w -23))
  (libraries staged))

@@ -1,2 +1,4 @@
 (test
- (name test_staged))
+ (name test_staged)
+ (flags
+  (:standard -warn-error -A+49 -w -23)))

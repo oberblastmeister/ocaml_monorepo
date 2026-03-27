@@ -21,9 +21,9 @@
  (description "A longer description")
  (depends
   (ocaml
-   (= 5.4.0))
+   (= 5.4.1))
   (core
-   (= v0.17.1))
+   (= v0.17.2))
   (ppx_jane
    (= v0.17.0))
   (algaeff

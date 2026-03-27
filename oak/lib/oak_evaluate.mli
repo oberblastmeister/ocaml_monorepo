@@ -15,6 +15,7 @@ module Close : sig
   val add_exn : Level.t -> Index.t -> t -> t
   val compose : second:t -> first:t -> t
   val find : t -> Level.t -> Index.t option
+    val push_exn : Level.t -> t -> t
 end
 
 val close :  Close.t -> term -> term

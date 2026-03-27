@@ -1,2 +1,4 @@
 (test
- (name test_sexp_lang))
+ (name test_sexp_lang)
+ (flags
+  (:standard -warn-error -A+49 -w -23)))

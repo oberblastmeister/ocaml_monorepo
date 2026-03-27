@@ -1,10 +1,11 @@
 (executable
  (public_name aoc2025)
  (name main)
+ (flags
+  (:standard -warn-error -A+49 -w -23))
  (libraries aoc2025 core)
  (preprocess
   (pps
    ppx_jane)
   )
  )
-

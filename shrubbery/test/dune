@@ -1,2 +1,4 @@
 (test
- (name test_shrubbery))
+ (name test_shrubbery)
+ (flags
+  (:standard -warn-error -A+49 -w -23)))

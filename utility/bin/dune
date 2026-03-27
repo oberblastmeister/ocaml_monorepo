@@ -4,5 +4,5 @@
  (preprocess
   (pps ppx_jane))
  (flags
-  (:standard -warn-error -A))
+  (:standard -warn-error -A+49 -w -23))
  (libraries core utility))

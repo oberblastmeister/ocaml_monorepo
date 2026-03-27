@@ -204,6 +204,8 @@ module Close = struct
       ~f:(fun i -> Index.of_int (i + close.lift))
       (Map.find close.map level.level)
   ;;
+
+  let push_exn l t = add_exn l Index.zero (lift 1 t)
 end
 
 (* This should only be used in irrelevant contexts *)
