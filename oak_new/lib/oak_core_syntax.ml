@@ -16,52 +16,14 @@ module Icit = Common.Icit
 module Relevancy = Common.Relevancy
 module Param_modifiers = Common.Param_modifiers
 
-module type Seq = sig
-  type 'a t [@@deriving sexp]
+module Seq = struct
+  include Utility.Seq
 
-  val empty : 'a t
-  val push : 'a -> 'a t -> 'a t
-  val pop : 'a t -> ('a * 'a t) option
-  val pop_exn : 'a t -> 'a * 'a t
-  val get_index : 'a t -> Index.t -> 'a option
-  val get_level : 'a t -> Level.t -> 'a option
-  val get_index_exn : 'a t -> Index.t -> 'a
-  val get_level_exn : 'a t -> Level.t -> 'a
-  val iter : 'a t -> f:('a -> unit) -> unit
-  val to_list : 'a t -> 'a list
-  val of_list : 'a list -> 'a t
-  val length : 'a t -> int
+  let get_index t (i : Index.t) = Utility.Seq.get t i.index
+  let get_level t l = get_index t (Index.of_level (Utility.Seq.length t) l)
+  let get_index_exn t (i : Index.t) = Utility.Seq.get_exn t i.index
+  let get_level_exn t l = get_index_exn t (Index.of_level (Utility.Seq.length t) l)
 end
-
-module List_seq = struct
-  type 'a t = 'a list [@@deriving sexp]
-
-  let empty = []
-  let push x xs = x :: xs
-
-  let pop = function
-    | [] -> None
-    | x :: xs -> Some (x, xs)
-  ;;
-
-  let pop_exn = function
-    | [] -> failwith "empty sequence"
-    | x :: xs -> x, xs
-  ;;
-
-  let get xs i = List.nth xs i
-  let get_exn xs i = List.nth_exn xs i
-  let iter xs ~f = List.iter xs ~f
-  let to_list xs = xs
-  let of_list xs = xs
-  let length = List.length
-  let get_index xs (i : Index.t) = get xs i.index
-  let get_level xs (l : Level.t) = get xs (Index.of_level (length xs) l).index
-  let get_index_exn xs (i : Index.t) = get_exn xs i.index
-  let get_level_exn xs (l : Level.t) = get_exn xs (Index.of_level (length xs) l).index
-end
-
-module Seq : Seq = List_seq
 
 type ty_props = { size : Size.t } [@@deriving sexp_of]
 
