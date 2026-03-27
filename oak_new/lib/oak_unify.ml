@@ -1,15 +1,21 @@
 open Prelude
-open Oak_core_syntax
+
+module Core = Oak_core
+open Core.Syntax
 
 open struct
   module Bwd = Utility.Bwd
   module Spanned = Utility.Spanned
   module Common = Oak_common
+  module Core_ty = Common.Core_ty
+  module Icit = Common.Icit
   module Name_list = Common.Name_list
+  module Param_modifiers = Common.Param_modifiers
+  module Relevancy = Common.Relevancy
+  module Size = Common.Size
   module Diagnostic = Oak_diagnostic
   module Context = Oak_context
-  module Evaluate = Oak_core_evaluate
-  module Close = Evaluate.Close
+  module Close = Core.Close
   module Typed = Oak_typed
 end
 
@@ -39,17 +45,17 @@ let mk_struct_coe is_same_shape (field_coes : Typed.runtime_field_coe list)
 ;;
 
 let rec coerce_singleton (cx : Context.t) (e : term) (ty : ty) : term * ty =
-  match Context.whnf_ty cx ty with
+  match Core.Ty.whnf cx.ty_env ty with
   | Ty_sing { identity = _; ty = kind } -> coerce_singleton cx (Term_sing_out e) kind
   | ty -> e, ty
 ;;
 
 let rec unify_value (cx : Context.t) (e1 : value) (e2 : value) (ty : ty) : unit =
-  match Context.whnf_ty cx ty with
+  match Core.Ty.whnf cx.ty_env ty with
   (* These are all transparent *)
   | Ty_pack _ | Ty_core _ | Ty_sing _ -> ()
   | Ty_universe _props ->
-    unify_ty cx (Evaluate.Value.decode e1) (Evaluate.Value.decode e2)
+    unify_ty cx (Core.Value.decode e1) (Core.Value.decode e2)
   | Ty_struct ty ->
     let closure_env = ty.env in
     let _ =
@@ -58,10 +64,10 @@ let rec unify_value (cx : Context.t) (e1 : value) (e2 : value) (ty : ty) : unit 
         ~init:closure_env
         ~f:(fun index closure_env (field_spec : term_field_spec) ->
           let field : field_loc = { name = field_spec.name.name; index } in
-          let e1 = Evaluate.Value.proj e1 field in
-          let e2 = Evaluate.Value.proj e2 field in
-          unify_value cx e1 e2 (Evaluate.eval_ty closure_env field_spec.ty);
-          Seq.push e1 closure_env)
+          let e1 = Core.Value.proj e1 field in
+          let e2 = Core.Value.proj e2 field in
+          unify_value cx e1 e2 (Core.Term_ty.eval closure_env field_spec.ty);
+          Core.Value_env.push e1 closure_env)
     in
     ()
   | Ty_fun ty ->
@@ -69,20 +75,20 @@ let rec unify_value (cx : Context.t) (e1 : value) (e2 : value) (ty : ty) : unit 
     let arg : value_arg = { e = var_value; param_modifiers = ty.param_modifiers } in
     unify_value
       (Context.bind ty.name ty.param_ty cx)
-      (Evaluate.Value.app e1 arg)
-      (Evaluate.Value.app e2 arg)
-      (Evaluate.Fun_ty.app ty arg)
+      (Core.Value.app e1 arg)
+      (Core.Value.app e2 arg)
+      (Core.Ty_fun.app ty arg)
   | Ty_decode ty ->
-    let props = Evaluate.infer_neutral_universe cx.ty_env ty in
+    let props = Core.Neutral.infer_universe cx.ty_env ty in
     if not (Size.is_type props.size)
     then begin
-      let e1 = Context.whnf_value cx e1 |> Value.neutral_val_exn in
-      let e2 = Context.whnf_value cx e2 |> Value.neutral_val_exn in
+      let e1 = Core.Value.whnf cx.ty_env e1 |> Core.Value.neutral_val_exn in
+      let e2 = Core.Value.whnf cx.ty_env e2 |> Core.Value.neutral_val_exn in
       unify_neutral cx e1 e2
     end
 
 and unify_ty (cx : Context.t) (ty1 : ty) (ty2 : ty) =
-  match Context.whnf_ty cx ty1, Context.whnf_ty cx ty2 with
+  match Core.Ty.whnf cx.ty_env ty1, Core.Ty.whnf cx.ty_env ty2 with
   | Ty_universe props1, Ty_universe props2 -> unify_ty_props cx props1 props2
   | Ty_sing ty1, Ty_sing ty2 ->
     unify_ty cx ty1.ty ty2.ty;
@@ -90,11 +96,11 @@ and unify_ty (cx : Context.t) (ty1 : ty) (ty2 : ty) =
   | Ty_fun ty1, Ty_fun ty2 ->
     unify_ty cx ty1.param_ty ty2.param_ty;
     unify_param_modifiers cx ty1.param_modifiers ty2.param_modifiers;
-    let arg = { e = Context.next_free cx; param_modifiers = ty1.param_modifiers } in
+    let arg : value_arg = { e = Context.next_free cx; param_modifiers = ty1.param_modifiers } in
     unify_ty
       (Context.bind ty1.name ty1.param_ty cx)
-      (Evaluate.Fun_ty.app ty1 arg)
-      (Evaluate.Fun_ty.app ty2 arg)
+      (Core.Ty_fun.app ty1 arg)
+      (Core.Ty_fun.app ty2 arg)
   | Ty_struct ty1, Ty_struct ty2 ->
     let zipped_ty_decls =
       match List.zip ty1.field_specs ty2.field_specs with
@@ -133,12 +139,12 @@ and unify_ty (cx : Context.t) (ty1 : ty) (ty2 : ty) =
                    ^^ Doc.string name2)
               ];
           unify_relevancy cx field_spec1.relevancy field_spec2.relevancy;
-          let ty1 = Evaluate.eval_ty closure_env1 field_spec1.ty in
-          let ty2 = Evaluate.eval_ty closure_env2 field_spec2.ty in
+          let ty1 = Core.Term_ty.eval closure_env1 field_spec1.ty in
+          let ty2 = Core.Term_ty.eval closure_env2 field_spec2.ty in
           unify_ty cx ty1 ty2;
           let var_value = Context.next_free cx in
-          ( Seq.push var_value closure_env1
-          , Seq.push var_value closure_env2
+          ( Core.Value_env.push var_value closure_env1
+          , Core.Value_env.push var_value closure_env2
           , Context.bind field_spec1.name ty1 cx ))
     in
     ()
@@ -227,15 +233,15 @@ and unify_neutral (cx : Context.t) (e1 : neutral) (e2 : neutral) : unit =
   let _ =
     List.fold
       zipped_spines
-      ~init:(Bwd.Empty, Evaluate.infer_head cx.ty_env e1.head)
+      ~init:(Bwd.Empty, Core.Head.infer_ty cx.ty_env e1.head)
       ~f:(fun (spine, ty) (frame1, frame2) ->
         let ty =
           match frame1, frame2 with
           | Out, _ | _, Out -> failwith "should be whnf"
           | App arg1, App arg2 ->
-            let fun_ty = Context.whnf_ty cx ty |> Ty.ty_fun_val_exn in
+            let fun_ty = Core.Ty.whnf cx.ty_env ty |> Core.Ty.ty_fun_val_exn in
             unify_value cx arg1.e arg2.e fun_ty.param_ty;
-            Evaluate.Fun_ty.app fun_ty arg1
+            Core.Ty_fun.app fun_ty arg1
           | Proj field1, Proj field2 ->
             if not (field1.index = field2.index)
             then
@@ -247,7 +253,7 @@ and unify_neutral (cx : Context.t) (e1 : neutral) (e2 : neutral) : unit =
                      ^^ Doc.string " != "
                      ^^ Doc.string field2.name)
                 ];
-            Evaluate.Ty.proj cx.ty_env (Value_neutral { head = e1.head; spine }) ty field1
+            Core.Ty.proj cx.ty_env (Value_neutral { head = e1.head; spine }) ty field1
           | _ ->
             Context.throw
               cx
@@ -271,9 +277,9 @@ and unify_head (cx : Context.t) (e1 : head) (e2 : head) : unit =
         cx
         [ Diagnostic.Part.create
             (Doc.string "Variables were not equal: "
-             ^^ Context.pp_value cx (Value.free e1)
+             ^^ Context.pp_value cx (Core.Value.free e1)
              ^^ Doc.string " != "
-             ^^ Context.pp_value cx (Value.free e2))
+             ^^ Context.pp_value cx (Core.Value.free e2))
         ]
   | _ -> failwith ""
 
@@ -282,7 +288,7 @@ and unify_head (cx : Context.t) (e1 : head) (e2 : head) : unit =
 and sub (cx : Context.t) (e : term) (ty1 : ty) (ty2 : ty)
   : term option * Typed.runtime_coe
   =
-  match Context.whnf_ty cx ty1, Context.whnf_ty cx ty2 with
+  match Core.Ty.whnf cx.ty_env ty1, Core.Ty.whnf cx.ty_env ty2 with
   | Ty_universe props1, Ty_universe props2 ->
     (* TODO: maybe do cumulativity here *)
     unify_ty_props cx props1 props2;
@@ -306,7 +312,7 @@ and sub (cx : Context.t) (e : term) (ty1 : ty) (ty2 : ty)
       unify_value cx ty1.identity ty2.identity ty1.ty;
       None, coe
     | Some e' ->
-      unify_value cx (Evaluate.eval_value Seq.empty e') ty2.identity ty2.ty;
+      unify_value cx (Core.Term.eval Core.Value_env.empty e') ty2.identity ty2.ty;
       Some (Term_sing_in e'), coe
     end
   | Ty_sing _, _ ->
@@ -316,26 +322,33 @@ and sub (cx : Context.t) (e : term) (ty1 : ty) (ty2 : ty)
   | _, Ty_sing ty2 ->
     let e', coe = sub cx e ty1 ty2.ty in
     let e' = Option.value ~default:e e' in
-    unify_value cx (Evaluate.eval_value Seq.empty e') ty2.identity ty2.ty;
+    unify_value cx (Core.Term.eval Core.Value_env.empty e') ty2.identity ty2.ty;
     Some (Term_sing_in e'), coe
   | Ty_fun ty1, Ty_fun ty2 ->
     unify_param_modifiers cx ty1.param_modifiers ty2.param_modifiers;
     let free = Context.next_level cx in
     let arg_var_value = Context.next_free cx in
     let cx = Context.bind ty2.name ty2.param_ty cx in
-    let arg_var_term = Evaluate.Value.quote arg_var_value in
+    let arg_var_term = Core.Value.quote arg_var_value in
     let arg', arg_coe = sub cx arg_var_term ty2.param_ty ty1.param_ty in
     let arg_term = Option.value ~default:arg_var_term arg' in
-    let arg_value = Evaluate.eval_value Seq.empty arg_term in
+    let arg_value = Core.Term.eval Core.Value_env.empty arg_term in
     let app_term =
-      Term_app { func = e; arg = { e = arg_term; param_modifiers = ty1.param_modifiers } }
+      Term_app
+        { func = e
+        ; arg = ({ e = arg_term; param_modifiers = ty1.param_modifiers } : term_arg)
+        }
     in
     let body', ret_coe =
       sub
         cx
         app_term
-        (Evaluate.Fun_ty.app ty1 { e = arg_value; param_modifiers = ty1.param_modifiers })
-        (Evaluate.Fun_ty.app ty2 { e = arg_value; param_modifiers = ty2.param_modifiers })
+        (Core.Ty_fun.app
+           ty1
+           ({ e = arg_value; param_modifiers = ty1.param_modifiers } : value_arg))
+        (Core.Ty_fun.app
+           ty2
+           ({ e = arg_value; param_modifiers = ty2.param_modifiers } : value_arg))
     in
     let runtime_coe = mk_fun_coe arg_coe ret_coe in
     let body_term = Option.value ~default:app_term body' in
@@ -346,21 +359,21 @@ and sub (cx : Context.t) (e : term) (ty1 : ty) (ty2 : ty)
           (Term_fun
              { name = ty2.name
              ; param_modifiers = ty2.param_modifiers
-             ; body = Evaluate.close_single free body_term
+             ; body = Core.Term.close_single free body_term
              })
       , runtime_coe )
   | Ty_struct ty1, Ty_struct ty2 ->
-    let value = Evaluate.eval_value Seq.empty e in
+    let value = Core.Term.eval Core.Value_env.empty e in
     let _, ty1_map =
       List.foldi
         ty1.field_specs
         ~init:(ty1.env, String.Map.empty)
         ~f:(fun index (closure_env, acc) field_spec ->
-          let proj_ty = Evaluate.eval_ty closure_env field_spec.ty in
+          let proj_ty = Core.Term_ty.eval closure_env field_spec.ty in
           let field_name = field_spec.name.name in
           let field_loc = ({ name = field_name; index } : field_loc) in
-          let proj_value = Evaluate.Value.proj value field_loc in
-          ( Seq.push proj_value closure_env
+          let proj_value = Core.Value.proj value field_loc in
+          ( Core.Value_env.push proj_value closure_env
           , Map.set acc ~key:field_name ~data:(field_loc, proj_ty, field_spec.relevancy) ))
     in
     let did_coerce, _, field_impls, field_coes =
@@ -383,7 +396,7 @@ and sub (cx : Context.t) (e : term) (ty1 : ty) (ty2 : ty)
           unify_relevancy cx relevancy1 field_spec2.relevancy;
           let proj_term = Term_proj { strukt = e; field = field_loc1 } in
           let coerced_proj, field_coe =
-            sub cx proj_term ty1_proj_ty (Evaluate.eval_ty closure_env field_spec2.ty)
+            sub cx proj_term ty1_proj_ty (Core.Term_ty.eval closure_env field_spec2.ty)
           in
           let coerced_proj_term = Option.value ~default:proj_term coerced_proj in
           let did_coerce = did_coerce || Option.is_some coerced_proj in
@@ -397,7 +410,9 @@ and sub (cx : Context.t) (e : term) (ty1 : ty) (ty2 : ty)
             { field = { name = field_name; index }; coe = field_coe }
           in
           ( did_coerce
-          , Seq.push (Evaluate.eval_value Seq.empty coerced_proj_term) closure_env
+          , Core.Value_env.push
+              (Core.Term.eval Core.Value_env.empty coerced_proj_term)
+              closure_env
           , Bwd.snoc field_impls field_impl
           , Bwd.snoc field_coes field_coe ))
     in

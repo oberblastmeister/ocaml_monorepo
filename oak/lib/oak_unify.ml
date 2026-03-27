@@ -61,7 +61,7 @@ let rec occurs_check_adjust (cx : Context.t) (meta : meta_unsolved) (ty : ty) : 
           let ty = occurs_check_adjust cx meta (Evaluate.eval closure_env ty) in
           ( ( Context.bind var ty cx
             , Env.push ty closure_env
-            , Close.add_exn (Context.next_level cx) Index.zero (Close.lift 1 close) )
+            , Close.push_exn (Context.next_level cx) close )
           , ({ var; ty = Context.quote cx ty |> Evaluate.close close } : term_ty_decl) ))
     in
     Value_ty_mod { env = Env.empty; ty_decls }

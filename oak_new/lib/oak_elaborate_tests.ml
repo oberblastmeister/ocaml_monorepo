@@ -1,6 +1,6 @@
 open Prelude
 open Core
-module Syntax = Oak_core_syntax
+module Core = Oak_core
 module Typed = Oak_typed
 module Snippet = Utility.Diagnostic.Snippet
 module Pretty = Oak_pretty
@@ -27,7 +27,7 @@ let check ?(print_term = false) ?(show_singletons = false) s =
           then
             print_s
               [%message
-                (Typed.Expr.term typed : Syntax.term) (Typed.Expr.ty typed : Syntax.ty)];
+                (Typed.Expr.term typed : Core.term) (Typed.Expr.ty typed : Core.ty)];
           Pp.render_to_stdout
             ~color:false
             (Pretty.pp_ty ~show_singletons Common.Name_list.empty (Typed.Expr.ty typed));

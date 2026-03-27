@@ -1,5 +1,5 @@
 open Prelude
-open Oak_core_syntax
+module Core = Oak_core
 
 open struct
   module Spanned = Utility.Spanned
@@ -8,13 +8,12 @@ open struct
   module Diagnostic = Oak_diagnostic
   module Pretty = Oak_pretty
   module Source = Oak_source
-  module Evaluate = Oak_core_evaluate
 end
 
 exception Error of Diagnostic.t
 
 type t =
-  { ty_env : ty_env
+  { ty_env : Core.ty_env
   ; name_list : Name_list.t
   ; source : Source.t
   ; next_meta_id : int ref
@@ -31,24 +30,24 @@ let with_context (_ : t) part ~f =
 ;;
 
 let create (source : Source.t) =
-  { ty_env = Seq.empty; name_list = Name_list.empty; source; next_meta_id = ref 0 }
+  { ty_env = Core.Ty_env.empty
+  ; name_list = Name_list.empty
+  ; source
+  ; next_meta_id = ref 0
+  }
 ;;
 
-let bind (name : Name.t) ty cx =
+let bind (name : Core.Name.t) ty cx =
   { cx with
-    ty_env = Seq.push ty cx.ty_env
+    ty_env = Core.Ty_env.push ty cx.ty_env
   ; name_list = Name_list.push name.name cx.name_list
   }
 ;;
 
-let size (cx : t) = Seq.length cx.ty_env
-let next_free cx = Value.free (Level.of_int (size cx))
-let next_level cx = Level.of_int (size cx)
-let close_single cx body = Evaluate.close_single (next_level cx) body
-let whnf_value (cx : t) e = Evaluate.whnf_value cx.ty_env e
-let whnf_ty (cx : t) e = Evaluate.whnf_ty cx.ty_env e
-let whnf_neutral cx e = Evaluate.whnf_neutral cx.ty_env e
-let level_var_ty cx (var : Level.t) = Seq.get_level_exn cx.ty_env var
+let size (cx : t) = Core.Ty_env.length cx.ty_env
+let next_free cx = Core.Value.free (Core.Level.of_int (size cx))
+let next_level cx = Core.Level.of_int (size cx)
+let level_var_ty cx (var : Core.Level.t) = Core.Ty_env.get_level_exn cx.ty_env var
 let pp_value cx value = Pretty.pp_value cx.name_list value
 let pp_ty ?show_singletons cx ty = Pretty.pp_ty ?show_singletons cx.name_list ty
 

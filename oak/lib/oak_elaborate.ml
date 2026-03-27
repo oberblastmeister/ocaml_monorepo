@@ -239,7 +239,7 @@ let rec apply_patch
             let closure_env' = Env.push coerced_value closure_env in
             (* close the free variables that we have created *)
             let close' =
-              Close.add_exn (Context.next_level cx) Index.zero (Close.lift 1 close)
+              Close.push_exn (Context.next_level cx) close
             in
             let coerced_fields' =
               Bwd.snoc
@@ -266,7 +266,7 @@ let rec apply_patch
           else begin
             ( ( Context.bind ty_decls.var field_ty cx
               , Env.push (Context.next_free cx) closure_env
-              , Close.add_exn (Context.next_level cx) Index.zero (Close.lift 1 close)
+              , Close.push_exn (Context.next_level cx) close
               , Bwd.snoc
                   coerced_fields
                   { name = field_name
@@ -360,7 +360,7 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : term * ty =
           { var = decl.var; ty = Context.quote cx ty |> Evaluate.close close }
         in
         ( ( Context.bind decl.var ty cx
-          , Close.add_exn (Context.next_level cx) Index.zero (Close.lift 1 close) )
+          , Close.push_exn (Context.next_level cx) close )
         , (let_tuple, ty_decl) ))
     in
     let lets, ty_decls = List.unzip stuff in
@@ -391,7 +391,7 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : term * ty =
         ~f:(fun (cx, close, universe) { var; ty; span = _ } ->
           let ty, universe' = check_universe cx ty in
           ( ( Context.bind var (Evaluate.eval Env.empty ty) cx
-            , Close.add_exn (Context.next_level cx) Index.zero (Close.lift 1 close)
+            , Close.push_exn (Context.next_level cx) close
             , Universe.max universe universe' )
           , ({ var; ty = Evaluate.close close ty } : term_ty_decl) ))
     in

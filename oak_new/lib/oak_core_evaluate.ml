@@ -75,7 +75,7 @@ and app_value (func : Core.value) (arg : Core.value_arg) : Core.value =
   | Value_ignore ->
     (* Function types can have kind Type *)
     Value_ignore
-  | Value_fun func -> app_fun func arg
+  | Value_fun func -> app_fun func arg.e
   | Value_neutral { head; spine } -> Value_neutral { head; spine = spine <: App arg }
   | _ -> failwith "Expected function value"
 
@@ -100,7 +100,7 @@ and app_whnf (ty_env : Core.ty_env) (func : Core.value) (arg : Core.value_arg)
   | Value_ignore ->
     (* Function types can have kind Type *)
     Value_ignore
-  | Value_fun func -> whnf_value ty_env (app_fun func arg)
+  | Value_fun func -> whnf_value ty_env (app_fun func arg.e)
   | Value_neutral { head; spine } -> Value_neutral { head; spine = spine <: App arg }
   | _ -> failwith "Expected function value"
 
@@ -117,7 +117,7 @@ and proj_struct (strukt : Core.value_struct) (field : Core.field_loc) =
   let field_impl = List.drop strukt.field_impls field.index |> List.hd_exn in
   field_impl.e
 
-and app_fun (abs : Core.value_fun) (arg : Core.value_arg) = eval_closure1 abs.body arg.e
+and app_fun (abs : Core.value_fun) (arg : Core.value) = eval_closure1 abs.body arg
 and eval_closure1 closure arg = eval_value (Core.Seq.push arg closure.env) closure.body
 
 and eval_ty_closure1 (closure : Core.ty_closure) arg =
@@ -284,6 +284,8 @@ module Close = struct
       ~f:(fun i -> Core.Index.of_int (i + close.lift))
       (Map.find close.map level.level)
   ;;
+
+  let push_exn l t = add_exn l Core.Index.zero (lift 1 t)
 end
 
 let rec quote_value context_size (e : Core.value) : Core.term =
@@ -321,10 +323,7 @@ and quote_ty context_size (ty : Core.ty) : Core.term_ty =
           let ty = eval_ty closure_env ty |> quote_ty context_size |> close_ty c in
           ( ( context_size + 1
             , Core.Seq.push (Core.Value.free_of_size context_size) closure_env
-            , Close.add_exn
-                (Core.Level.of_int context_size)
-                Core.Index.zero
-                (Close.lift 1 c) )
+            , Close.push_exn (Core.Level.of_int context_size) c )
           , ({ name; ty; relevancy } : Core.term_field_spec) ))
     in
     Term_ty_struct { field_specs }
@@ -464,6 +463,18 @@ and close_arg (c : Close.t) ({ e; param_modifiers } : Core.term_arg) =
 let quote_value = quote_value (Int.max_value / 2)
 let quote_ty = quote_ty (Int.max_value / 2)
 
+module Term = struct
+  let close = close
+  let close_single = close_single
+  let eval = eval_value
+end
+
+module Term_ty = struct
+  let close = close_ty
+  let close_single = close_ty_single
+  let eval = eval_ty
+end
+
 module Struct = struct
   let proj = proj_struct
 end
@@ -485,6 +496,7 @@ end
 module Ty_fun = Fun_ty
 
 module Value = struct
+  let whnf = whnf_value
   let eval = eval_value
   let quote = quote_value
   let proj = proj_value
@@ -494,9 +506,21 @@ module Value = struct
 end
 
 module Ty = struct
+  let infer_props = infer_props
+  let whnf = whnf_ty
   let eval = eval_ty
   let quote = quote_ty
   let proj = proj_ty
   let app = app_ty
   let out = out_ty
+end
+
+module Neutral = struct
+  let infer_ty = infer_neutral
+  let infer_universe = infer_neutral_universe
+  let whnf = whnf_neutral
+end
+
+module Head = struct
+  let infer_ty = infer_head
 end

@@ -3,7 +3,7 @@ open Prelude
 open struct
   module Span = Utility.Span
   module Common = Oak_common
-  module Core = Oak_core_syntax
+  module Core = Oak_core
 end
 
 module Core_ty = Common.Core_ty
