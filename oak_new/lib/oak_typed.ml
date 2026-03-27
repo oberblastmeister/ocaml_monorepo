@@ -15,11 +15,9 @@ module Literal = Common.Literal
 module Icit = Common.Icit
 module Relevancy = Common.Relevancy
 module Param_modifiers = Common.Param_modifiers
-module Name_list = Common.Name_list
-
 type context =
   { ty_env : Core.ty_env
-  ; name_list : Name_list.t
+  ; name_list : Core.name_env
   }
 [@@deriving sexp_of]
 

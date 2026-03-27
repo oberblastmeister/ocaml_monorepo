@@ -1,14 +1,13 @@
 open Prelude
 module Core = Oak_core
-open Core.Syntax
 
 open struct
   module Bwd = Utility.Bwd
   module Span = Utility.Span
   module Spanned = Utility.Spanned
   module Common = Oak_common
+  module Icit = Common.Icit
   module Literal = Common.Literal
-  module Name_list = Common.Name_list
   module Relevancy = Common.Relevancy
   module Size = Common.Size
   module Diagnostic = Oak_diagnostic
@@ -20,17 +19,23 @@ open struct
   module Typed = Oak_typed
 end
 
-let expr_ann (cx : Context.t) (span : Span.t) (term : term) (ty : ty) : Typed.expr_ann =
+let expr_ann (cx : Context.t) (span : Span.t) (term : Core.term) (ty : Core.ty)
+  : Typed.expr_ann
+  =
   { span; context = { ty_env = cx.ty_env; name_list = cx.name_list }; ty; term }
 ;;
 
-let ty_ann (cx : Context.t) (span : Span.t) (term : term_ty) (ty_props : Ty_props.t)
+let ty_ann
+      (cx : Context.t)
+      (span : Span.t)
+      (term : Core.term_ty)
+      (ty_props : Core.Ty_props.t)
   : Typed.ty_ann
   =
   { span; context = { ty_env = cx.ty_env; name_list = cx.name_list }; ty_props; term }
 ;;
 
-let extract_fun_ty (cx : Context.t) (func_ty : ty) : ty_fun =
+let extract_fun_ty (cx : Context.t) (func_ty : Core.ty) : Core.ty_fun =
   match Core.Ty.whnf cx.ty_env func_ty with
   | Ty_fun func_ty -> func_ty
   | ty ->
@@ -41,7 +46,7 @@ let extract_fun_ty (cx : Context.t) (func_ty : ty) : ty_fun =
       ]
 ;;
 
-let extract_struct_ty (cx : Context.t) (strukt_ty : ty) : ty_struct =
+let extract_struct_ty (cx : Context.t) (strukt_ty : Core.ty) : Core.ty_struct =
   match Core.Ty.whnf cx.ty_env strukt_ty with
   | Ty_struct strukt_ty -> strukt_ty
   | ty ->
@@ -52,7 +57,7 @@ let extract_struct_ty (cx : Context.t) (strukt_ty : ty) : ty_struct =
       ]
 ;;
 
-let extract_pack_ty (cx : Context.t) (packed_ty : ty) : ty =
+let extract_pack_ty (cx : Context.t) (packed_ty : Core.ty) : Core.ty =
   match Core.Ty.whnf cx.ty_env packed_ty with
   | Ty_pack ty -> ty
   | ty ->
@@ -63,11 +68,11 @@ let extract_pack_ty (cx : Context.t) (packed_ty : ty) : ty =
       ]
 ;;
 
-let eval_expr (e : Typed.expr) : value =
+let eval_expr (e : Typed.expr) : Core.value =
   Core.Term.eval Core.Value_env.empty (Typed.Expr.term e)
 ;;
 
-let infer_literal_ty (cx : Context.t) (span : Span.t) (literal : Literal.t) : ty =
+let infer_literal_ty (cx : Context.t) (span : Span.t) (literal : Literal.t) : Core.ty =
   match literal with
   | Literal.Unit -> Ty_core Unit
   | Literal.Bool _ -> Ty_core Bool
@@ -81,11 +86,11 @@ let infer_literal_ty (cx : Context.t) (span : Span.t) (literal : Literal.t) : ty
       ]
 ;;
 
-let maybe_sing_in (is_abstract : bool) (rhs : term) : term =
+let maybe_sing_in (is_abstract : bool) (rhs : Core.term) : Core.term =
   if is_abstract then rhs else Term_sing_in rhs
 ;;
 
-let rec synthesize_transparent_ty (cx : Context.t) (ty : ty) : term =
+let rec synthesize_transparent_ty (cx : Context.t) (ty : Core.ty) : Core.term =
   match Core.Ty.whnf cx.ty_env ty with
   | Ty_universe _ ->
     Context.throw
@@ -102,7 +107,7 @@ let rec synthesize_transparent_ty (cx : Context.t) (ty : ty) : term =
         ~f:(fun (cx, closure_env, field_impls) { name; ty; relevancy } ->
           let ty = Core.Term_ty.eval closure_env ty in
           let e = synthesize_transparent_ty cx ty in
-          let field_impl : term_field_impl = { name = name.name; e; relevancy } in
+          let field_impl : Core.term_field_impl = { name = name.name; e; relevancy } in
           ( Context.bind name ty cx
           , Core.Value_env.push (Context.next_free cx) closure_env
           , Bwd.snoc field_impls field_impl ))
@@ -113,7 +118,7 @@ let rec synthesize_transparent_ty (cx : Context.t) (ty : ty) : term =
     let body =
       synthesize_transparent_ty
         (Context.bind name param_ty cx)
-        (Core.Ty_fun.app ty ({ e = Context.next_free cx; param_modifiers } : value_arg))
+        (Core.Ty_fun.app ty ({ e = Context.next_free cx; param_modifiers } : Core.value_arg))
     in
     Term_fun
       { name
@@ -139,11 +144,11 @@ exception Same_signature
 let rec apply_patch
           (cx : Context.t)
           (path : string list)
-          (term_to_coerce_to_original_ty : term)
-          (original_ty : ty)
-          (patch_with : term)
-          (patch_with_ty : ty)
-  : term * ty
+          (term_to_coerce_to_original_ty : Core.term)
+          (original_ty : Core.ty)
+          (patch_with : Core.term)
+          (patch_with_ty : Core.ty)
+  : Core.term * Core.ty
   =
   match path with
   | [] -> failwith "expected nonempty list"
@@ -182,8 +187,9 @@ let rec apply_patch
                       Unify.coerce cx patch_with patch_with_ty original_field_ty
                       |> Core.Term.eval Core.Value_env.empty
                     in
-                    ( Term_sing_out (Term_free (Context.next_level cx))
-                    , Ty_sing { identity = patch_with_coerced; ty = original_field_ty } )
+                    (( Term_sing_out (Term_free (Context.next_level cx))
+                     , Ty_sing { identity = patch_with_coerced; ty = original_field_ty } )
+                     : Core.term * Core.ty)
                 end
                 | _ :: _ -> begin
                   match Core.Ty.whnf cx.ty_env original_field_ty with
@@ -197,7 +203,7 @@ let rec apply_patch
                         patch_with
                         patch_with_ty
                     in
-                    let coerced_term = Term_sing_in coerced_term in
+                    let coerced_term : Core.term = Term_sing_in coerced_term in
                     let coerced_identity =
                       Unify.coerce
                         cx
@@ -205,7 +211,7 @@ let rec apply_patch
                         original_field_ty.ty
                         patched_field_ty
                     in
-                    let patched_field_ty =
+                    let patched_field_ty : Core.ty =
                       Ty_sing
                         { identity = Core.Term.eval Core.Value_env.empty coerced_identity
                         ; ty = patched_field_ty
@@ -226,10 +232,12 @@ let rec apply_patch
                 end
                 end
               , true )
-            else (Term_free (Context.next_level cx), original_field_ty), did_find_field
+            else
+              ((Term_free (Context.next_level cx), original_field_ty) : Core.term * Core.ty)
+              , did_find_field
           in
           let cx' = Context.bind name patched_field_ty cx in
-          let coerced_field : term_field_impl =
+          let coerced_field : Core.term_field_impl =
             { name = name.name
             ; e =
                 coerced_term
@@ -247,7 +255,7 @@ let rec apply_patch
             ; relevancy
             }
           in
-          let patched_field_spec : term_field_spec =
+          let patched_field_spec : Core.term_field_spec =
             { name
             ; ty = Core.Ty.quote patched_field_ty |> Core.Term_ty.close close
             ; relevancy
@@ -272,9 +280,10 @@ let rec apply_patch
              ^^ Doc.string path_part
              ^^ Doc.string " not found in struct")
         ];
-    ( Term_struct { field_impls = Bwd.to_list coerced_fields }
-    , Ty_struct
-        { env = Core.Value_env.empty; field_specs = Bwd.to_list patched_field_specs } )
+    (( Term_struct { field_impls = Bwd.to_list coerced_fields }
+     , Ty_struct
+         { env = Core.Value_env.empty; field_specs = Bwd.to_list patched_field_specs } )
+     : Core.term * Core.ty)
 ;;
 
 let with_elab_context (cx : Context.t) (span : Span.t) (message : string) ~f =
@@ -284,7 +293,9 @@ let with_elab_context (cx : Context.t) (span : Span.t) (message : string) ~f =
     ~f
 ;;
 
-let rec coerce_singleton (cx : Context.t) (e : term) (ty : ty) : term * ty =
+let rec coerce_singleton (cx : Context.t) (e : Core.term) (ty : Core.ty)
+  : Core.term * Core.ty
+  =
   match Core.Ty.whnf cx.ty_env ty with
   | Ty_sing { identity = _; ty = kind } -> coerce_singleton cx (Term_sing_out e) kind
   | ty -> e, ty
@@ -296,7 +307,7 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
   | Expr_data_rec { decls; span } -> failwith ""
   | Expr_data data -> failwith ""
   | Expr_var { index; span } ->
-    let term = Term_free (Index.to_level (Context.size cx) index) in
+    let term : Core.term = Term_free (Core.Index.to_level (Context.size cx) index) in
     let ty = Core.Ty_env.get_index_exn cx.ty_env index in
     let term, ty = coerce_singleton cx term ty in
     Typed.Expr_var { index; ann = expr_ann cx span term ty }
@@ -336,11 +347,11 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
              ^^ Doc.string " argument")
         ];
     let arg = check cx arg func_ty.param_ty in
-    let term_arg : term_arg =
+    let term_arg : Core.term_arg =
       { e = Typed.Expr.term arg; param_modifiers = func_ty.param_modifiers }
     in
-    let term = Term_app { func = Typed.Expr.term func; arg = term_arg } in
-    let value_arg : value_arg =
+    let term : Core.term = Term_app { func = Typed.Expr.term func; arg = term_arg } in
+    let value_arg : Core.value_arg =
       { e = eval_expr arg; param_modifiers = func_ty.param_modifiers }
     in
     let ty = Core.Ty_fun.app func_ty value_arg in
@@ -352,21 +363,21 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
     in
     let cx' = Context.bind name param_ty cx in
     let body = infer cx' body in
-    let body_ty : ty_closure =
+    let body_ty : Core.ty_closure =
       { env = Core.Value_env.empty
       ; body =
           Core.Ty.quote (Typed.Expr.ty body)
           |> Core.Term_ty.close_single (Context.next_level cx)
       }
     in
-    let term =
+    let term : Core.term =
       Term_fun
         { name
         ; param_modifiers
         ; body = Core.Term.close_single (Context.next_level cx) (Typed.Expr.term body)
         }
     in
-    let ty = Ty_fun { name; param_modifiers; param_ty; body_ty } in
+    let ty : Core.ty = Ty_fun { name; param_modifiers; param_ty; body_ty } in
     Typed.Expr_fun
       { name
       ; param_ty = Some param_ty_typed
@@ -423,7 +434,7 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
       match
         List.find_mapi struct_ty.field_specs ~f:(fun index field_spec ->
           if String.equal field_spec.name.name field
-          then Some ({ name = field; index } : field_loc)
+          then Some ({ name = field; index } : Core.field_loc)
           else None)
       with
       | Some field_loc -> field_loc
@@ -435,7 +446,7 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
               (Doc.string "Struct does not have field " ^^ Doc.string field)
           ]
     in
-    let term = Term_proj { strukt = Typed.Expr.term strukt; field = field_loc } in
+    let term : Core.term = Term_proj { strukt = Typed.Expr.term strukt; field = field_loc } in
     let ty = Core.Ty.proj cx.ty_env (eval_expr strukt) (Typed.Expr.ty strukt) field_loc in
     let term, ty = coerce_singleton cx term ty in
     Typed.Expr_proj { strukt; field; ann = expr_ann cx span term ty }
@@ -461,7 +472,7 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
           let rhs =
             maybe_sing_in decl.is_abstract (Typed.Expr.term e) |> Core.Term.close close
           in
-          let field_spec : term_field_spec =
+          let field_spec : Core.term_field_spec =
             { name = decl.name
             ; ty = Core.Ty.quote ty |> Core.Term_ty.close close
             ; relevancy = decl.relevancy
@@ -477,22 +488,22 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
     let typed_decls = Bwd.to_list typed_decls in
     let let_bindings = Bwd.to_list let_bindings in
     let field_specs = Bwd.to_list field_specs in
-    let term =
+    let term : Core.term =
       List.fold_right
         let_bindings
         ~init:
           (Term_struct
              { field_impls =
                  List.mapi decls ~f:(fun i { name; relevancy; _ } ->
-                   ({ name = name.name
-                    ; e = Term_bound (Index.of_int (decl_count - i - 1))
+                    ({ name = name.name
+                    ; e = Term_bound (Core.Index.of_int (decl_count - i - 1))
                     ; relevancy
                     }
-                    : term_field_impl))
+                    : Core.term_field_impl))
              })
-        ~f:(fun (name, rhs) body -> Term_let { name; rhs; body })
+        ~f:(fun (name, rhs) body -> (Term_let { name; rhs; body } : Core.term))
     in
-    let ty = Ty_struct { env = Core.Value_env.empty; field_specs } in
+    let ty : Core.ty = Ty_struct { env = Core.Value_env.empty; field_specs } in
     Typed.Expr_struct
       { decls = typed_decls; ann = expr_ann cx span term ty; is_dependent = true }
   | Expr_struct { decls; span; is_dependent = false } ->
@@ -514,16 +525,16 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
             { name = decl.name; relevancy = decl.relevancy; e; span = decl.span }
           in
           let rhs = maybe_sing_in decl.is_abstract (Typed.Expr.term e) in
-          let field_spec : term_field_spec =
+          let field_spec : Core.term_field_spec =
             { name = decl.name
             ; ty = Core.Ty.quote ty |> Core.Term_ty.close close
             ; relevancy = decl.relevancy
             }
           in
-          let field_impl : term_field_impl =
+          let field_impl : Core.term_field_impl =
             { name = decl.name.name; e = rhs; relevancy = decl.relevancy }
           in
-          ( Close.push_exn (Level.of_int (Context.size cx + index)) close
+          ( Close.push_exn (Core.Level.of_int (Context.size cx + index)) close
           , Bwd.snoc typed_decls typed_decl
           , Bwd.snoc field_impls field_impl
           , Bwd.snoc field_specs field_spec ))
@@ -531,8 +542,8 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
     let typed_decls = Bwd.to_list typed_decls in
     let field_impls = Bwd.to_list field_impls in
     let field_specs = Bwd.to_list field_specs in
-    let term = Term_struct { field_impls } in
-    let ty = Ty_struct { env = Core.Value_env.empty; field_specs } in
+    let term : Core.term = Term_struct { field_impls } in
+    let ty : Core.ty = Ty_struct { env = Core.Value_env.empty; field_specs } in
     Typed.Expr_struct
       { decls = typed_decls; ann = expr_ann cx span term ty; is_dependent = false }
   | Expr_ty_struct { field_specs; span } ->
@@ -573,7 +584,7 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
             ; span = field_spec.span
             }
           in
-          let field_spec : term_field_spec =
+          let field_spec : Core.term_field_spec =
             { name = field_spec.name
             ; ty = Core.Ty.quote ty |> Core.Term_ty.close close
             ; relevancy = field_spec.relevancy
@@ -602,14 +613,14 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
   | Expr_let { name; rhs; relevancy; is_abstract; body; span } ->
     let rhs = infer cx rhs in
     let rhs_value = eval_expr rhs in
-    let rhs_ty =
+    let rhs_ty : Core.ty =
       if is_abstract
       then Typed.Expr.ty rhs
       else Ty_sing { identity = rhs_value; ty = Typed.Expr.ty rhs }
     in
     let cx' = Context.bind name rhs_ty cx in
     let body = infer cx' body in
-    let term =
+    let term : Core.term =
       Term_let
         { name
         ; rhs = maybe_sing_in is_abstract (Typed.Expr.term rhs)
@@ -672,7 +683,7 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
     Typed.Expr.of_ty typed_ty
   | Expr_pack { e; span } ->
     let e = infer cx e in
-    let ty = Ty_pack (Typed.Expr.ty e) in
+    let ty : Core.ty = Ty_pack (Typed.Expr.ty e) in
     Typed.Expr_pack { e; ann = expr_ann cx span Term_ignore ty }
   | Expr_bind { span; _ } ->
     Context.throw
@@ -736,7 +747,7 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
          ; ann = ty_ann cx span (Core.Ty.quote patched_ty) (Typed.Ty.props e_typed)
          })
 
-and check (cx : Context.t) (e : Abstract.expr) (ty : ty) : Typed.expr =
+and check (cx : Context.t) (e : Abstract.expr) (ty : Core.ty) : Typed.expr =
   match e with
   | Expr_error { span } ->
     Context.throw
@@ -784,9 +795,9 @@ and check (cx : Context.t) (e : Abstract.expr) (ty : ty) : Typed.expr =
         (Core.Ty_fun.app
            fun_ty
            ({ e = Context.next_free cx; param_modifiers = fun_ty.param_modifiers }
-            : value_arg))
+            : Core.value_arg))
     in
-    let term =
+    let term : Core.term =
       Term_fun
         { name
         ; param_modifiers = fun_ty.param_modifiers
@@ -808,7 +819,7 @@ and check (cx : Context.t) (e : Abstract.expr) (ty : ty) : Typed.expr =
     let e = check cx e inner_ty in
     Typed.Expr_pack { e; ann = expr_ann cx span Term_ignore ty }
   | Expr_bind { name; rhs; body; span } ->
-    let result_term =
+    let result_term : Core.term =
       with_elab_context cx span "while checking the bind expression" ~f:(fun () ->
         synthesize_transparent_ty cx ty)
     in

@@ -1,10 +1,8 @@
 open Prelude
 module Core = Oak_core
-open Core.Syntax
 
 open struct
   module Common = Oak_common
-  module Name_list = Common.Name_list
 end
 
 module Make (Config : sig
@@ -56,7 +54,7 @@ struct
     | Snoc (_, App _) -> false
   ;;
 
-  let rec pp_value (names : Name_list.t) (value : Core.value) =
+  let rec pp_value (names : Core.name_env) (value : Core.value) =
     match value with
     | Value_ignore -> Doc.string "ignore"
     | Value_neutral neutral -> Doc.group (pp_neutral names neutral)
@@ -77,7 +75,7 @@ struct
     | Value_struct strukt -> pp_struct names strukt
     | Value_encode_ty { ty; props = _ } -> pp_ty names ty
 
-  and pp_ty (names : Name_list.t) (ty : Core.ty) =
+  and pp_ty (names : Core.name_env) (ty : Core.ty) =
     match ty with
     | Ty_universe props -> Common.Size.pp props.size
     | Ty_sing { identity; ty = _ } ->
@@ -92,7 +90,8 @@ struct
          ^^ Doc.break1
          ^^ pp_ty names body_ty)
     | Ty_core ty -> Common.Core_ty.pp ty
-    | Ty_pack ty -> Doc.group (Doc.string "Pack" ^^ Doc.break1 ^^ pp_ty_atom names ty)
+    | Ty_pack ty ->
+      Doc.group (Doc.string "Pack" ^^ Doc.break1 ^^ pp_ty_atom names ty)
     | Ty_decode e -> Doc.group (pp_neutral names e)
 
   and pp_struct names ({ field_impls } : Core.value_struct) =
@@ -138,8 +137,8 @@ struct
                  ^^ Doc.string ":"
                  ^^ Doc.indent 2 (Doc.break1 ^^ pp_ty names ty))
           in
-          let level = Name_list.next_level names in
-          let names = Name_list.push name names in
+          let level = Core.Level.of_int (Core.Name_env.length names) in
+          let names = Core.Name_env.push field_spec.name names in
           let closure_env = Core.Value_env.push (Core.Value.free level) closure_env in
           (names, closure_env), doc)
     in
@@ -150,9 +149,9 @@ struct
         (docs : Doc.t list)
         ({ name; body = _; param_modifiers = _ } as value : Core.value_fun)
     =
-    let level = Name_list.next_level names in
+    let level = Core.Level.of_int (Core.Name_env.length names) in
     let arg = Core.Value.free level in
-    let names = Name_list.push name.name names in
+    let names = Core.Name_env.push name names in
     let docs = Doc.string name.name :: docs in
     let body = Core.Fun.app value arg in
     match body with
@@ -175,23 +174,24 @@ struct
            ^^ Doc.break1
            ^^ pp_ty names param_ty)
     in
-    let arg = Core.Value.free (Name_list.next_level names) in
-    let names = Name_list.push name.name names in
+    let arg = Core.Value.free (Core.Level.of_int (Core.Name_env.length names)) in
+    let names = Core.Name_env.push name names in
     let body_ty =
       Core.Ty_fun.app ty_fun ({ e = arg; param_modifiers } : Core.value_arg)
     in
     match body_ty with
-    | Ty_fun ty_fun -> collect_ty_fun_params names (param_doc :: acc_params) ty_fun
+    | Ty_fun ty_fun ->
+      collect_ty_fun_params names (param_doc :: acc_params) ty_fun
     | _ ->
       let params = List.rev (param_doc :: acc_params) in
       params, names, body_ty
 
-  and pp_ty_non_arrow (names : Name_list.t) (ty : Core.ty) =
+  and pp_ty_non_arrow (names : Core.name_env) (ty : Core.ty) =
     match ty with
     | Ty_fun _ -> pp_ty_atom names ty
     | _ -> pp_ty names ty
 
-  and pp_value_atom (names : Name_list.t) (value : Core.value) =
+  and pp_value_atom (names : Core.name_env) (value : Core.value) =
     match value with
     | Value_ignore -> pp_value names value
     | Value_neutral { head; spine } when is_spine_atom spine ->
@@ -199,13 +199,13 @@ struct
     | Value_encode_ty { ty; props = _ } -> pp_ty_atom names ty
     | _ -> parens (pp_value names value)
 
-  and pp_ty_atom (names : Name_list.t) (ty : Core.ty) =
+  and pp_ty_atom (names : Core.name_env) (ty : Core.ty) =
     match ty with
     | Ty_universe _ | Ty_core _ -> pp_ty names ty
     | Ty_decode e when is_spine_atom e.spine -> pp_ty names ty
     | _ -> parens (pp_ty names ty)
 
-  and pp_var names var = Doc.string (Name_list.get names var)
+  and pp_var names var = Doc.string (Core.Name_env.get_level_exn names var).name
 
   and pp_proj names ({ head; spine } : Core.neutral) field =
     let doc =
@@ -225,7 +225,8 @@ struct
       if Config.show_singletons
       then pp_proj names { head; spine } "out"
       else pp_neutral names { head; spine }
-    | Snoc (spine, Proj { name; index = _ }) -> pp_proj names { head; spine } name
+    | Snoc (spine, Proj { name; index = _ }) ->
+      pp_proj names { head; spine } name
     | Empty -> pp_head names head
 
   and pp_head names (head : Core.head) =

@@ -2,6 +2,7 @@ open Prelude
 module Syntax = Oak_core_syntax
 module Evaluate = Oak_core_evaluate
 module Common = Oak_common
+module Icit = Common.Icit
 module Level = Common.Level
 module Index = Common.Index
 module Name = Common.Name

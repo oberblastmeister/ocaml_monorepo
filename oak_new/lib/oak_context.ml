@@ -3,8 +3,6 @@ module Core = Oak_core
 
 open struct
   module Spanned = Utility.Spanned
-  module Common = Oak_common
-  module Name_list = Common.Name_list
   module Diagnostic = Oak_diagnostic
   module Pretty = Oak_pretty
   module Source = Oak_source
@@ -14,7 +12,7 @@ exception Error of Diagnostic.t
 
 type t =
   { ty_env : Core.ty_env
-  ; name_list : Name_list.t
+  ; name_list : Core.name_env
   ; source : Source.t
   ; next_meta_id : int ref
   }
@@ -31,7 +29,7 @@ let with_context (_ : t) part ~f =
 
 let create (source : Source.t) =
   { ty_env = Core.Ty_env.empty
-  ; name_list = Name_list.empty
+  ; name_list = Core.Name_env.empty
   ; source
   ; next_meta_id = ref 0
   }
@@ -40,7 +38,7 @@ let create (source : Source.t) =
 let bind (name : Core.Name.t) ty cx =
   { cx with
     ty_env = Core.Ty_env.push ty cx.ty_env
-  ; name_list = Name_list.push name.name cx.name_list
+  ; name_list = Core.Name_env.push name cx.name_list
   }
 ;;
 

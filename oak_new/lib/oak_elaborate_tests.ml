@@ -30,7 +30,7 @@ let check ?(print_term = false) ?(show_singletons = false) s =
                 (Typed.Expr.term typed : Core.term) (Typed.Expr.ty typed : Core.ty)];
           Pp.render_to_stdout
             ~color:false
-            (Pretty.pp_ty ~show_singletons Common.Name_list.empty (Typed.Expr.ty typed));
+            (Pretty.pp_ty ~show_singletons Core.Name_env.empty (Typed.Expr.ty typed));
           Out_channel.newline stdout
         | Error diagnostic ->
           Diagnostic.print ~color:false ~files diagnostic;
