@@ -4,7 +4,6 @@ module Core = Oak_core
 module Typed = Oak_typed
 module Snippet = Utility.Diagnostic.Snippet
 module Pretty = Oak_pretty
-module Common = Oak_common
 module Diagnostic = Oak_diagnostic
 
 let check ?(print_term = false) ?(show_singletons = false) s =

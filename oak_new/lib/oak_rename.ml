@@ -1,20 +1,16 @@
 open Prelude
-
-open struct
-  module Surface = Oak_surface
-  module Spanned = Utility.Spanned
-  module Span = Utility.Span
-  module Diagnostic = Oak_diagnostic
-  module Doc = Utility.Pp.Doc
-  module Source = Oak_source
-  module Common = Oak_common
-  module Level = Common.Level
-  module Index = Common.Index
-  module Abstract = Oak_abstract
-  module Name = Common.Name
-  module Icit = Common.Icit
-  module Relevancy = Common.Relevancy
-end
+module Surface = Oak_surface
+module Spanned = Utility.Spanned
+module Span = Utility.Span
+module Diagnostic = Oak_diagnostic
+module Doc = Utility.Pp.Doc
+module Source = Oak_source
+module Common = Oak_common
+module Level = Common.Level
+module Index = Common.Index
+module Abstract = Oak_abstract
+module Name = Common.Name
+module Relevancy = Common.Relevancy
 
 module Error = struct
   type t = string Spanned.t

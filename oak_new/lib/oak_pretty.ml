@@ -1,9 +1,6 @@
 open Prelude
 module Core = Oak_core
-
-open struct
-  module Common = Oak_common
-end
+module Common = Oak_common
 
 module Make (Config : sig
     val show_singletons : bool

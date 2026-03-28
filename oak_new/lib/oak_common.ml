@@ -1,8 +1,5 @@
 open Prelude
-
-open struct
-  module Span = Utility.Span
-end
+module Span = Utility.Span
 
 module Core_ty = struct
   type t =

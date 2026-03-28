@@ -1,23 +1,18 @@
 open Prelude
 module Core = Oak_core
-
-open struct
-  module Bwd = Utility.Bwd
-  module Span = Utility.Span
-  module Spanned = Utility.Spanned
-  module Common = Oak_common
-  module Icit = Common.Icit
-  module Literal = Common.Literal
-  module Relevancy = Common.Relevancy
-  module Size = Common.Size
-  module Diagnostic = Oak_diagnostic
-  module Unify = Oak_unify
-  module Pretty = Oak_pretty
-  module Context = Oak_context
-  module Close = Core.Close
-  module Abstract = Oak_abstract
-  module Typed = Oak_typed
-end
+module Bwd = Utility.Bwd
+module Span = Utility.Span
+module Common = Oak_common
+module Icit = Common.Icit
+module Literal = Common.Literal
+module Size = Common.Size
+module Diagnostic = Oak_diagnostic
+module Unify = Oak_unify
+module Context = Oak_context
+module State = Oak_elaborate_state
+module Close = Core.Close
+module Abstract = Oak_abstract
+module Typed = Oak_typed
 
 let expr_ann (cx : Context.t) (span : Span.t) (term : Core.term) (ty : Core.ty)
   : Typed.expr_ann
@@ -35,34 +30,36 @@ let ty_ann
   { span; context = { ty_env = cx.ty_env; name_list = cx.name_list }; ty_props; term }
 ;;
 
-let extract_fun_ty (cx : Context.t) (func_ty : Core.ty) : Core.ty_fun =
+let extract_fun_ty (st : State.t) (cx : Context.t) (func_ty : Core.ty) : Core.ty_fun =
   match Core.Ty.whnf cx.ty_env func_ty with
   | Ty_fun func_ty -> func_ty
   | ty ->
-    Context.throw
-      cx
+    State.throw
+      st
       [ Diagnostic.Part.create
           (Doc.string "Expected function type, got " ^^ Context.pp_ty cx ty)
       ]
 ;;
 
-let extract_struct_ty (cx : Context.t) (strukt_ty : Core.ty) : Core.ty_struct =
+let extract_struct_ty (st : State.t) (cx : Context.t) (strukt_ty : Core.ty)
+  : Core.ty_struct
+  =
   match Core.Ty.whnf cx.ty_env strukt_ty with
   | Ty_struct strukt_ty -> strukt_ty
   | ty ->
-    Context.throw
-      cx
+    State.throw
+      st
       [ Diagnostic.Part.create
           (Doc.string "Expected struct type, got " ^^ Context.pp_ty cx ty)
       ]
 ;;
 
-let extract_pack_ty (cx : Context.t) (packed_ty : Core.ty) : Core.ty =
+let extract_pack_ty (st : State.t) (cx : Context.t) (packed_ty : Core.ty) : Core.ty =
   match Core.Ty.whnf cx.ty_env packed_ty with
   | Ty_pack ty -> ty
   | ty ->
-    Context.throw
-      cx
+    State.throw
+      st
       [ Diagnostic.Part.create
           (Doc.string "Expected pack type, got " ^^ Context.pp_ty cx ty)
       ]
@@ -72,16 +69,16 @@ let eval_expr (e : Typed.expr) : Core.value =
   Core.Term.eval Core.Value_env.empty (Typed.Expr.term e)
 ;;
 
-let infer_literal_ty (cx : Context.t) (span : Span.t) (literal : Literal.t) : Core.ty =
+let infer_literal_ty (st : State.t) (span : Span.t) (literal : Literal.t) : Core.ty =
   match literal with
   | Literal.Unit -> Ty_core Unit
   | Literal.Bool _ -> Ty_core Bool
   | Literal.Int _ -> Ty_core Int
   | Literal.String _ ->
-    Context.throw
-      cx
+    State.throw
+      st
       [ Diagnostic.Part.create
-          ~snippet:(Context.snippet cx span)
+          ~snippet:(State.snippet st span)
           (Doc.string "String literals are not supported in elaboration yet")
       ]
 ;;
@@ -90,11 +87,13 @@ let maybe_sing_in (is_abstract : bool) (rhs : Core.term) : Core.term =
   if is_abstract then rhs else Term_sing_in rhs
 ;;
 
-let rec synthesize_transparent_ty (cx : Context.t) (ty : Core.ty) : Core.term =
+let rec synthesize_transparent_ty (st : State.t) (cx : Context.t) (ty : Core.ty)
+  : Core.term
+  =
   match Core.Ty.whnf cx.ty_env ty with
   | Ty_universe _ ->
-    Context.throw
-      cx
+    State.throw
+      st
       [ Diagnostic.Part.create
           (Doc.string "Universes are not transparent: " ^^ Context.pp_ty cx ty)
       ]
@@ -104,24 +103,24 @@ let rec synthesize_transparent_ty (cx : Context.t) (ty : Core.ty) : Core.term =
       List.fold
         (Core.Ty_struct.field_locations ty)
         ~init:(~cx, ~running_field_impls:Bwd.Empty, ~field_impls:Bwd.Empty)
-        ~f:
-          (fun (~cx, ~running_field_impls, ~field_impls) (field : Core.field_loc) ->
+        ~f:(fun (~cx, ~running_field_impls, ~field_impls) (field : Core.field_loc) ->
           let running_struct_value =
             Core.Value.create_struct (Bwd.to_list running_field_impls)
           in
           let field_spec = Core.Ty_struct.proj running_struct_value ty field in
-          let synthesized_term = synthesize_transparent_ty cx field_spec.ty in
+          let synthesized_term = synthesize_transparent_ty st cx field_spec.ty in
           let term_field_impl : Core.term_field_impl =
             { name = field_spec.name.name; e = synthesized_term }
           in
           (* Make sure to push the synthesized term instead of just a free variable because the resulting structure should be non dependent, each field cannot depend on the previous one *)
           ( ~cx:(Context.bind field_spec.name field_spec.ty cx)
-          , ~running_field_impls:
-              (Bwd.snoc
-                 running_field_impls
-                 (Core.Value_field_impl.create
-                    field.name
-                    (Core.Term.eval Core.Value_env.empty synthesized_term)))
+          , ~running_field_impls:(Bwd.snoc
+                                    running_field_impls
+                                    (Core.Value_field_impl.create
+                                       field.name
+                                       (Core.Term.eval
+                                          Core.Value_env.empty
+                                          synthesized_term)))
           , ~field_impls:(Bwd.snoc field_impls term_field_impl) ))
     in
     let field_impls = Bwd.to_list field_impls in
@@ -129,6 +128,7 @@ let rec synthesize_transparent_ty (cx : Context.t) (ty : Core.ty) : Core.term =
   | Ty_fun ({ name; param_ty; param_modifiers; _ } as ty) ->
     let body =
       synthesize_transparent_ty
+        st
         (Context.bind name param_ty cx)
         (Core.Ty_fun.app
            ty
@@ -145,8 +145,8 @@ let rec synthesize_transparent_ty (cx : Context.t) (ty : Core.ty) : Core.term =
     if Size.is_type ty_props.size
     then Term_ignore
     else
-      Context.throw
-        cx
+      State.throw
+        st
         [ Diagnostic.Part.create
             (Doc.string "This type was not transparent since its universe was not Type: "
              ^^ Context.pp_value cx (Value_neutral e))
@@ -156,6 +156,7 @@ let rec synthesize_transparent_ty (cx : Context.t) (ty : Core.ty) : Core.term =
 exception Same_signature
 
 let rec apply_patch
+          (st : State.t)
           (cx : Context.t)
           (path : string list)
           (term_to_coerce_to_original_ty : Core.term)
@@ -167,7 +168,7 @@ let rec apply_patch
   match path with
   | [] -> failwith "expected nonempty list"
   | path_part :: path ->
-    let original_ty = extract_struct_ty cx original_ty in
+    let original_ty = extract_struct_ty st cx original_ty in
     let ~coerced_field_impls, ~patched_field_specs, ~did_find_field, .. =
       List.fold
         (Core.Ty_struct.field_locations original_ty)
@@ -205,9 +206,10 @@ let rec apply_patch
                   | Ty_sing original_ty ->
                     (* already a singleton, just check for equality *)
                     let patch_with_coerced =
-                      Unify.coerce cx patch_with patch_with_ty original_ty.ty
+                      Unify.coerce st cx patch_with patch_with_ty original_ty.ty
                     in
                     Unify.unify_value
+                      st
                       cx
                       (Core.Term.eval Core.Value_env.empty patch_with_coerced)
                       original_ty.identity
@@ -215,7 +217,7 @@ let rec apply_patch
                     raise_notrace Same_signature
                   | _ ->
                     let patch_with_coerced =
-                      Unify.coerce cx patch_with patch_with_ty original_field_ty
+                      Unify.coerce st cx patch_with patch_with_ty original_field_ty
                       |> Core.Term.eval Core.Value_env.empty
                     in
                     (( Term_sing_out (Term_free (Context.next_level cx))
@@ -228,6 +230,7 @@ let rec apply_patch
                   | Ty_sing original_field_ty ->
                     let coerced_term, patched_field_ty =
                       apply_patch
+                        st
                         cx
                         path
                         (Term_sing_out (Term_free (Context.next_level cx)))
@@ -238,6 +241,7 @@ let rec apply_patch
                     let coerced_term : Core.term = Term_sing_in coerced_term in
                     let coerced_identity =
                       Unify.coerce
+                        st
                         cx
                         (Core.Value.quote original_field_ty.identity)
                         original_field_ty.ty
@@ -253,6 +257,7 @@ let rec apply_patch
                   | _ ->
                     let coerced_term, patched_field_ty =
                       apply_patch
+                        st
                         cx
                         path
                         (Term_free (Context.next_level cx))
@@ -305,8 +310,8 @@ let rec apply_patch
     in
     if not did_find_field
     then
-      Context.throw
-        cx
+      State.throw
+        st
         [ Diagnostic.Part.create
             (Doc.string "Field "
              ^^ Doc.string path_part
@@ -317,10 +322,10 @@ let rec apply_patch
        : Core.ty) )
 ;;
 
-let with_elab_context (cx : Context.t) (span : Span.t) (message : string) ~f =
-  Context.with_context
-    cx
-    (Diagnostic.Part.create ~snippet:(Context.snippet cx span) (Doc.string message))
+let with_elab_context (st : State.t) (span : Span.t) (message : string) ~f =
+  State.with_context
+    st
+    (Diagnostic.Part.create ~snippet:(State.snippet st span) (Doc.string message))
     ~f
 ;;
 
@@ -333,7 +338,7 @@ let rec coerce_singleton (cx : Context.t) (e : Core.term) (ty : Core.ty)
 ;;
 
 (* postcondition: the type in Typed.expr should be the type of the core term *)
-let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
+let rec infer (st : State.t) (cx : Context.t) (e : Abstract.expr) : Typed.expr =
   match e with
   | Expr_data_rec { decls; span } -> failwith ""
   | Expr_data data -> failwith ""
@@ -343,9 +348,9 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
     let term, ty = coerce_singleton cx term ty in
     Typed.Expr_var { index; ann = expr_ann cx span term ty }
   | Expr_ann { e; ty; span = _ } ->
-    let ty_typed = check_universe cx ty in
+    let ty_typed = check_universe st cx ty in
     let ty = Core.Term_ty.eval Core.Value_env.empty (Typed.Ty.term ty_typed) in
-    let e_typed = check cx e ty in
+    let e_typed = check st cx e ty in
     Typed.Expr_ann { e = e_typed; ty = ty_typed; ann = Typed.Expr.ann e_typed }
   | Expr_core_ty { ty; span } ->
     let typed_ty =
@@ -353,31 +358,31 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
     in
     Typed.Expr.of_ty typed_ty
   | Expr_error { span } ->
-    Context.throw
-      cx
+    State.throw
+      st
       [ Diagnostic.Part.create
-          ~snippet:(Context.snippet cx span)
+          ~snippet:(State.snippet st span)
           (Doc.string "Cannot infer error term")
       ]
   | Expr_app { func; arg; param_modifiers; span } ->
-    let func = infer cx func in
+    let func = infer st cx func in
     let func_ty =
-      with_elab_context cx span "while inferring the function application" ~f:(fun () ->
-        extract_fun_ty cx (Typed.Expr.ty func))
+      with_elab_context st span "while inferring the function application" ~f:(fun () ->
+        extract_fun_ty st cx (Typed.Expr.ty func))
     in
     if not (Icit.equal func_ty.param_modifiers.icit param_modifiers.icit)
     then
-      Context.throw
-        cx
+      State.throw
+        st
         [ Diagnostic.Part.create
-            ~snippet:(Context.snippet cx span)
+            ~snippet:(State.snippet st span)
             (Doc.string "Expected "
              ^^ Icit.pp func_ty.param_modifiers.icit
              ^^ Doc.string " argument, got "
              ^^ Icit.pp param_modifiers.icit
              ^^ Doc.string " argument")
         ];
-    let arg = check cx arg func_ty.param_ty in
+    let arg = check st cx arg func_ty.param_ty in
     let term_arg : Core.term_arg =
       { e = Typed.Expr.term arg; icit = func_ty.param_modifiers.icit }
     in
@@ -388,12 +393,12 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
     let ty = Core.Ty_fun.app func_ty value_arg in
     Typed.Expr_app { func; arg; param_modifiers; ann = expr_ann cx span term ty }
   | Expr_fun { name; param_ty = Some param_ty; param_modifiers; body; span } ->
-    let param_ty_typed = check_universe cx param_ty in
+    let param_ty_typed = check_universe st cx param_ty in
     let param_ty =
       Core.Term_ty.eval Core.Value_env.empty (Typed.Ty.term param_ty_typed)
     in
     let cx' = Context.bind name param_ty cx in
-    let body = infer cx' body in
+    let body = infer st cx' body in
     let body_ty : Core.ty_closure =
       { env = Core.Value_env.empty
       ; body =
@@ -417,18 +422,18 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
       ; ann = expr_ann cx span term ty
       }
   | Expr_fun { span; _ } ->
-    Context.throw
-      cx
+    State.throw
+      st
       [ Diagnostic.Part.create
-          ~snippet:(Context.snippet cx span)
+          ~snippet:(State.snippet st span)
           (Doc.string "Cannot infer lambda without parameter type annotation")
       ]
   | Expr_ty_fun { name; param_ty; param_modifiers; body_ty; span } ->
-    let param_ty_typed = check_universe cx param_ty in
+    let param_ty_typed = check_universe st cx param_ty in
     let param_ty =
       Core.Term_ty.eval Core.Value_env.empty (Typed.Ty.term param_ty_typed)
     in
-    let body_ty_typed = check_universe (Context.bind name param_ty cx) body_ty in
+    let body_ty_typed = check_universe st (Context.bind name param_ty cx) body_ty in
     let typed_ty =
       Typed.Ty_fun
         { name
@@ -456,10 +461,10 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
     in
     Typed.Expr.of_ty typed_ty
   | Expr_proj { strukt; field; span } ->
-    let strukt = infer cx strukt in
+    let strukt = infer st cx strukt in
     let struct_ty =
-      with_elab_context cx span "while projecting a struct field" ~f:(fun () ->
-        extract_struct_ty cx (Typed.Expr.ty strukt))
+      with_elab_context st span "while projecting a struct field" ~f:(fun () ->
+        extract_struct_ty st cx (Typed.Expr.ty strukt))
     in
     let field_loc =
       match
@@ -470,10 +475,10 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
       with
       | Some field_loc -> field_loc
       | None ->
-        Context.throw
-          cx
+        State.throw
+          st
           [ Diagnostic.Part.create
-              ~snippet:(Context.snippet cx span)
+              ~snippet:(State.snippet st span)
               (Doc.string "Struct does not have field " ^^ Doc.string field)
           ]
     in
@@ -497,7 +502,7 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
           , ~let_bindings:Bwd.Empty
           , ~field_specs:Bwd.Empty )
         ~f:(fun (~cx, ~close, ~typed_decls, ~let_bindings, ~field_specs) decl ->
-          let e = infer cx decl.e in
+          let e = infer st cx decl.e in
           let ty =
             if decl.is_abstract
             then Typed.Expr.ty e
@@ -551,7 +556,7 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
         decls
         ~init:(~typed_decls:Bwd.Empty, ~field_impls:Bwd.Empty, ~field_specs:Bwd.Empty)
         ~f:(fun (~typed_decls, ~field_impls, ~field_specs) decl ->
-          let e = infer cx decl.e in
+          let e = infer st cx decl.e in
           let ty =
             if decl.is_abstract
             then Typed.Expr.ty e
@@ -596,7 +601,7 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
           let typed_field_ty, typed_rhs, ty =
             match field_spec.ty, field_spec.rhs with
             | Some ty, rhs ->
-              let typed_ty = check_universe cx ty in
+              let typed_ty = check_universe st cx ty in
               let field_ty =
                 Core.Term_ty.eval Core.Value_env.empty (Typed.Ty.term typed_ty)
               in
@@ -604,13 +609,13 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
                 match rhs with
                 | None -> None, field_ty
                 | Some rhs ->
-                  let rhs = check cx rhs field_ty in
+                  let rhs = check st cx rhs field_ty in
                   let rhs_value = eval_expr rhs in
                   Some rhs, Ty_sing { identity = rhs_value; ty = field_ty }
               in
               Some typed_ty, typed_rhs, ty
             | None, Some rhs ->
-              let rhs = infer cx rhs in
+              let rhs = infer st cx rhs in
               let field_ty = Typed.Expr.ty rhs in
               let rhs_value = eval_expr rhs in
               None, Some rhs, Ty_sing { identity = rhs_value; ty = field_ty }
@@ -636,12 +641,11 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
           , ~close:(Close.push_exn level close)
           , ~typed_field_specs:(Bwd.snoc typed_field_specs typed_field_spec)
           , ~field_specs:(Bwd.snoc field_specs field_spec)
-          , ~size:
-              (Size.max
-                 size
-                 (match typed_field_ty with
-                  | Some typed_ty -> (Typed.Ty.props typed_ty).size
-                  | None -> (Core.Ty.infer_props cx.ty_env ty).size)) ))
+          , ~size:(Size.max
+                     size
+                     (match typed_field_ty with
+                      | Some typed_ty -> (Typed.Ty.props typed_ty).size
+                      | None -> (Core.Ty.infer_props cx.ty_env ty).size)) ))
     in
     let typed_field_specs = Bwd.to_list typed_field_specs in
     let field_specs = Bwd.to_list field_specs in
@@ -658,7 +662,7 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
     in
     Typed.Expr.of_ty typed_ty
   | Expr_let { name; rhs; relevancy; is_abstract; body; span } ->
-    let rhs = infer cx rhs in
+    let rhs = infer st cx rhs in
     let rhs_value = eval_expr rhs in
     let rhs_ty : Core.ty =
       if is_abstract
@@ -666,7 +670,7 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
       else Ty_sing { identity = rhs_value; ty = Typed.Expr.ty rhs }
     in
     let cx' = Context.bind name rhs_ty cx in
-    let body = infer cx' body in
+    let body = infer st cx' body in
     let term : Core.term =
       Term_let
         { name
@@ -693,33 +697,33 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
     in
     Typed.Expr.of_ty typed_ty
   | Expr_if { cond; body1; body2; span } ->
-    let cond = check cx cond (Ty_core Bool) in
-    let body1 = infer cx body1 in
-    let body2 = infer cx body2 in
+    let cond = check st cx cond (Ty_core Bool) in
+    let body1 = infer st cx body1 in
+    let body2 = infer st cx body2 in
     let body1_props = Core.Ty.infer_props cx.ty_env (Typed.Expr.ty body1) in
     let body2_props = Core.Ty.infer_props cx.ty_env (Typed.Expr.ty body2) in
     if not (Size.is_type body1_props.size)
     then
-      Context.throw
-        cx
+      State.throw
+        st
         [ Diagnostic.Part.create
-            ~snippet:(Context.snippet cx (Typed.Expr.span body1))
+            ~snippet:(State.snippet st (Typed.Expr.span body1))
             (Doc.string "The first branch did not have a type in universe Type")
         ];
     if not (Size.is_type body2_props.size)
     then
-      Context.throw
-        cx
+      State.throw
+        st
         [ Diagnostic.Part.create
-            ~snippet:(Context.snippet cx (Typed.Expr.span body2))
+            ~snippet:(State.snippet st (Typed.Expr.span body2))
             (Doc.string "The second branch did not have a type in universe Type")
         ];
-    with_elab_context cx span "in the if expression" ~f:(fun () ->
-      Unify.unify_ty cx (Typed.Expr.ty body1) (Typed.Expr.ty body2));
+    with_elab_context st span "in the if expression" ~f:(fun () ->
+      Unify.unify_ty st cx (Typed.Expr.ty body1) (Typed.Expr.ty body2));
     Typed.Expr_if
       { cond; body1; body2; ann = expr_ann cx span Term_ignore (Typed.Expr.ty body1) }
   | Expr_ty_pack { ty; span } ->
-    let typed_ty = check_universe cx ty in
+    let typed_ty = check_universe st cx ty in
     let typed_ty =
       Typed.Ty_pack
         { ty = typed_ty
@@ -729,18 +733,18 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
     in
     Typed.Expr.of_ty typed_ty
   | Expr_pack { e; span } ->
-    let e = infer cx e in
+    let e = infer st cx e in
     let ty : Core.ty = Ty_pack (Typed.Expr.ty e) in
     Typed.Expr_pack { e; ann = expr_ann cx span Term_ignore ty }
   | Expr_bind { span; _ } ->
-    Context.throw
-      cx
+    State.throw
+      st
       [ Diagnostic.Part.create
-          ~snippet:(Context.snippet cx span)
+          ~snippet:(State.snippet st span)
           (Doc.string "Cannot infer bind expressions")
       ]
   | Expr_literal { literal; span } ->
-    let ty = infer_literal_ty cx span literal in
+    let ty = infer_literal_ty st span literal in
     Typed.Expr_literal { literal; ann = expr_ann cx span Term_ignore ty }
   | Expr_rec { decls; span } ->
     (* let typed_tys, tys =
@@ -770,12 +774,13 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
     (* Typed.Expr_rec { decls = typed_decls; ann = expr_ann cx span placeholder_term ty } *) *)
     failwith ""
   | Expr_where { e; path; rhs; span } ->
-    let e_typed = check_universe cx e in
-    let rhs_typed = infer cx rhs in
+    let e_typed = check_universe st cx e in
+    let rhs_typed = infer st cx rhs in
     let original_ty = Core.Term_ty.eval Core.Value_env.empty (Typed.Ty.term e_typed) in
     let patched_ty =
       try
         apply_patch
+          st
           cx
           (Non_empty_list.to_list path)
           (Term_free (Context.next_level cx))
@@ -794,13 +799,13 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
          ; ann = ty_ann cx span (Core.Ty.quote patched_ty) (Typed.Ty.props e_typed)
          })
 
-and check (cx : Context.t) (e : Abstract.expr) (ty : Core.ty) : Typed.expr =
+and check (st : State.t) (cx : Context.t) (e : Abstract.expr) (ty : Core.ty) : Typed.expr =
   match e with
   | Expr_error { span } ->
-    Context.throw
-      cx
+    State.throw
+      st
       [ Diagnostic.Part.create
-          ~snippet:(Context.snippet cx span)
+          ~snippet:(State.snippet st span)
           (Doc.string "Cannot check error term")
       ]
   (* | Expr_struct { decls; span; is_dependent = false } ->
@@ -808,28 +813,29 @@ and check (cx : Context.t) (e : Abstract.expr) (ty : Core.ty) : Typed.expr =
   | Expr_fun { name; param_ty; param_modifiers; body; span } ->
     let fun_ty =
       with_elab_context
-        cx
+        st
         span
         "while checking the function against the expected type"
-        ~f:(fun () -> extract_fun_ty cx ty)
+        ~f:(fun () -> extract_fun_ty st cx ty)
     in
-    Context.with_context
-      cx
+    State.with_context
+      st
       (Diagnostic.Part.create
-         ~snippet:(Context.snippet cx span)
+         ~snippet:(State.snippet st span)
          (Doc.string "while checking binder"))
-      ~f:(fun () -> Unify.unify_param_modifiers cx fun_ty.param_modifiers param_modifiers);
+      ~f:(fun () -> Unify.unify_param_modifiers st fun_ty.param_modifiers param_modifiers);
     let param_ty =
       match param_ty with
       | None -> None
       | Some param_ty ->
-        let param_ty_typed = check_universe cx param_ty in
+        let param_ty_typed = check_universe st cx param_ty in
         with_elab_context
-          cx
+          st
           span
           "while checking the function parameter annotation"
           ~f:(fun () ->
             Unify.unify_ty
+              st
               cx
               (Core.Term_ty.eval Core.Value_env.empty (Typed.Ty.term param_ty_typed))
               fun_ty.param_ty);
@@ -837,6 +843,7 @@ and check (cx : Context.t) (e : Abstract.expr) (ty : Core.ty) : Typed.expr =
     in
     let body =
       check
+        st
         (Context.bind name fun_ty.param_ty cx)
         body
         (Core.Ty_fun.app
@@ -854,41 +861,42 @@ and check (cx : Context.t) (e : Abstract.expr) (ty : Core.ty) : Typed.expr =
     Typed.Expr_fun
       { name; param_ty; param_modifiers; body; ann = expr_ann cx span term ty }
   | Expr_if { cond; body1; body2; span } ->
-    let cond = check cx cond (Ty_core Bool) in
-    let body1 = check cx body1 ty in
-    let body2 = check cx body2 ty in
+    let cond = check st cx cond (Ty_core Bool) in
+    let body1 = check st cx body1 ty in
+    let body2 = check st cx body2 ty in
     Typed.Expr_if { cond; body1; body2; ann = expr_ann cx span Term_ignore ty }
   | Expr_pack { e; span } ->
     let inner_ty =
-      with_elab_context cx span "while checking the pack expression" ~f:(fun () ->
-        extract_pack_ty cx ty)
+      with_elab_context st span "while checking the pack expression" ~f:(fun () ->
+        extract_pack_ty st cx ty)
     in
-    let e = check cx e inner_ty in
+    let e = check st cx e inner_ty in
     Typed.Expr_pack { e; ann = expr_ann cx span Term_ignore ty }
   | Expr_bind { name; rhs; body; span } ->
     let result_term : Core.term =
-      with_elab_context cx span "while checking the bind expression" ~f:(fun () ->
-        synthesize_transparent_ty cx ty)
+      with_elab_context st span "while checking the bind expression" ~f:(fun () ->
+        synthesize_transparent_ty st cx ty)
     in
-    let rhs_typed = infer cx rhs in
+    let rhs_typed = infer st cx rhs in
     let rhs_inner_ty =
       with_elab_context
-        cx
+        st
         (Typed.Expr.span rhs_typed)
         "while checking the right-hand side of the bind expression"
-        ~f:(fun () -> extract_pack_ty cx (Typed.Expr.ty rhs_typed))
+        ~f:(fun () -> extract_pack_ty st cx (Typed.Expr.ty rhs_typed))
     in
-    let body_typed = check (Context.bind name rhs_inner_ty cx) body ty in
+    let body_typed = check st (Context.bind name rhs_inner_ty cx) body ty in
     Typed.Expr_bind
       { name; rhs = rhs_typed; body = body_typed; ann = expr_ann cx span result_term ty }
   | _ ->
-    let e_typed = infer cx e in
+    let e_typed = infer st cx e in
     let term_opt, coe =
       with_elab_context
-        cx
+        st
         (Typed.Expr.span e_typed)
         "while checking the expression against the expected type"
-        ~f:(fun () -> Unify.sub cx (Typed.Expr.term e_typed) (Typed.Expr.ty e_typed) ty)
+        ~f:(fun () ->
+          Unify.sub st cx (Typed.Expr.term e_typed) (Typed.Expr.ty e_typed) ty)
     in
     begin match term_opt with
     | None -> e_typed
@@ -897,17 +905,17 @@ and check (cx : Context.t) (e : Abstract.expr) (ty : Core.ty) : Typed.expr =
         { expr = e_typed; coe; ann = expr_ann cx (Typed.Expr.span e_typed) term ty }
     end
 
-and check_universe (cx : Context.t) (ty : Abstract.expr) : Typed.ty =
-  let typed_ty = infer cx ty in
+and check_universe (st : State.t) (cx : Context.t) (ty : Abstract.expr) : Typed.ty =
+  let typed_ty = infer st cx ty in
   let universe = Typed.Expr.ty typed_ty in
   let props =
     match Core.Ty.whnf cx.ty_env universe with
     | Ty_universe props -> props
     | ty ->
-      Context.throw
-        cx
+      State.throw
+        st
         [ Diagnostic.Part.create
-            ~snippet:(Context.snippet cx (Typed.Expr.span typed_ty))
+            ~snippet:(State.snippet st (Typed.Expr.span typed_ty))
             (Doc.string "Type was not a universe: " ^^ Context.pp_ty cx ty)
         ]
   in
@@ -923,8 +931,9 @@ and check_universe (cx : Context.t) (ty : Abstract.expr) : Typed.ty =
 ;;
 
 let infer source e =
-  let cx = Context.create source in
-  match infer cx e with
+  let st = State.create source in
+  let cx = Context.empty in
+  match infer st cx e with
   | typed -> Ok typed
-  | exception Context.Error diagnostic -> Error diagnostic
+  | exception State.Error diagnostic -> Error diagnostic
 ;;

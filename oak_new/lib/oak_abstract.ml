@@ -1,17 +1,11 @@
 open Prelude
-
-open struct
-  module Span = Utility.Span
-  module Common = Oak_common
-end
-
+module Span = Utility.Span
+module Common = Oak_common
 module Core_ty = Common.Core_ty
 module Name = Common.Name
 module Size = Common.Size
 module Index = Common.Index
-module Level = Common.Level
 module Literal = Common.Literal
-module Icit = Common.Icit
 module Relevancy = Common.Relevancy
 module Param_modifiers = Common.Param_modifiers
 

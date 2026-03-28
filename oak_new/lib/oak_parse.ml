@@ -1,18 +1,14 @@
 (* TODO: refactor this, the code is shit *)
 open Prelude
-
-open struct
-  module Source = Oak_source
-  module Shrub = Shrubbery.Syntax
-  module Token = Shrubbery.Token
-  module Surface = Oak_surface
-  module Span = Utility.Span
-  module Spanned = Utility.Spanned
-  module File_span = Utility.File_span
-  module Diagnostic = Oak_diagnostic
-  module Snippet = Utility.Diagnostic.Snippet
-  module Size = Oak_common.Size
-end
+module Source = Oak_source
+module Shrub = Shrubbery.Syntax
+module Token = Shrubbery.Token
+module Surface = Oak_surface
+module Span = Utility.Span
+module Spanned = Utility.Spanned
+module File_span = Utility.File_span
+module Diagnostic = Oak_diagnostic
+module Size = Oak_common.Size
 
 module Error = struct
   type t = string Spanned.t [@@deriving sexp_of]

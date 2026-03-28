@@ -1,7 +1,5 @@
 open Prelude
-module Core = Oak_core
 module Diagnostic = Oak_diagnostic
-module Pretty = Oak_pretty
 module Source = Oak_source
 
 exception Error of Diagnostic.t
@@ -11,6 +9,7 @@ type t =
   ; next_meta_id : int ref
   }
 
+let create source = { source; next_meta_id = ref 0 }
 let throw (_ : t) ?code parts = raise_notrace (Error (Diagnostic.create ?code parts))
 
 let with_context (_ : t) part ~f =

@@ -1,10 +1,6 @@
 open Prelude
-
-open struct
-  module Span = Utility.Span
-  module Common = Oak_common
-end
-
+module Span = Utility.Span
+module Common = Oak_common
 module Core_ty = Common.Core_ty
 module Size = Common.Size
 module Literal = Common.Literal
