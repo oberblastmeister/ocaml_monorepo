@@ -181,7 +181,7 @@ and whnf_neutral (ty_env : Core.ty_env) (e : Core.neutral) : Core.value =
         match frame with
         | App arg -> ~value:(app_whnf ty_env value arg), ~ty:(app_ty ty_env ty arg)
         | Proj field ->
-          ~value:(proj_whnf ty_env value field), ~ty:((proj_ty ty_env value ty field).ty)
+          ~value:(proj_whnf ty_env value field), ~ty:(proj_ty ty_env value ty field).ty
         | Out ->
           let ty =
             match whnf_ty ty_env ty with
@@ -213,13 +213,12 @@ and infer_props (ty_env : Core.ty_env) (ty : Core.ty) =
           let props = infer_props ty_env field_spec_ty in
           ( ~size:(Core.Size.max size props.size)
           , ~ty_env:(Core.Env.push field_spec_ty ty_env)
-          , ~running_field_impls:
-              (Bwd.snoc
-                 running_field_impls
-                 (Core.Value_field_impl.create
-                    field_spec.name.name
-                    (Core.Value.free_of_size (Core.Env.length ty_env))
-                  : Core.value_field_impl)) ))
+          , ~running_field_impls:(Bwd.snoc
+                                    running_field_impls
+                                    (Core.Value_field_impl.create
+                                       field_spec.name.name
+                                       (Core.Value.free_of_size (Core.Env.length ty_env))
+                                     : Core.value_field_impl)) ))
     in
     { size }
   | Ty_fun ty ->

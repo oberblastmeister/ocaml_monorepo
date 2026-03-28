@@ -105,7 +105,8 @@ let rec check_ty_ignorable (cx : Context.t) (ty : ty) : unit =
         ~f:(fun (~cx, ~closure_env) ty_decl ->
           let ty = Evaluate.eval closure_env ty_decl.ty in
           check_ty_ignorable cx ty;
-          ~cx:(Context.bind ty_decl.var ty cx), ~closure_env:(Env.push (Context.next_free cx) closure_env))
+          ( ~cx:(Context.bind ty_decl.var ty cx)
+          , ~closure_env:(Env.push (Context.next_free cx) closure_env) ))
     in
     ()
   | _ ->
@@ -231,7 +232,9 @@ let rec apply_patch
             ( ~cx
             , ~closure_env
             , ~close
-            , ~coerced_fields:(coerced_fields : value_field Bwd.t)
+            , ~(coerced_fields
+              :
+              value_field Bwd.t)
             , ~field_found )
             ty_decls
           ->
@@ -280,16 +283,15 @@ let rec apply_patch
             ( ( ~cx:(Context.bind ty_decls.var field_ty cx)
               , ~closure_env:(Env.push (Context.next_free cx) closure_env)
               , ~close:(Close.push_exn (Context.next_level cx) close)
-              , ~coerced_fields:
-                  (Bwd.snoc
-                     coerced_fields
-                     { name = field_name
-                     ; e =
-                         Evaluate.Value.proj
-                           (Value.free value_to_patch)
-                           field_name
-                           field_index
-                     })
+              , ~coerced_fields:(Bwd.snoc
+                                   coerced_fields
+                                   { name = field_name
+                                   ; e =
+                                       Evaluate.Value.proj
+                                         (Value.free value_to_patch)
+                                         field_name
+                                         field_index
+                                   })
               , ~field_found )
             , { var = ty_decls.var
               ; ty = Context.quote cx field_ty |> Evaluate.close close
@@ -367,18 +369,15 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : term * ty =
     in
     let mod_term = Term_mod { fields = tuple } in
     let (~cx:_, ..), stuff =
-      List.fold_map
-        decls
-        ~init:(~cx, ~close:Close.empty)
-        ~f:(fun (~cx, ~close) decl ->
-          let e, ty = infer cx decl.e in
-          let let_tuple = decl.var, Evaluate.close close e in
-          let ty_decl : term_ty_decl =
-            { var = decl.var; ty = Context.quote cx ty |> Evaluate.close close }
-          in
-          ( ( ~cx:(Context.bind decl.var ty cx)
-            , ~close:(Close.push_exn (Context.next_level cx) close) )
-          , (let_tuple, ty_decl) ))
+      List.fold_map decls ~init:(~cx, ~close:Close.empty) ~f:(fun (~cx, ~close) decl ->
+        let e, ty = infer cx decl.e in
+        let let_tuple = decl.var, Evaluate.close close e in
+        let ty_decl : term_ty_decl =
+          { var = decl.var; ty = Context.quote cx ty |> Evaluate.close close }
+        in
+        ( ( ~cx:(Context.bind decl.var ty cx)
+          , ~close:(Close.push_exn (Context.next_level cx) close) )
+        , (let_tuple, ty_decl) ))
     in
     let lets, ty_decls = List.unzip stuff in
     let res_ty = Value_ty_mod { env = Env.empty; ty_decls } in

@@ -230,11 +230,8 @@ and unify_relevancy (st : State.t) (relevancy1 : Relevancy.t) (relevancy2 : Rele
            ^^ Relevancy.pp relevancy2)
       ]
 
-and unify_ty_props
-      (st : State.t)
-      (props1 : Core.Ty_props.t)
-      (props2 : Core.Ty_props.t)
-      : unit
+and unify_ty_props (st : State.t) (props1 : Core.Ty_props.t) (props2 : Core.Ty_props.t)
+  : unit
   =
   if not (Size.equal props1.size props2.size)
   then
