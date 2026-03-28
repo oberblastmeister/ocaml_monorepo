@@ -12,6 +12,10 @@ This is a Dune-based OCaml monorepo. Common commands:
 - `dune promote` - Promote test outputs
 - `make dev` - Setup development environment (locks dependencies, builds, installs ocamllsp and ocamlformat)
 
+For ad hoc debugging of Oak elaboration tests, use `oak_new/bin/debug.ml` and run
+`dune exec ./oak_new/bin/debug.exe`. Keeping a repro in a separate executable makes
+it easy to print directly to stdout while iterating on failures.
+
 All libraries use `(flags (:standard -warn-error -A))` which turns off treating warnings as errors.
 
 ## Library Architecture
