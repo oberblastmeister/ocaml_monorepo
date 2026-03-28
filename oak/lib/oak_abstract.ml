@@ -1,21 +1,17 @@
 open Prelude
-
-open struct
-  module Span = Utility.Span
-  module Common = Oak_common
-end
-
-module Var_info = Common.Var_info
+module Span = Utility.Span
+module Common = Oak_common
 module Core_ty = Common.Core_ty
-module Universe = Common.Universe
+module Name = Common.Name
+module Size = Common.Size
 module Index = Common.Index
-module Level = Common.Level
 module Literal = Common.Literal
-module Icit = Common.Icit
+module Relevancy = Common.Relevancy
+module Param_modifiers = Common.Param_modifiers
 
 type expr =
   | Expr_var of
-      { var : Index.t
+      { index : Index.t
       ; span : Span.t
       }
   | Expr_ann of
@@ -26,49 +22,43 @@ type expr =
   | Expr_app of
       { func : expr
       ; arg : expr
-      ; icit : Icit.t
+      ; param_modifiers : Param_modifiers.t
       ; span : Span.t
       }
-  | Expr_abs of
-      { var : Var_info.t
+  | Expr_fun of
+      { name : Name.t
       ; param_ty : expr option
-      ; icit : Icit.t
+      ; param_modifiers : Param_modifiers.t
       ; body : expr
       ; span : Span.t
       }
   | Expr_ty_fun of
-      { var : Var_info.t
+      { name : Name.t
       ; param_ty : expr
-      ; icit : Icit.t
+      ; param_modifiers : Param_modifiers.t
       ; body_ty : expr
       ; span : Span.t
       }
   | Expr_proj of
-      { mod_e : expr
+      { strukt : expr
       ; field : string
       ; span : Span.t
       }
-  | Expr_mod of
+  | Expr_struct of
       { decls : expr_decl list
+      ; is_dependent : bool
       ; span : Span.t
       }
-  | Expr_ty_mod of
-      { ty_decls : expr_ty_decl list
+  | Expr_ty_struct of
+      { field_specs : expr_field_spec list
       ; span : Span.t
       }
   | Expr_let of
-      { var : Var_info.t
+      { name : Name.t
       ; rhs : expr
+      ; relevancy : Relevancy.t
+      ; is_abstract : bool
       ; body : expr
-      ; span : Span.t
-      }
-  | Expr_alias of
-      { identity : expr
-      ; span : Span.t
-      }
-    (* Also known as the singleton type, or the static extent.  *)
-  | Expr_ty_sing of
-      { identity : expr
       ; span : Span.t
       }
   | Expr_core_ty of
@@ -76,7 +66,7 @@ type expr =
       ; span : Span.t
       }
   | Expr_universe of
-      { universe : Universe.t
+      { size : Size.t
       ; span : Span.t
       }
   | Expr_if of
@@ -94,7 +84,7 @@ type expr =
       ; span : Span.t
       }
   | Expr_bind of
-      { var : Var_info.t
+      { name : Name.t
       ; rhs : expr
       ; body : expr
       ; span : Span.t
@@ -114,22 +104,62 @@ type expr =
       ; rhs : expr
       ; span : Span.t
       }
+  | Expr_data_rec of
+      { decls : data_decl list
+      ; span : Span.t
+      }
+  | Expr_data of expr_data
+
+and data_decl =
+  { name : Name.t
+  ; data : expr_data
+  ; span : Span.t
+  }
+
+and expr_data =
+  { params : data_param list
+  ; body : data_body
+  ; span : Span.t
+  }
+
+and data_body =
+  | Data_record of { fields : data_field list }
+  | Data_variant of { constructors : data_constructor list }
+
+and data_field =
+  { name : Name.t
+  ; ty : expr
+  }
+
+and data_constructor =
+  { name : Name.t
+  ; ty : expr option
+  }
+
+and data_param =
+  { name : Name.t
+  ; ty : expr
+  }
 
 and expr_rec_decl =
-  { var : Var_info.t
+  { name : Name.t
   ; ty : expr
   ; e : expr
   }
 
 and expr_decl =
-  { var : Var_info.t
+  { name : Name.t
+  ; relevancy : Relevancy.t
   ; e : expr
+  ; is_abstract : bool
   ; span : Span.t
   }
 
-and expr_ty_decl =
-  { var : Var_info.t
-  ; ty : expr
+and expr_field_spec =
+  { name : Name.t
+  ; relevancy : Relevancy.t
+  ; ty : expr option
+  ; rhs : expr option
   ; span : Span.t
   }
 [@@deriving sexp_of]
@@ -140,22 +170,22 @@ module Expr = struct
     | Expr_var { span; _ }
     | Expr_ann { span; _ }
     | Expr_app { span; _ }
-    | Expr_abs { span; _ }
+    | Expr_fun { span; _ }
     | Expr_ty_fun { span; _ }
     | Expr_proj { span; _ }
-    | Expr_mod { span; _ }
-    | Expr_ty_mod { span; _ }
+    | Expr_struct { span; _ }
+    | Expr_ty_struct { span; _ }
     | Expr_let { span; _ }
-    | Expr_ty_sing { span; _ }
     | Expr_core_ty { span; _ }
     | Expr_universe { span; _ }
     | Expr_if { span; _ }
     | Expr_ty_pack { span; _ }
     | Expr_pack { span; _ }
-    | Expr_alias { span; _ }
     | Expr_literal { span; _ }
     | Expr_rec { span; _ }
     | Expr_where { span; _ }
+    | Expr_data { span; _ }
+    | Expr_data_rec { span; _ }
     | Expr_bind { span; _ } -> span
   ;;
 end

@@ -36,6 +36,7 @@ type t =
   }
 [@@deriving sexp_of]
 
+val create : ?code:Code.t -> Part.t list -> t
 val pp : files:Snippet.files -> t -> Doc.t
 val print : ?width:int -> ?color:bool -> files:Snippet.files -> t -> unit
 val print_many : ?width:int -> ?color:bool -> files:Snippet.files -> t list -> unit

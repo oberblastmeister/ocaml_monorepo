@@ -1,18 +1,14 @@
 (* TODO: refactor this, the code is shit *)
 open Prelude
-
-open struct
-  module Source = Oak_source
-  module Shrub = Shrubbery.Syntax
-  module Token = Shrubbery.Token
-  module Surface = Oak_surface
-  module Span = Utility.Span
-  module Spanned = Utility.Spanned
-  module File_span = Utility.File_span
-  module Diagnostic = Oak_diagnostic
-  module Snippet = Utility.Diagnostic.Snippet
-  module Universe = Oak_common.Universe
-end
+module Source = Oak_source
+module Shrub = Shrubbery.Syntax
+module Token = Shrubbery.Token
+module Surface = Oak_surface
+module Span = Utility.Span
+module Spanned = Utility.Spanned
+module File_span = Utility.File_span
+module Diagnostic = Oak_diagnostic
+module Size = Oak_common.Size
 
 module Error = struct
   type t = string Spanned.t [@@deriving sexp_of]
@@ -96,7 +92,7 @@ module Parser = struct
   let var p =
     let ti = token p in
     match ti.token with
-    | Ident name -> ({ name; span = Span.single ti.index } : Surface.Var.t)
+    | Ident name -> ({ name; span = Span.single ti.index } : Surface.Name.t)
     | _ -> fail p
   ;;
 
@@ -170,7 +166,7 @@ and parse_fun st (p : Parser.State.t) : Surface.expr =
         (fun () -> State.error st p "Expected arrow")
     in
     let body = parse_expr st p in
-    Expr_abs
+    Expr_fun
       { params
       ; ret_ty
       ; body
@@ -202,23 +198,40 @@ and parse_fun_ty_cont st p (tys : _ Non_empty_list.t) : Surface.expr =
        Surface.Expr_ty_fun { param_tys; body_ty = ret_ty; span })
 
 and parse_param_ty_from_expr st (expr : Surface.expr) : Surface.param_ty =
+  let parse_named_param relevancy names ty icit span : Surface.param_ty =
+    { relevancy; names; ty; icit; span }
+  in
   match expr with
   | Expr_paren { e = Expr_ann { e; ty; span = _ }; span } ->
-    let vars = parse_expr_vars st e in
-    { vars; ty = Some ty; icit = Expl; span }
+    let relevancy, names = parse_expr_vars st e in
+    parse_named_param relevancy names (Some ty) Expl span
   | Expr_brack { e = Expr_ann { e; ty; span = _ }; span } ->
-    let vars = parse_expr_vars st e in
-    { vars; ty = Some ty; icit = Impl; span }
+    let _relevancy, names = parse_expr_vars st e in
+    parse_named_param Surface.Relevancy.Irrelevant names (Some ty) Impl span
   | Expr_brack { e; span } ->
-    let vars = parse_expr_vars st e in
-    { vars; ty = None; icit = Impl; span }
-  | e -> { vars = []; ty = Some e; icit = Expl; span = Surface.expr_span e }
+    let _relevancy, names = parse_expr_vars st e in
+    parse_named_param Surface.Relevancy.Irrelevant names None Impl span
+  | e ->
+    let relevancy, e = strip_type_marker_expr e in
+    ({ relevancy; names = []; ty = Some e; icit = Expl; span = Surface.expr_span e }
+     : Surface.param_ty)
 
-and parse_expr_vars _st (e : Surface.expr) : Surface.Var.t list =
-  let vars =
+and strip_type_marker_expr (e : Surface.expr) : Surface.Relevancy.t * Surface.expr =
+  match e with
+  | Expr_app { func = Expr_var { name = "type"; _ }; args = [ { arg; _ } ]; span = _ } ->
+    Surface.Relevancy.Irrelevant, arg
+  | _ -> Surface.Relevancy.Relevant, e
+
+and parse_expr_vars _st (e : Surface.expr) : Surface.Relevancy.t * Surface.Name.t list =
+  let relevancy, vars =
     match e with
-    | Expr_app { func; args; span = _ } -> func :: args
-    | Expr_var _ -> [ e ]
+    | Expr_app { func = Expr_var { name = "type"; _ }; args; span = _ } ->
+      let vars = List.map args ~f:(fun { arg; _ } -> arg) in
+      Surface.Relevancy.Irrelevant, vars
+    | Expr_app { func; args; span = _ } ->
+      let vars = func :: List.map args ~f:(fun { arg; _ } -> arg) in
+      Surface.Relevancy.Relevant, vars
+    | Expr_var _ -> Surface.Relevancy.Relevant, [ e ]
     | _ -> error (Error.create "invalid parameter syntax" (Surface.expr_span e))
   in
   let vars =
@@ -227,29 +240,44 @@ and parse_expr_vars _st (e : Surface.expr) : Surface.Var.t list =
       | Expr_var var -> var
       | _ -> error (Error.create "invalid parameter syntax" (Surface.expr_span var)))
   in
-  vars
+  relevancy, vars
 
 and parse_keyword st (p : Parser.State.t) : Surface.expr =
   let e =
     match Parser.State.peek p with
     | Some (Token { token = Ident keyword; index = keyword_index }) -> begin
       match keyword with
-      | "mod" ->
+      | "struct" ->
         let _ = Parser.State.next_exn p in
-        let block =
-          Parser.run_or_thunk
-            p
-            (fun p -> Parser.brace p)
-            (fun () -> State.error st p "Expected {")
-        in
-        let decls =
-          List.map block.groups ~f:(fun { Shrub.group; sep = _ } ->
-            parse_block_decl st group)
-        in
-        let span =
-          Span.combine (Span.single keyword_index) (Span.single block.rdelim.index)
-        in
-        Surface.Expr_mod { decls; span }
+        begin match Parser.State.peek p with
+        | Some (Delim { ldelim = { token = LBrace; _ }; _ }) ->
+          let block =
+            Parser.run_or_thunk
+              p
+              (fun p -> Parser.brace p)
+              (fun () -> State.error st p "Expected {")
+          in
+          let decls =
+            List.map block.groups ~f:(fun { Shrub.group; sep = _ } ->
+              parse_block_decl st group)
+          in
+          let span =
+            Span.combine (Span.single keyword_index) (Span.single block.rdelim.index)
+          in
+          Surface.Expr_struct { decls; is_dependent = true; span }
+        | Some (Delim ({ ldelim = { token = LParen; _ }; rdelim; groups } as delim)) ->
+          Parser.State.next_exn p;
+          let decls =
+            List.map groups ~f:(fun { Shrub.group; sep = _ } ->
+              parse_nondependent_struct_decl st group)
+          in
+          let span =
+            Span.combine (Span.single keyword_index) (Span.single rdelim.index)
+          in
+          ignore delim;
+          Surface.Expr_struct { decls; is_dependent = false; span }
+        | _ -> State.error st p "Expected { or ("
+        end
       | "sig" ->
         let _ = Parser.State.next_exn p in
         let block =
@@ -258,14 +286,14 @@ and parse_keyword st (p : Parser.State.t) : Surface.expr =
             (fun p -> Parser.brace p)
             (fun () -> State.error st p "Expected {")
         in
-        let ty_decls =
+        let field_specs =
           List.map block.groups ~f:(fun { Shrub.group; sep = _ } ->
             parse_sig_decl st group)
         in
         let span =
           Span.combine (Span.single keyword_index) (Span.single block.rdelim.index)
         in
-        Surface.Expr_ty_mod { ty_decls; span }
+        Surface.Expr_ty_struct { field_specs; span }
       | "alias" ->
         let _ = Parser.State.next_exn p in
         let e = parse_atom st p in
@@ -291,17 +319,36 @@ and parse_keyword st (p : Parser.State.t) : Surface.expr =
         let decls =
           List.map block.groups ~f:(fun { Shrub.group; sep = _ } ->
             match parse_block_decl st group with
-            | Block_decl_let decl -> decl
+            | Block_decl_val decl -> decl
             | _ ->
               error
                 (Error.token
-                   "Expected let declaration in rec block"
+                   "Expected val declaration in rec block"
                    (Shrub.Group.first_token group).index))
         in
         let span =
           Span.combine (Span.single keyword_index) (Span.single block.rdelim.index)
         in
         Expr_rec { decls; span }
+      | "data_rec" ->
+        let _ = Parser.State.next_exn p in
+        let block =
+          Parser.run_or_thunk
+            p
+            (fun p -> Parser.brace p)
+            (fun () -> State.error st p "Expected {")
+        in
+        let decls =
+          List.map block.groups ~f:(fun { Shrub.group; sep = _ } ->
+            parse_data_decl st group)
+        in
+        let span =
+          Span.combine (Span.single keyword_index) (Span.single block.rdelim.index)
+        in
+        Surface.Expr_data_rec { decls; span }
+      | "data" ->
+        let _ = Parser.State.next_exn p in
+        parse_data_expr st p ~start_index:keyword_index
       | _ -> parse_app st p
     end
     | _ -> parse_app st p
@@ -340,14 +387,14 @@ and parse_where_patch st (group : Shrub.group) : Surface.where_patch =
   let _ =
     Parser.run_or_thunk
       p
-      (fun p -> Parser.colon_equal p)
+      (fun p -> Parser.equal_sign p)
       (fun () ->
-         error (Error.token "Expected := in where patch" (Parser.State.curr_pos p)))
+         error (Error.token "Expected = in where patch" (Parser.State.curr_pos p)))
   in
   let rhs_items = Parser.State.take p in
   let rhs =
     match Non_empty_list.of_list rhs_items with
-    | None -> error (Error.token "Expected expression after :=" first_var.span.start)
+    | None -> error (Error.token "Expected expression after =" first_var.span.start)
     | Some group -> parse_expr_group st group
   in
   let span = Span.combine first_var.span (Surface.expr_span rhs) in
@@ -364,50 +411,83 @@ and parse_dot_path (p : Parser.State.t) : string list =
      | _ -> error (Error.token "Expected identifier after dot" (Parser.State.curr_pos p)))
   | _ -> []
 
-and parse_mod_decl st (group : Shrub.group) : Surface.decl =
-  let p = Parser.State.create group in
-  match Parser.State.peek p with
-  | Some (Token { token = Ident "let"; index = let_index }) ->
-    Parser.State.next_exn p;
-    let var =
-      Parser.run_or_thunk
-        p
-        (fun p -> Parser.var p)
-        (fun () -> error (Error.token "Expected variable name" (Parser.State.curr_pos p)))
-    in
-    let ann = Parser.run p (fun p -> parse_annotation_cont st p) in
-    let is_alias =
-      match Parser.State.peek p with
-      | Some (Token { token = Equal; _ }) ->
-        Parser.State.next_exn p;
-        false
-      | Some (Token { token = Colon_equal; _ }) ->
-        Parser.State.next_exn p;
-        true
-      | _ -> error (Error.token "Expected = or :=" (Parser.State.curr_pos p))
-    in
-    let e = parse_expr st p in
-    if not (Parser.State.is_empty p)
-    then
-      error
-        (Error.token "Unconsumed tokens in module declaration" (Parser.State.curr_pos p));
-    let span = Span.combine (Span.single let_index) (Surface.expr_span e) in
-    { var; ann; is_alias; e; span }
-  | _ ->
-    error
-      (Error.token "Expected module declaration" (Shrub.Group.first_token group).index)
+and parse_data_expr st (p : Parser.State.t) ~start_index : Surface.expr =
+  let params = parse_data_params st p in
+  let block =
+    Parser.run_or_thunk
+      p
+      (fun p -> Parser.brace p)
+      (fun () -> State.error st p "Expected {")
+  in
+  if not (Parser.State.is_empty p)
+  then
+    error (Error.token "Unconsumed tokens in data expression" (Parser.State.curr_pos p));
+  let span = Span.combine (Span.single start_index) (Span.single block.rdelim.index) in
+  Surface.Expr_data { params; body = parse_data_body st block.groups; span }
 
-and parse_sig_decl st (group : Shrub.group) : Surface.ty_decl =
+and parse_data_decl st (group : Shrub.group) : Surface.data_decl =
   let p = Parser.State.create group in
+  let data_index =
+    Parser.run_or_thunk
+      p
+      (fun p ->
+         match Parser.token p with
+         | { token = Ident "data"; index } -> index
+         | _ -> Parser.fail p)
+      (fun () ->
+         error
+           (Error.token "Expected data declaration" (Shrub.Group.first_token group).index))
+  in
+  let name =
+    Parser.run_or_thunk
+      p
+      (fun p -> Parser.var p)
+      (fun () -> error (Error.token "Expected type name" (Parser.State.curr_pos p)))
+  in
+  let params = parse_data_params st p in
+  let block =
+    Parser.run_or_thunk
+      p
+      (fun p -> Parser.brace p)
+      (fun () -> State.error st p "Expected {")
+  in
+  if not (Parser.State.is_empty p)
+  then
+    error (Error.token "Unconsumed tokens in data declaration" (Parser.State.curr_pos p));
+  let span = Span.combine (Span.single data_index) (Span.single block.rdelim.index) in
+  { name; data = { params; body = parse_data_body st block.groups; span }; span }
+
+and parse_data_params st (p : Parser.State.t) : Surface.param list =
   match Parser.State.peek p with
-  | Some (Token { token = Ident "let"; index = let_index }) ->
-    Parser.State.next_exn p;
-    let var =
+  | Some (Delim { ldelim = { token = LParen | LBrack; _ }; _ })
+  | Some (Token { token = Ident _; _ }) ->
+    let param =
       Parser.run_or_thunk
         p
-        (fun p -> Parser.var p)
-        (fun () -> error (Error.token "Expected variable name" (Parser.State.curr_pos p)))
+        (fun p -> parse_param st p)
+        (fun () ->
+           error (Error.token "Expected data parameter" (Parser.State.curr_pos p)))
     in
+    param :: parse_data_params st p
+  | _ -> []
+
+and parse_data_body st groups =
+  List.map groups ~f:(fun { Shrub.group; sep = _ } -> parse_data_member st group)
+
+and parse_data_member st (group : Shrub.group)
+  : (Surface.data_field, Surface.data_constructor) Either.t
+  =
+  let p = Parser.State.create group in
+  let name =
+    Parser.run_or_thunk
+      p
+      (fun p -> Parser.var p)
+      (fun () ->
+         error
+           (Error.token "Expected data member name" (Shrub.Group.first_token group).index))
+  in
+  match Parser.State.peek p with
+  | Some (Token { token = Colon; _ }) ->
     let ty =
       Parser.run_or_thunk
         p
@@ -415,13 +495,112 @@ and parse_sig_decl st (group : Shrub.group) : Surface.ty_decl =
         (fun () -> error (Error.token "Expected :" (Parser.State.curr_pos p)))
     in
     if not (Parser.State.is_empty p)
+    then error (Error.token "Unconsumed tokens in data field" (Parser.State.curr_pos p));
+    First { name; ty }
+  | Some (Token { token = Ident "of"; _ }) ->
+    Parser.State.next_exn p;
+    let ty_items = Parser.State.take p in
+    let ty =
+      match Non_empty_list.of_list ty_items with
+      | None -> error (Error.token "Expected expression after of" name.span.start)
+      | Some ty_group -> Some (parse_expr_group st ty_group)
+    in
+    Second { name; ty }
+  | Some _ ->
+    error
+      (Error.token "Expected : or of after data member name" (Parser.State.curr_pos p))
+  | None -> Second { name; ty = None }
+
+and parse_sig_decl st (group : Shrub.group) : Surface.field_spec =
+  let p = Parser.State.create group in
+  match Parser.State.peek p with
+  | Some
+      (Token { token = (Ident "val" | Ident "type") as keyword; index = keyword_index })
+    ->
+    Parser.State.next_exn p;
+    let relevancy =
+      match keyword with
+      | Ident "type" -> Surface.Relevancy.Irrelevant
+      | _ -> Surface.Relevancy.Relevant
+    in
+    let name =
+      Parser.run_or_thunk
+        p
+        (fun p -> Parser.var p)
+        (fun () -> error (Error.token "Expected variable name" (Parser.State.curr_pos p)))
+    in
+    let ty, rhs =
+      match Parser.State.peek p with
+      | Some (Token { token = Colon; _ }) ->
+        let ty =
+          Parser.run_or_thunk
+            p
+            (fun p -> parse_annotation_cont st p)
+            (fun () -> error (Error.token "Expected :" (Parser.State.curr_pos p)))
+        in
+        let rhs =
+          match Parser.State.peek p with
+          | Some (Token { token = Equal; _ }) ->
+            Parser.State.next_exn p;
+            let rhs_items = Parser.State.take p in
+            (match Non_empty_list.of_list rhs_items with
+             | None -> error (Error.token "Expected expression after =" keyword_index)
+             | Some group -> Some (parse_expr_group st group))
+          | _ -> None
+        in
+        Some ty, rhs
+      | Some (Token { token = Equal; _ }) ->
+        Parser.State.next_exn p;
+        let rhs_items = Parser.State.take p in
+        let rhs =
+          match Non_empty_list.of_list rhs_items with
+          | None -> error (Error.token "Expected expression after =" keyword_index)
+          | Some group -> Some (parse_expr_group st group)
+        in
+        None, rhs
+      | Some _ ->
+        if Surface.Relevancy.equal relevancy Surface.Relevancy.Irrelevant
+        then (
+          let ty_items, rhs_items =
+            let rec loop before_eq (items : Shrub.Item.t list) =
+              match items with
+              | [] ->
+                error
+                  (Error.token "Expected = in type declaration" (Parser.State.curr_pos p))
+              | Token { token = Equal; _ } :: rest -> List.rev before_eq, rest
+              | item :: rest -> loop (item :: before_eq) rest
+            in
+            Parser.State.take p |> loop []
+          in
+          let ty =
+            match Non_empty_list.of_list ty_items with
+            | None ->
+              error (Error.token "Expected type expression before =" keyword_index)
+            | Some group -> parse_expr_group st group
+          in
+          let rhs =
+            match Non_empty_list.of_list rhs_items with
+            | None -> error (Error.token "Expected expression after =" keyword_index)
+            | Some group -> Some (parse_expr_group st group)
+          in
+          Some ty, rhs)
+        else error (Error.token "Expected :" (Parser.State.curr_pos p))
+      | _ -> None, None
+    in
+    if not (Parser.State.is_empty p)
     then
       error
         (Error.token
            "Unconsumed tokens in signature declaration"
            (Parser.State.curr_pos p));
-    let span = Span.combine (Span.single let_index) (Surface.expr_span ty) in
-    { var; ty; span }
+    let stop_span =
+      match rhs, ty with
+      | Some rhs, _ -> Surface.expr_span rhs
+      | None, Some ty -> Surface.expr_span ty
+      | None, None -> name.span
+    in
+    let span = Span.combine (Span.single keyword_index) stop_span in
+    { relevancy; name; ty; rhs; span }
   | _ ->
     error
       (Error.token "Expected signature declaration" (Shrub.Group.first_token group).index)
@@ -429,10 +608,33 @@ and parse_sig_decl st (group : Shrub.group) : Surface.ty_decl =
 and parse_param st (p : Parser.t) : Surface.param =
   match Parser.next p with
   | Delim delim -> parse_paren_param st delim
+  | Token { token = Ident "type"; index = type_index } ->
+    let name =
+      match Parser.next p with
+      | Token { token = Ident name; index } ->
+        Surface.Name.create name (Span.single index)
+      | _ ->
+        error
+          (Error.token "Expected parameter name" (Parser.State.curr_pos (Parser.state p)))
+    in
+    let span = Span.combine (Span.single type_index) name.span in
+    ({ relevancy = Surface.Relevancy.Irrelevant
+     ; names = [ name ]
+     ; ann = None
+     ; icit = Expl
+     ; span
+     }
+     : Surface.param)
   | Token { token = Ident var; index = var_index } ->
     let span = Span.single var_index in
-    let var = Surface.Var.create var span in
-    { vars = [ var ]; ann = None; icit = Expl; span }
+    let name = Surface.Name.create var span in
+    ({ relevancy = Surface.Relevancy.Relevant
+     ; names = [ name ]
+     ; ann = None
+     ; icit = Expl
+     ; span
+     }
+     : Surface.param)
   | _ -> Parser.fail p
 
 and parse_paren_param st (delim : Shrub.item_delim) : Surface.param =
@@ -450,7 +652,18 @@ and parse_paren_param st (delim : Shrub.item_delim) : Surface.param =
     | LBrack -> Impl
     | _ -> error (Error.token "invalid param syntax" delim.ldelim.index)
   in
-  let vars =
+  let relevancy =
+    match icit, Parser.State.peek p with
+    | Impl, Some (Token { token = Ident "type"; _ }) ->
+      Parser.State.next_exn p;
+      Surface.Relevancy.Irrelevant
+    | Impl, _ -> Surface.Relevancy.Irrelevant
+    | Expl, Some (Token { token = Ident "type"; _ }) ->
+      Parser.State.next_exn p;
+      Surface.Relevancy.Irrelevant
+    | Expl, _ -> Surface.Relevancy.Relevant
+  in
+  let names =
     Parser.run_or_thunk
       p
       (fun p -> Parser.some p (fun () -> Parser.var p))
@@ -459,11 +672,17 @@ and parse_paren_param st (delim : Shrub.item_delim) : Surface.param =
   let ann_span, ann =
     Parser.run p (fun p -> parse_annotation_cont st p)
     |> Option.map ~f:(fun e -> Surface.expr_span e, Some e)
-    |> Option.value ~default:((Non_empty_list.hd vars).span, None)
+    |> Option.value ~default:((Non_empty_list.hd names).span, None)
   in
   if not (Parser.State.is_empty p)
   then error (Error.token "Unconsumed tokens in parameters" (Parser.State.curr_pos p));
-  { vars; ann; span = Span.combine (Non_empty_list.hd vars).span ann_span; icit }
+  ({ relevancy
+   ; names
+   ; ann
+   ; span = Span.combine (Non_empty_list.hd names).span ann_span
+   ; icit
+   }
+   : Surface.param)
 
 and parse_annotation_cont st (p : Parser.t) : Surface.expr =
   let _ = Parser.colon p in
@@ -471,7 +690,7 @@ and parse_annotation_cont st (p : Parser.t) : Surface.expr =
 
 and parse_app st (p : Parser.State.t) : Surface.expr =
   let func = parse_dot st p in
-  let args = Parser.many p (fun p -> parse_dot_fail st p) in
+  let args = Parser.many p (fun p -> parse_dot_fail st p |> expr_to_arg) in
   match args with
   | [] -> func
   | _ ->
@@ -479,8 +698,22 @@ and parse_app st (p : Parser.State.t) : Surface.expr =
       { func
       ; args
       ; span =
-          Span.combine (Surface.expr_span func) (Surface.expr_span (List.last_exn args))
+          Span.combine
+            (Surface.expr_span func)
+            (Surface.expr_span (List.last_exn args).arg)
       }
+
+and expr_to_arg (expr : Surface.expr) : Surface.expr_arg =
+  match expr with
+  | Expr_brack { e; _ } ->
+    let _, arg = strip_type_marker_expr e in
+    { arg; relevancy = Surface.Relevancy.Irrelevant; icit = Surface.Icit.Impl }
+  | Expr_paren { e; span = _ } ->
+    let relevancy, arg = strip_type_marker_expr e in
+    { arg; relevancy; icit = Surface.Icit.Expl }
+  | _ ->
+    let relevancy, arg = strip_type_marker_expr expr in
+    { arg; relevancy; icit = Surface.Icit.Expl }
 
 and parse_dot st (p : Parser.State.t) : Surface.expr =
   Parser.run_or_thunk
@@ -510,7 +743,7 @@ and parse_dot_cont st (p : Parser.State.t) (expr : Surface.expr) : Surface.expr 
       st
       p
       (Expr_proj
-         { mod_e = expr
+         { strukt = expr
          ; field = ident
          ; span = Span.combine (Surface.expr_span expr) (Span.single ident_index)
          })
@@ -532,10 +765,10 @@ and parse_atom_fail st (p : Parser.t) : Surface.expr =
     | "Bool" -> Expr_core_ty { ty = Bool; span }
     | "Int" -> Expr_core_ty { ty = Int; span }
     | "Unit" -> Expr_core_ty { ty = Unit; span }
-    | "Type" -> Expr_universe { universe = Universe.type_; span }
-    | "Kind" -> Expr_universe { universe = Universe.kind_; span }
-    | "#t" -> Expr_literal { literal = Bool true; span }
-    | "#f" -> Expr_literal { literal = Bool false; span }
+    | "Type" -> Expr_universe { size = Size.type_; span }
+    | "Sig" -> Expr_universe { size = Size.sig_; span }
+    | "true" -> Expr_literal { literal = Bool true; span }
+    | "false" -> Expr_literal { literal = Bool false; span }
     | _ -> Expr_var { name = ident; span }
   end
   | Token { token = Number n; index } ->
@@ -574,37 +807,71 @@ and parse_block st (block : Shrub.item_delim) : Surface.expr =
 
 and parse_block_decl st (group : Shrub.group) : Surface.block_decl =
   let p = Parser.State.create group in
-  match Parser.State.peek p with
-  | Some (Token { token = Ident "let"; index = let_index }) ->
-    Parser.State.next_exn p;
-    let var =
+  let parse_val_decl ~relevancy ~is_abstract ~start_index =
+    let name =
       Parser.run_or_thunk
         p
         (fun p -> Parser.var p)
         (fun () -> error (Error.token "Expected variable name" (Parser.State.curr_pos p)))
     in
     let ann = Parser.run p (fun p -> parse_annotation_cont st p) in
-    let is_alias =
+    let _ =
       match Parser.State.peek p with
-      | Some (Token { token = Equal; _ }) ->
-        Parser.State.next_exn p;
-        false
-      | Some (Token { token = Colon_equal; _ }) ->
-        Parser.State.next_exn p;
-        true
-      | _ -> error (Error.token "Expected = or :=" (Parser.State.curr_pos p))
+      | Some (Token { token = Equal; _ }) -> Parser.State.next_exn p
+      | _ -> error (Error.token "Expected =" (Parser.State.curr_pos p))
     in
     let rhs_items = Parser.State.take p in
     let rhs =
       match Non_empty_list.of_list rhs_items with
-      | None -> error (Error.token "Expected expression after =" let_index)
+      | None -> error (Error.token "Expected expression after =" start_index)
       | Some group -> parse_expr_group st group
     in
-    let span = Span.combine (Span.single let_index) (Surface.expr_span rhs) in
-    Block_decl_let { var; ann; is_alias; rhs; span }
+    let span = Span.combine (Span.single start_index) (Surface.expr_span rhs) in
+    Surface.Block_decl_val { relevancy; name; ann; is_abstract; rhs; span }
+  in
+  match Parser.State.peek p with
+  | Some (Token { token = Ident "abstract"; index = abstract_index }) ->
+    Parser.State.next_exn p;
+    let _ =
+      Parser.run_or_thunk
+        p
+        (fun p ->
+           match Parser.token p with
+           | { token = Ident "val" | Ident "type"; _ } -> ()
+           | _ -> Parser.fail p)
+        (fun () ->
+           error
+             (Error.token "Expected val or type after abstract" (Parser.State.curr_pos p)))
+    in
+    parse_val_decl
+      ~relevancy:Surface.Relevancy.Relevant
+      ~is_abstract:true
+      ~start_index:abstract_index
+  | Some (Token { token = Ident "val"; index = val_index }) ->
+    Parser.State.next_exn p;
+    parse_val_decl
+      ~relevancy:Surface.Relevancy.Relevant
+      ~is_abstract:false
+      ~start_index:val_index
+  | Some (Token { token = Ident "type"; index = type_index }) ->
+    Parser.State.next_exn p;
+    parse_val_decl
+      ~relevancy:Surface.Relevancy.Irrelevant
+      ~is_abstract:false
+      ~start_index:type_index
+  | Some (Token { token = Ident "do"; index = do_index }) ->
+    Parser.State.next_exn p;
+    let e_items = Parser.State.take p in
+    let e =
+      match Non_empty_list.of_list e_items with
+      | None -> error (Error.token "Expected expression after do" do_index)
+      | Some group -> parse_expr_group st group
+    in
+    let span = Span.combine (Span.single do_index) (Surface.expr_span e) in
+    Block_decl_do { e; span }
   | Some (Token { token = Ident "bind"; index = bind_index }) ->
     Parser.State.next_exn p;
-    let var =
+    let name =
       Parser.run_or_thunk
         p
         (fun p -> Parser.var p)
@@ -623,11 +890,70 @@ and parse_block_decl st (group : Shrub.group) : Surface.block_decl =
       | Some group -> parse_expr_group st group
     in
     let span = Span.combine (Span.single bind_index) (Surface.expr_span rhs) in
-    Block_decl_bind { var; rhs; span }
+    Block_decl_bind { name; rhs; span }
   | _ ->
-    let e = parse_expr_group st group in
-    let span = Surface.expr_span e in
-    Block_decl_expr { e; span }
+    error (Error.token "Expected block declaration" (Shrub.Group.first_token group).index)
+
+and parse_nondependent_struct_decl st (group : Shrub.group) : Surface.block_decl =
+  let p = Parser.State.create group in
+  let parse_val_decl ~relevancy ~is_abstract ~start_index =
+    let name =
+      Parser.run_or_thunk
+        p
+        (fun p -> Parser.var p)
+        (fun () -> error (Error.token "Expected variable name" (Parser.State.curr_pos p)))
+    in
+    let ann = Parser.run p (fun p -> parse_annotation_cont st p) in
+    let rhs =
+      match Parser.State.peek p with
+      | Some (Token { token = Equal; _ }) ->
+        Parser.State.next_exn p;
+        let rhs_items = Parser.State.take p in
+        (match Non_empty_list.of_list rhs_items with
+         | None -> error (Error.token "Expected expression after =" start_index)
+         | Some group -> parse_expr_group st group)
+      | _ when (not is_abstract) && Option.is_none ann && Parser.State.is_empty p ->
+        Surface.Expr_var name
+      | _ -> error (Error.token "Expected =" (Parser.State.curr_pos p))
+    in
+    let span = Span.combine (Span.single start_index) (Surface.expr_span rhs) in
+    Surface.Block_decl_val { relevancy; name; ann; is_abstract; rhs; span }
+  in
+  match Parser.State.peek p with
+  | Some (Token { token = Ident "abstract"; index = abstract_index }) ->
+    Parser.State.next_exn p;
+    let _ =
+      Parser.run_or_thunk
+        p
+        (fun p ->
+           match Parser.token p with
+           | { token = Ident "val" | Ident "type"; _ } -> ()
+           | _ -> Parser.fail p)
+        (fun () ->
+           error
+             (Error.token "Expected val or type after abstract" (Parser.State.curr_pos p)))
+    in
+    parse_val_decl
+      ~relevancy:Surface.Relevancy.Relevant
+      ~is_abstract:true
+      ~start_index:abstract_index
+  | Some (Token { token = Ident "val"; index = val_index }) ->
+    Parser.State.next_exn p;
+    parse_val_decl
+      ~relevancy:Surface.Relevancy.Relevant
+      ~is_abstract:false
+      ~start_index:val_index
+  | Some (Token { token = Ident "type"; index = type_index }) ->
+    Parser.State.next_exn p;
+    parse_val_decl
+      ~relevancy:Surface.Relevancy.Irrelevant
+      ~is_abstract:false
+      ~start_index:type_index
+  | _ ->
+    error
+      (Error.token
+         "Expected val or type declaration in nondependent struct"
+         (Shrub.Group.first_token group).index)
 
 and parse_expr_ann st (p : Parser.State.t) : Surface.expr =
   let e = parse_expr st p in
@@ -647,20 +973,8 @@ and parse_paren st (parens : Shrub.item_delim) : Surface.expr =
     Expr_literal { literal = Unit; span }
   | [ { group; sep = _ } ] ->
     let p = Parser.State.create group in
-    (match Parser.State.peek p with
-     | Some (Token { token = Equal; _ }) ->
-       Parser.State.next_exn p;
-       let identity = parse_expr_ann st p in
-       Surface.Expr_ty_sing
-         { identity
-         ; span =
-             Span.combine
-               (Span.single parens.ldelim.index)
-               (Span.single parens.rdelim.index)
-         }
-     | _ ->
-       let e = parse_expr_ann st p in
-       Surface.Expr_paren { e; span = Surface.expr_span e })
+    let e = parse_expr_ann st p in
+    Surface.Expr_paren { e; span = Surface.expr_span e }
   | _ ->
     error (Error.token "Unexpected comma in parenthesized expression" parens.ldelim.index)
 

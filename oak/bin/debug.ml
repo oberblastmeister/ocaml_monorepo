@@ -1,6 +1,6 @@
 let () =
   Printexc.record_backtrace true;
-  Oak_new.Oak_elaborate_tests.check
+  Oak.Oak_elaborate_tests.check
     ~show_singletons:true
     {|
     struct {

@@ -24,32 +24,39 @@ let%expect_test "smoke" =
       (e
        (Expr_ann
         (e
-         (Expr_abs
+         (Expr_fun
           (params
-           (((vars (((name x) (span ((start 4) (stop 5)))))) (ann ()) (icit Expl)
-             (span ((start 4) (stop 5))))))
+           (((relevancy Relevant)
+             (names (((name x) (span ((start 4) (stop 5)))))) (ann ())
+             (icit Expl) (span ((start 4) (stop 5))))))
           (ret_ty ()) (body (Expr_var ((name x) (span ((start 8) (stop 9))))))
           (span ((start 2) (stop 9)))))
         (ty
          (Expr_ty_fun
           (param_tys
-           (((vars ())
+           (((relevancy Relevant) (names ())
              (ty
               ((Expr_app
                 (func (Expr_var ((name f) (span ((start 12) (stop 13))))))
-                (args ((Expr_core_ty (ty Int) (span ((start 14) (stop 15))))))
+                (args
+                 (((arg (Expr_core_ty (ty Int) (span ((start 14) (stop 15)))))
+                   (relevancy Relevant) (icit Expl))))
                 (span ((start 12) (stop 15))))))
              (icit Expl) (span ((start 12) (stop 15))))
-            ((vars ())
+            ((relevancy Relevant) (names ())
              (ty
               ((Expr_app
                 (func (Expr_var ((name g) (span ((start 18) (stop 19))))))
-                (args ((Expr_core_ty (ty Bool) (span ((start 20) (stop 21))))))
+                (args
+                 (((arg (Expr_core_ty (ty Bool) (span ((start 20) (stop 21)))))
+                   (relevancy Relevant) (icit Expl))))
                 (span ((start 18) (stop 21))))))
              (icit Expl) (span ((start 18) (stop 21))))))
           (body_ty
            (Expr_app (func (Expr_var ((name g) (span ((start 24) (stop 25))))))
-            (args ((Expr_core_ty (ty Int) (span ((start 26) (stop 27))))))
+            (args
+             (((arg (Expr_core_ty (ty Int) (span ((start 26) (stop 27)))))
+               (relevancy Relevant) (icit Expl))))
             (span ((start 24) (stop 27)))))
           (span ((start 12) (stop 27)))))
         (span ((start 2) (stop 27)))))
@@ -64,14 +71,14 @@ fun x y z -> x
       |};
   [%expect
     {|
-    ((Expr_abs
+    ((Expr_fun
       (params
-       (((vars (((name x) (span ((start 3) (stop 4)))))) (ann ()) (icit Expl)
-         (span ((start 3) (stop 4))))
-        ((vars (((name y) (span ((start 5) (stop 6)))))) (ann ()) (icit Expl)
-         (span ((start 5) (stop 6))))
-        ((vars (((name z) (span ((start 7) (stop 8)))))) (ann ()) (icit Expl)
-         (span ((start 7) (stop 8))))))
+       (((relevancy Relevant) (names (((name x) (span ((start 3) (stop 4))))))
+         (ann ()) (icit Expl) (span ((start 3) (stop 4))))
+        ((relevancy Relevant) (names (((name y) (span ((start 5) (stop 6))))))
+         (ann ()) (icit Expl) (span ((start 5) (stop 6))))
+        ((relevancy Relevant) (names (((name z) (span ((start 7) (stop 8))))))
+         (ann ()) (icit Expl) (span ((start 7) (stop 8))))))
       (ret_ty ()) (body (Expr_var ((name x) (span ((start 11) (stop 12))))))
       (span ((start 1) (stop 12)))))
     |}];
@@ -81,19 +88,20 @@ fun x y z -> x
       |};
   [%expect
     {|
-    ((Expr_abs
+    ((Expr_fun
       (params
-       (((vars
+       (((relevancy Relevant)
+         (names
           (((name x) (span ((start 5) (stop 6))))
            ((name w) (span ((start 7) (stop 8))))
            ((name a) (span ((start 9) (stop 10))))))
          (ann ((Expr_core_ty (ty Bool) (span ((start 13) (stop 14))))))
          (icit Expl) (span ((start 5) (stop 14))))
-        ((vars (((name y) (span ((start 17) (stop 18))))))
+        ((relevancy Relevant) (names (((name y) (span ((start 17) (stop 18))))))
          (ann ((Expr_core_ty (ty Bool) (span ((start 21) (stop 22))))))
          (icit Expl) (span ((start 17) (stop 22))))
-        ((vars (((name z) (span ((start 24) (stop 25)))))) (ann ()) (icit Expl)
-         (span ((start 24) (stop 25))))))
+        ((relevancy Relevant) (names (((name z) (span ((start 24) (stop 25))))))
+         (ann ()) (icit Expl) (span ((start 24) (stop 25))))))
       (ret_ty ()) (body (Expr_var ((name x) (span ((start 28) (stop 29))))))
       (span ((start 2) (stop 29)))))
     |}];
@@ -107,18 +115,20 @@ fun x y z -> x
       (e
        (Expr_ann
         (e
-         (Expr_abs
+         (Expr_fun
           (params
-           (((vars (((name x) (span ((start 4) (stop 5)))))) (ann ()) (icit Expl)
-             (span ((start 4) (stop 5))))
-            ((vars (((name y) (span ((start 6) (stop 7)))))) (ann ()) (icit Expl)
-             (span ((start 6) (stop 7))))))
+           (((relevancy Relevant)
+             (names (((name x) (span ((start 4) (stop 5)))))) (ann ())
+             (icit Expl) (span ((start 4) (stop 5))))
+            ((relevancy Relevant)
+             (names (((name y) (span ((start 6) (stop 7)))))) (ann ())
+             (icit Expl) (span ((start 6) (stop 7))))))
           (ret_ty ()) (body (Expr_var ((name x) (span ((start 10) (stop 11))))))
           (span ((start 2) (stop 11)))))
         (ty
          (Expr_ty_fun
           (param_tys
-           (((vars ())
+           (((relevancy Relevant) (names ())
              (ty ((Expr_core_ty (ty Bool) (span ((start 14) (stop 15))))))
              (icit Expl) (span ((start 14) (stop 15))))))
           (body_ty (Expr_var ((name x) (span ((start 18) (stop 19))))))
@@ -132,31 +142,31 @@ let%expect_test "blocks" =
   check
     {|
   fun x y -> {
-    let z = x
-    let w = y
+    val z = x
+    val w = y
     w
   }
     |};
   [%expect
     {|
-    ((Expr_abs
+    ((Expr_fun
       (params
-       (((vars (((name x) (span ((start 4) (stop 5)))))) (ann ()) (icit Expl)
-         (span ((start 4) (stop 5))))
-        ((vars (((name y) (span ((start 6) (stop 7)))))) (ann ()) (icit Expl)
-         (span ((start 6) (stop 7))))))
+       (((relevancy Relevant) (names (((name x) (span ((start 4) (stop 5))))))
+         (ann ()) (icit Expl) (span ((start 4) (stop 5))))
+        ((relevancy Relevant) (names (((name y) (span ((start 6) (stop 7))))))
+         (ann ()) (icit Expl) (span ((start 6) (stop 7))))))
       (ret_ty ())
       (body
        (Expr_block
         (decls
-         ((Block_decl_let
-           ((var ((name z) (span ((start 15) (stop 16))))) (ann ())
-            (is_alias false)
+         ((Block_decl_val
+           ((relevancy Relevant) (name ((name z) (span ((start 15) (stop 16)))))
+            (ann ()) (is_abstract false)
             (rhs (Expr_var ((name x) (span ((start 19) (stop 20))))))
             (span ((start 13) (stop 20)))))
-          (Block_decl_let
-           ((var ((name w) (span ((start 25) (stop 26))))) (ann ())
-            (is_alias false)
+          (Block_decl_val
+           ((relevancy Relevant) (name ((name w) (span ((start 25) (stop 26)))))
+            (ann ()) (is_abstract false)
             (rhs (Expr_var ((name y) (span ((start 29) (stop 30))))))
             (span ((start 23) (stop 30)))))))
         (ret (Expr_var ((name w) (span ((start 33) (stop 34))))))
@@ -166,8 +176,8 @@ let%expect_test "blocks" =
   check
     {|
 fun x y z w -> {
-  let w = {
-    let x = x
+  val w = {
+    val x = x
     x
   }
   { w }
@@ -175,29 +185,30 @@ fun x y z w -> {
       |};
   [%expect
     {|
-    ((Expr_abs
+    ((Expr_fun
       (params
-       (((vars (((name x) (span ((start 3) (stop 4)))))) (ann ()) (icit Expl)
-         (span ((start 3) (stop 4))))
-        ((vars (((name y) (span ((start 5) (stop 6)))))) (ann ()) (icit Expl)
-         (span ((start 5) (stop 6))))
-        ((vars (((name z) (span ((start 7) (stop 8)))))) (ann ()) (icit Expl)
-         (span ((start 7) (stop 8))))
-        ((vars (((name w) (span ((start 9) (stop 10)))))) (ann ()) (icit Expl)
-         (span ((start 9) (stop 10))))))
+       (((relevancy Relevant) (names (((name x) (span ((start 3) (stop 4))))))
+         (ann ()) (icit Expl) (span ((start 3) (stop 4))))
+        ((relevancy Relevant) (names (((name y) (span ((start 5) (stop 6))))))
+         (ann ()) (icit Expl) (span ((start 5) (stop 6))))
+        ((relevancy Relevant) (names (((name z) (span ((start 7) (stop 8))))))
+         (ann ()) (icit Expl) (span ((start 7) (stop 8))))
+        ((relevancy Relevant) (names (((name w) (span ((start 9) (stop 10))))))
+         (ann ()) (icit Expl) (span ((start 9) (stop 10))))))
       (ret_ty ())
       (body
        (Expr_block
         (decls
-         ((Block_decl_let
-           ((var ((name w) (span ((start 18) (stop 19))))) (ann ())
-            (is_alias false)
+         ((Block_decl_val
+           ((relevancy Relevant) (name ((name w) (span ((start 18) (stop 19)))))
+            (ann ()) (is_abstract false)
             (rhs
              (Expr_block
               (decls
-               ((Block_decl_let
-                 ((var ((name x) (span ((start 27) (stop 28))))) (ann ())
-                  (is_alias false)
+               ((Block_decl_val
+                 ((relevancy Relevant)
+                  (name ((name x) (span ((start 27) (stop 28))))) (ann ())
+                  (is_abstract false)
                   (rhs (Expr_var ((name x) (span ((start 31) (stop 32))))))
                   (span ((start 25) (stop 32)))))))
               (ret (Expr_var ((name x) (span ((start 35) (stop 36))))))
@@ -216,10 +227,10 @@ let%expect_test "base types" =
   check
     {|
 {
-  let x = ()
-  let y : Bool = #t
-  let z = #f
-  let another = first.T#first
+  val x = ()
+  val y : Bool = true
+  val z = false
+  val another = first.T#first
   ()
 }
     |};
@@ -227,29 +238,31 @@ let%expect_test "base types" =
     {|
     ((Expr_block
       (decls
-       ((Block_decl_let
-         ((var ((name x) (span ((start 6) (stop 7))))) (ann ()) (is_alias false)
+       ((Block_decl_val
+         ((relevancy Relevant) (name ((name x) (span ((start 6) (stop 7)))))
+          (ann ()) (is_abstract false)
           (rhs (Expr_literal (literal Unit) (span ((start 10) (stop 12)))))
           (span ((start 4) (stop 12)))))
-        (Block_decl_let
-         ((var ((name y) (span ((start 17) (stop 18)))))
+        (Block_decl_val
+         ((relevancy Relevant) (name ((name y) (span ((start 17) (stop 18)))))
           (ann ((Expr_core_ty (ty Bool) (span ((start 21) (stop 22))))))
-          (is_alias false)
+          (is_abstract false)
           (rhs
            (Expr_literal (literal (Bool true)) (span ((start 25) (stop 26)))))
           (span ((start 15) (stop 26)))))
-        (Block_decl_let
-         ((var ((name z) (span ((start 31) (stop 32))))) (ann ())
-          (is_alias false)
+        (Block_decl_val
+         ((relevancy Relevant) (name ((name z) (span ((start 31) (stop 32)))))
+          (ann ()) (is_abstract false)
           (rhs
            (Expr_literal (literal (Bool false)) (span ((start 35) (stop 36)))))
           (span ((start 29) (stop 36)))))
-        (Block_decl_let
-         ((var ((name another) (span ((start 41) (stop 42))))) (ann ())
-          (is_alias false)
+        (Block_decl_val
+         ((relevancy Relevant)
+          (name ((name another) (span ((start 41) (stop 42))))) (ann ())
+          (is_abstract false)
           (rhs
            (Expr_proj
-            (mod_e (Expr_var ((name first) (span ((start 45) (stop 46))))))
+            (strukt (Expr_var ((name first) (span ((start 45) (stop 46))))))
             (field T#first) (span ((start 45) (stop 48)))))
           (span ((start 39) (stop 48)))))))
       (ret (Expr_literal (literal Unit) (span ((start 51) (stop 53)))))
@@ -260,48 +273,51 @@ let%expect_test "base types" =
 let%expect_test "modules" =
   check
     {|
-mod {
-  let first = {
-    let x = 1234
-    let y = 234
+struct {
+  val first = {
+    val x = 1234
+    val y = 234
     ()
   }
   
-  let second = 1324
+  val second = 1324
 }
     |};
   [%expect
     {|
-    ((Expr_mod
+    ((Expr_struct
       (decls
-       ((Block_decl_let
-         ((var ((name first) (span ((start 8) (stop 9))))) (ann ())
-          (is_alias false)
+       ((Block_decl_val
+         ((relevancy Relevant) (name ((name first) (span ((start 8) (stop 9)))))
+          (ann ()) (is_abstract false)
           (rhs
            (Expr_block
             (decls
-             ((Block_decl_let
-               ((var ((name x) (span ((start 17) (stop 18))))) (ann ())
-                (is_alias false)
+             ((Block_decl_val
+               ((relevancy Relevant)
+                (name ((name x) (span ((start 17) (stop 18))))) (ann ())
+                (is_abstract false)
                 (rhs
                  (Expr_literal (literal (Int 1234))
                   (span ((start 21) (stop 22)))))
                 (span ((start 15) (stop 22)))))
-              (Block_decl_let
-               ((var ((name y) (span ((start 27) (stop 28))))) (ann ())
-                (is_alias false)
+              (Block_decl_val
+               ((relevancy Relevant)
+                (name ((name y) (span ((start 27) (stop 28))))) (ann ())
+                (is_abstract false)
                 (rhs
                  (Expr_literal (literal (Int 234)) (span ((start 31) (stop 32)))))
                 (span ((start 25) (stop 32)))))))
             (ret (Expr_literal (literal Unit) (span ((start 35) (stop 37)))))
             (span ((start 12) (stop 40)))))
           (span ((start 6) (stop 40)))))
-        (Block_decl_let
-         ((var ((name second) (span ((start 47) (stop 48))))) (ann ())
-          (is_alias false)
+        (Block_decl_val
+         ((relevancy Relevant)
+          (name ((name second) (span ((start 47) (stop 48))))) (ann ())
+          (is_abstract false)
           (rhs (Expr_literal (literal (Int 1324)) (span ((start 51) (stop 52)))))
           (span ((start 45) (stop 52)))))))
-      (span ((start 1) (stop 54)))))
+      (is_dependent true) (span ((start 1) (stop 54)))))
     |}]
 ;;
 
@@ -309,20 +325,20 @@ let%expect_test "sig" =
   check
     {|
 sig {
-  let x : Bool
+  val x : Bool
   
-  let y : Bool
+  val y : Bool
 }
     |};
   [%expect
     {|
-    ((Expr_ty_mod
-      (ty_decls
-       (((var ((name x) (span ((start 8) (stop 9)))))
-         (ty (Expr_core_ty (ty Bool) (span ((start 12) (stop 13)))))
+    ((Expr_ty_struct
+      (field_specs
+       (((relevancy Relevant) (name ((name x) (span ((start 8) (stop 9)))))
+         (ty ((Expr_core_ty (ty Bool) (span ((start 12) (stop 13)))))) (rhs ())
          (span ((start 6) (stop 13))))
-        ((var ((name y) (span ((start 20) (stop 21)))))
-         (ty (Expr_core_ty (ty Bool) (span ((start 24) (stop 25)))))
+        ((relevancy Relevant) (name ((name y) (span ((start 20) (stop 21)))))
+         (ty ((Expr_core_ty (ty Bool) (span ((start 24) (stop 25)))))) (rhs ())
          (span ((start 18) (stop 25))))))
       (span ((start 1) (stop 27)))))
     |}]
@@ -337,16 +353,18 @@ let%expect_test "function types" =
     {|
     ((Expr_ty_fun
       (param_tys
-       (((vars (((name a) (span ((start 2) (stop 3))))))
+       (((relevancy Relevant) (names (((name a) (span ((start 2) (stop 3))))))
          (ty ((Expr_core_ty (ty Bool) (span ((start 6) (stop 7)))))) (icit Expl)
          (span ((start 2) (stop 7))))
-        ((vars
+        ((relevancy Relevant)
+         (names
           (((name x) (span ((start 12) (stop 13))))
            ((name y) (span ((start 14) (stop 15))))
            ((name z) (span ((start 16) (stop 17))))))
          (ty ((Expr_core_ty (ty Bool) (span ((start 20) (stop 21))))))
          (icit Expl) (span ((start 12) (stop 21))))
-        ((vars ()) (ty ((Expr_core_ty (ty Bool) (span ((start 25) (stop 26))))))
+        ((relevancy Relevant) (names ())
+         (ty ((Expr_core_ty (ty Bool) (span ((start 25) (stop 26))))))
          (icit Expl) (span ((start 25) (stop 26))))))
       (body_ty (Expr_var ((name x) (span ((start 29) (stop 30))))))
       (span ((start 2) (stop 30)))))
@@ -357,7 +375,7 @@ let%expect_test "paren exprs" =
   check
     {|
     {
-  let awe = fun x -> (x.y.z.w)
+  val awe = fun x -> (x.y.z.w)
   ()
     }
     |};
@@ -365,24 +383,25 @@ let%expect_test "paren exprs" =
     {|
     ((Expr_block
       (decls
-       ((Block_decl_let
-         ((var ((name awe) (span ((start 7) (stop 8))))) (ann ())
-          (is_alias false)
+       ((Block_decl_val
+         ((relevancy Relevant) (name ((name awe) (span ((start 7) (stop 8)))))
+          (ann ()) (is_abstract false)
           (rhs
-           (Expr_abs
+           (Expr_fun
             (params
-             (((vars (((name x) (span ((start 13) (stop 14)))))) (ann ())
+             (((relevancy Relevant)
+               (names (((name x) (span ((start 13) (stop 14)))))) (ann ())
                (icit Expl) (span ((start 13) (stop 14))))))
             (ret_ty ())
             (body
              (Expr_paren
               (e
                (Expr_proj
-                (mod_e
+                (strukt
                  (Expr_proj
-                  (mod_e
+                  (strukt
                    (Expr_proj
-                    (mod_e (Expr_var ((name x) (span ((start 18) (stop 19))))))
+                    (strukt (Expr_var ((name x) (span ((start 18) (stop 19))))))
                     (field y) (span ((start 18) (stop 21)))))
                   (field z) (span ((start 18) (stop 23)))))
                 (field w) (span ((start 18) (stop 25)))))
@@ -398,7 +417,7 @@ let%expect_test "function application" =
   check
     {|
       {
-        let app = fun f x y z -> (f w z).x.y.w x (a b c) z
+        val app = fun f x y z -> (f w z).x.y.w x (a b c) z
         ()
       }
     |};
@@ -406,55 +425,66 @@ let%expect_test "function application" =
     {|
     ((Expr_block
       (decls
-       ((Block_decl_let
-         ((var ((name app) (span ((start 7) (stop 8))))) (ann ())
-          (is_alias false)
+       ((Block_decl_val
+         ((relevancy Relevant) (name ((name app) (span ((start 7) (stop 8)))))
+          (ann ()) (is_abstract false)
           (rhs
-           (Expr_abs
+           (Expr_fun
             (params
-             (((vars (((name f) (span ((start 13) (stop 14)))))) (ann ())
+             (((relevancy Relevant)
+               (names (((name f) (span ((start 13) (stop 14)))))) (ann ())
                (icit Expl) (span ((start 13) (stop 14))))
-              ((vars (((name x) (span ((start 15) (stop 16)))))) (ann ())
+              ((relevancy Relevant)
+               (names (((name x) (span ((start 15) (stop 16)))))) (ann ())
                (icit Expl) (span ((start 15) (stop 16))))
-              ((vars (((name y) (span ((start 17) (stop 18)))))) (ann ())
+              ((relevancy Relevant)
+               (names (((name y) (span ((start 17) (stop 18)))))) (ann ())
                (icit Expl) (span ((start 17) (stop 18))))
-              ((vars (((name z) (span ((start 19) (stop 20)))))) (ann ())
+              ((relevancy Relevant)
+               (names (((name z) (span ((start 19) (stop 20)))))) (ann ())
                (icit Expl) (span ((start 19) (stop 20))))))
             (ret_ty ())
             (body
              (Expr_app
               (func
                (Expr_proj
-                (mod_e
+                (strukt
                  (Expr_proj
-                  (mod_e
+                  (strukt
                    (Expr_proj
-                    (mod_e
+                    (strukt
                      (Expr_paren
                       (e
                        (Expr_app
                         (func
                          (Expr_var ((name f) (span ((start 24) (stop 25))))))
                         (args
-                         ((Expr_var ((name w) (span ((start 26) (stop 27)))))
-                          (Expr_var ((name z) (span ((start 28) (stop 29)))))))
+                         (((arg
+                            (Expr_var ((name w) (span ((start 26) (stop 27))))))
+                           (relevancy Relevant) (icit Expl))
+                          ((arg
+                            (Expr_var ((name z) (span ((start 28) (stop 29))))))
+                           (relevancy Relevant) (icit Expl))))
                         (span ((start 24) (stop 29)))))
                       (span ((start 24) (stop 29)))))
                     (field x) (span ((start 24) (stop 32)))))
                   (field y) (span ((start 24) (stop 34)))))
                 (field w) (span ((start 24) (stop 36)))))
               (args
-               ((Expr_var ((name x) (span ((start 37) (stop 38)))))
-                (Expr_paren
-                 (e
+               (((arg (Expr_var ((name x) (span ((start 37) (stop 38))))))
+                 (relevancy Relevant) (icit Expl))
+                ((arg
                   (Expr_app
                    (func (Expr_var ((name a) (span ((start 40) (stop 41))))))
                    (args
-                    ((Expr_var ((name b) (span ((start 42) (stop 43)))))
-                     (Expr_var ((name c) (span ((start 44) (stop 45)))))))
+                    (((arg (Expr_var ((name b) (span ((start 42) (stop 43))))))
+                      (relevancy Relevant) (icit Expl))
+                     ((arg (Expr_var ((name c) (span ((start 44) (stop 45))))))
+                      (relevancy Relevant) (icit Expl))))
                    (span ((start 40) (stop 45)))))
-                 (span ((start 40) (stop 45))))
-                (Expr_var ((name z) (span ((start 47) (stop 48)))))))
+                 (relevancy Relevant) (icit Expl))
+                ((arg (Expr_var ((name z) (span ((start 47) (stop 48))))))
+                 (relevancy Relevant) (icit Expl))))
               (span ((start 24) (stop 48)))))
             (span ((start 11) (stop 48)))))
           (span ((start 5) (stop 48)))))))
@@ -467,7 +497,7 @@ let%expect_test "awefaewf" =
   check
     {|
 {
-  let testing = fun x -> {
+  val testing = fun x -> {
     bind awef = (pack x)
     pack awef
   }
@@ -478,20 +508,22 @@ let%expect_test "awefaewf" =
     {|
     ((Expr_block
       (decls
-       ((Block_decl_let
-         ((var ((name testing) (span ((start 6) (stop 7))))) (ann ())
-          (is_alias false)
+       ((Block_decl_val
+         ((relevancy Relevant)
+          (name ((name testing) (span ((start 6) (stop 7))))) (ann ())
+          (is_abstract false)
           (rhs
-           (Expr_abs
+           (Expr_fun
             (params
-             (((vars (((name x) (span ((start 12) (stop 13)))))) (ann ())
+             (((relevancy Relevant)
+               (names (((name x) (span ((start 12) (stop 13)))))) (ann ())
                (icit Expl) (span ((start 12) (stop 13))))))
             (ret_ty ())
             (body
              (Expr_block
               (decls
                ((Block_decl_bind
-                 (var ((name awef) (span ((start 21) (stop 22)))))
+                 (name ((name awef) (span ((start 21) (stop 22)))))
                  (rhs
                   (Expr_paren
                    (e
@@ -560,15 +592,15 @@ let%expect_test "error: fun missing params" =
     |}]
 ;;
 
-let%expect_test "error: mod missing brace" =
-  check {|mod x|};
+let%expect_test "error: struct missing brace" =
+  check {|struct x|};
   [%expect
     {|
-    error[E0001]: Expected {
-     --> <input>:1:5
+    error[E0001]: Expected { or (
+     --> <input>:1:8
       |
-    1 | mod x
-      |     ^
+    1 | struct x
+      |        ^
     |}]
 ;;
 
@@ -599,28 +631,30 @@ let%expect_test "error: empty block" =
 let%expect_test "single-group block treats let as variable" =
   (* When a block has only one group, it's parsed as a return expression,
      so `let` is treated as a regular variable name, not a keyword *)
-  check {|{ let x y }|};
+  check {|{ val x y }|};
   [%expect
     {|
     ((Expr_block (decls ())
       (ret
-       (Expr_app (func (Expr_var ((name let) (span ((start 2) (stop 3))))))
+       (Expr_app (func (Expr_var ((name val) (span ((start 2) (stop 3))))))
         (args
-         ((Expr_var ((name x) (span ((start 4) (stop 5)))))
-          (Expr_var ((name y) (span ((start 6) (stop 7)))))))
+         (((arg (Expr_var ((name x) (span ((start 4) (stop 5))))))
+           (relevancy Relevant) (icit Expl))
+          ((arg (Expr_var ((name y) (span ((start 6) (stop 7))))))
+           (relevancy Relevant) (icit Expl))))
         (span ((start 2) (stop 7)))))
       (span ((start 0) (stop 9)))))
     |}]
 ;;
 
 let%expect_test "error: let missing rhs" =
-  check {|{ let x = }|};
+  check {|{ val x = }|};
   [%expect
     {|
     error[E0001]: Unconsumed tokens when parsing expression
      --> <input>:1:9
       |
-    1 | { let x = }
+    1 | { val x = }
       |         ^
     |}]
 ;;
@@ -631,33 +665,35 @@ let%expect_test "top-level application" =
     {|
     ((Expr_app (func (Expr_var ((name x) (span ((start 0) (stop 1))))))
       (args
-       ((Expr_var ((name y) (span ((start 2) (stop 3)))))
-        (Expr_var ((name z) (span ((start 4) (stop 5)))))))
+       (((arg (Expr_var ((name y) (span ((start 2) (stop 3))))))
+         (relevancy Relevant) (icit Expl))
+        ((arg (Expr_var ((name z) (span ((start 4) (stop 5))))))
+         (relevancy Relevant) (icit Expl))))
       (span ((start 0) (stop 5)))))
     |}]
 ;;
 
-let%expect_test "error: mod bad decl" =
-  check {|mod { x }|};
+let%expect_test "error: struct missing decl prefix" =
+  check {|struct { x }|};
   [%expect
     {|
-    ((Expr_mod
-      (decls
-       ((Block_decl_expr (e (Expr_var ((name x) (span ((start 4) (stop 5))))))
-         (span ((start 4) (stop 5))))))
-      (span ((start 0) (stop 7)))))
+    error[E0001]: Expected block declaration
+     --> <input>:1:10
+      |
+    1 | struct { x }
+      |          ^
     |}]
 ;;
 
 let%expect_test "error: sig missing type" =
-  check {|sig { let x }|};
+  check {|sig { val x }|};
   [%expect
     {|
-    error[E0001]: Expected :
-     --> <input>:1:12
-      |
-    1 | sig { let x }
-      |            ^
+    ((Expr_ty_struct
+      (field_specs
+       (((relevancy Relevant) (name ((name x) (span ((start 6) (stop 7)))))
+         (ty ()) (rhs ()) (span ((start 4) (stop 7))))))
+      (span ((start 0) (stop 9)))))
     |}]
 ;;
 
@@ -675,10 +711,14 @@ let%expect_test "nested application" =
        (Expr_paren
         (e
          (Expr_app (func (Expr_var ((name f) (span ((start 1) (stop 2))))))
-          (args ((Expr_var ((name x) (span ((start 3) (stop 4)))))))
+          (args
+           (((arg (Expr_var ((name x) (span ((start 3) (stop 4))))))
+             (relevancy Relevant) (icit Expl))))
           (span ((start 1) (stop 4)))))
         (span ((start 1) (stop 4)))))
-      (args ((Expr_var ((name y) (span ((start 6) (stop 7)))))))
+      (args
+       (((arg (Expr_var ((name y) (span ((start 6) (stop 7))))))
+         (relevancy Relevant) (icit Expl))))
       (span ((start 1) (stop 7)))))
     |}]
 ;;
@@ -688,10 +728,10 @@ let%expect_test "chained projections" =
   [%expect
     {|
     ((Expr_proj
-      (mod_e
+      (strukt
        (Expr_proj
-        (mod_e
-         (Expr_proj (mod_e (Expr_var ((name a) (span ((start 0) (stop 1))))))
+        (strukt
+         (Expr_proj (strukt (Expr_var ((name a) (span ((start 0) (stop 1))))))
           (field b) (span ((start 0) (stop 3)))))
         (field c) (span ((start 0) (stop 5)))))
       (field d) (span ((start 0) (stop 7)))))
@@ -704,10 +744,12 @@ let%expect_test "nested Fun" =
     {|
     ((Expr_ty_fun
       (param_tys
-       (((vars ()) (ty ((Expr_core_ty (ty Bool) (span ((start 0) (stop 1))))))
-         (icit Expl) (span ((start 0) (stop 1))))
-        ((vars ()) (ty ((Expr_core_ty (ty Bool) (span ((start 4) (stop 5))))))
-         (icit Expl) (span ((start 4) (stop 5))))))
+       (((relevancy Relevant) (names ())
+         (ty ((Expr_core_ty (ty Bool) (span ((start 0) (stop 1)))))) (icit Expl)
+         (span ((start 0) (stop 1))))
+        ((relevancy Relevant) (names ())
+         (ty ((Expr_core_ty (ty Bool) (span ((start 4) (stop 5)))))) (icit Expl)
+         (span ((start 4) (stop 5))))))
       (body_ty (Expr_core_ty (ty Bool) (span ((start 8) (stop 9)))))
       (span ((start 0) (stop 9)))))
     |}]
@@ -721,9 +763,10 @@ let%expect_test "fun with annotated return and body" =
       (e
        (Expr_ann
         (e
-         (Expr_abs
+         (Expr_fun
           (params
-           (((vars (((name x) (span ((start 4) (stop 5))))))
+           (((relevancy Relevant)
+             (names (((name x) (span ((start 4) (stop 5))))))
              (ann ((Expr_core_ty (ty Bool) (span ((start 8) (stop 9))))))
              (icit Expl) (span ((start 4) (stop 9))))))
           (ret_ty ()) (body (Expr_var ((name x) (span ((start 13) (stop 14))))))
@@ -731,7 +774,7 @@ let%expect_test "fun with annotated return and body" =
         (ty
          (Expr_ty_fun
           (param_tys
-           (((vars ())
+           (((relevancy Relevant) (names ())
              (ty ((Expr_core_ty (ty Bool) (span ((start 17) (stop 18))))))
              (icit Expl) (span ((start 17) (stop 18))))))
           (body_ty (Expr_var ((name x) (span ((start 21) (stop 22))))))
@@ -748,8 +791,8 @@ let%expect_test "error: block without return expression" =
   check
     {|
 {
-  let x = #t
-  let y = #f
+  val x = true
+  val y = false
 }
     |};
   [%expect
@@ -757,7 +800,7 @@ let%expect_test "error: block without return expression" =
     error[E0001]: Unconsumed tokens when parsing expression
      --> <input>:4:9
       |
-    4 |   let y = #f
+    4 |   val y = false
       |         ^
     |}]
 ;;
@@ -766,7 +809,7 @@ let%expect_test "let with annotation" =
   check
     {|
 {
-  let x : Bool = #t
+  val x : Bool = true
   x
 }
     |};
@@ -774,10 +817,10 @@ let%expect_test "let with annotation" =
     {|
     ((Expr_block
       (decls
-       ((Block_decl_let
-         ((var ((name x) (span ((start 6) (stop 7)))))
+       ((Block_decl_val
+         ((relevancy Relevant) (name ((name x) (span ((start 6) (stop 7)))))
           (ann ((Expr_core_ty (ty Bool) (span ((start 10) (stop 11))))))
-          (is_alias false)
+          (is_abstract false)
           (rhs
            (Expr_literal (literal (Bool true)) (span ((start 14) (stop 15)))))
           (span ((start 4) (stop 15)))))))
@@ -789,23 +832,26 @@ let%expect_test "let with annotation" =
 let%expect_test "application of block" =
   check
     {|
-f { let x = #t
+f { val x = true
     x }
     |};
   [%expect
     {|
     ((Expr_app (func (Expr_var ((name f) (span ((start 1) (stop 2))))))
       (args
-       ((Expr_block
-         (decls
-          ((Block_decl_let
-            ((var ((name x) (span ((start 7) (stop 8))))) (ann ())
-             (is_alias false)
-             (rhs
-              (Expr_literal (literal (Bool true)) (span ((start 11) (stop 12)))))
-             (span ((start 5) (stop 12)))))))
-         (ret (Expr_var ((name x) (span ((start 15) (stop 16))))))
-         (span ((start 3) (stop 18))))))
+       (((arg
+          (Expr_block
+           (decls
+            ((Block_decl_val
+              ((relevancy Relevant) (name ((name x) (span ((start 7) (stop 8)))))
+               (ann ()) (is_abstract false)
+               (rhs
+                (Expr_literal (literal (Bool true))
+                 (span ((start 11) (stop 12)))))
+               (span ((start 5) (stop 12)))))))
+           (ret (Expr_var ((name x) (span ((start 15) (stop 16))))))
+           (span ((start 3) (stop 18)))))
+         (relevancy Relevant) (icit Expl))))
       (span ((start 1) (stop 18)))))
     |}]
 ;;
@@ -821,7 +867,9 @@ let%expect_test "pack in application" =
          (Expr_pack (e (Expr_var ((name x) (span ((start 3) (stop 4))))))
           (span ((start 1) (stop 4)))))
         (span ((start 1) (stop 4)))))
-      (args ((Expr_var ((name y) (span ((start 6) (stop 7)))))))
+      (args
+       (((arg (Expr_var ((name y) (span ((start 6) (stop 7))))))
+         (relevancy Relevant) (icit Expl))))
       (span ((start 1) (stop 7)))))
     |}]
 ;;
@@ -850,21 +898,24 @@ a b c [a b c]
     {|
     ((Expr_app (func (Expr_var ((name a) (span ((start 1) (stop 2))))))
       (args
-       ((Expr_var ((name b) (span ((start 3) (stop 4)))))
-        (Expr_var ((name c) (span ((start 5) (stop 6)))))
-        (Expr_brack
-         (e
+       (((arg (Expr_var ((name b) (span ((start 3) (stop 4))))))
+         (relevancy Relevant) (icit Expl))
+        ((arg (Expr_var ((name c) (span ((start 5) (stop 6))))))
+         (relevancy Relevant) (icit Expl))
+        ((arg
           (Expr_app (func (Expr_var ((name a) (span ((start 8) (stop 9))))))
            (args
-            ((Expr_var ((name b) (span ((start 10) (stop 11)))))
-             (Expr_var ((name c) (span ((start 12) (stop 13)))))))
+            (((arg (Expr_var ((name b) (span ((start 10) (stop 11))))))
+              (relevancy Relevant) (icit Expl))
+             ((arg (Expr_var ((name c) (span ((start 12) (stop 13))))))
+              (relevancy Relevant) (icit Expl))))
            (span ((start 8) (stop 13)))))
-         (span ((start 8) (stop 13))))))
+         (relevancy Irrelevant) (icit Impl))))
       (span ((start 1) (stop 13)))))
     |}]
 ;;
 
-let%expect_test "block decl expressions" =
+let%expect_test "error: block expr decl missing do" =
   check
     {|
 {
@@ -875,19 +926,11 @@ let%expect_test "block decl expressions" =
     |};
   [%expect
     {|
-    ((Expr_block
-      (decls
-       ((Block_decl_expr (e (Expr_var ((name f) (span ((start 4) (stop 5))))))
-         (span ((start 4) (stop 5))))
-        (Block_decl_expr (e (Expr_var ((name f) (span ((start 8) (stop 9))))))
-         (span ((start 8) (stop 9))))))
-      (ret
-       (Expr_app (func (Expr_var ((name f) (span ((start 12) (stop 13))))))
-        (args
-         ((Expr_literal (literal (String aewfaewf))
-           (span ((start 14) (stop 15))))))
-        (span ((start 12) (stop 15)))))
-      (span ((start 1) (stop 17)))))
+    error[E0001]: Expected block declaration
+     --> <input>:3:3
+      |
+    3 |   f
+      |   ^
     |}]
 ;;
 
@@ -895,50 +938,57 @@ let%expect_test "recursive blocks" =
   check
     {|
 rec {
-  let first = fun x -> second x
+  val first = fun x -> second x
   
-  let second : Int -> Int = fun x -> first x
+  val second : Int -> Int = fun x -> first x
 }
     |};
   [%expect
     {|
     ((Expr_rec
       (decls
-       (((var ((name first) (span ((start 8) (stop 9))))) (ann ())
-         (is_alias false)
+       (((relevancy Relevant) (name ((name first) (span ((start 8) (stop 9)))))
+         (ann ()) (is_abstract false)
          (rhs
-          (Expr_abs
+          (Expr_fun
            (params
-            (((vars (((name x) (span ((start 14) (stop 15)))))) (ann ())
+            (((relevancy Relevant)
+              (names (((name x) (span ((start 14) (stop 15)))))) (ann ())
               (icit Expl) (span ((start 14) (stop 15))))))
            (ret_ty ())
            (body
             (Expr_app
              (func (Expr_var ((name second) (span ((start 18) (stop 19))))))
-             (args ((Expr_var ((name x) (span ((start 20) (stop 21)))))))
+             (args
+              (((arg (Expr_var ((name x) (span ((start 20) (stop 21))))))
+                (relevancy Relevant) (icit Expl))))
              (span ((start 18) (stop 21)))))
            (span ((start 12) (stop 21)))))
          (span ((start 6) (stop 21))))
-        ((var ((name second) (span ((start 28) (stop 29)))))
+        ((relevancy Relevant)
+         (name ((name second) (span ((start 28) (stop 29)))))
          (ann
           ((Expr_ty_fun
             (param_tys
-             (((vars ())
+             (((relevancy Relevant) (names ())
                (ty ((Expr_core_ty (ty Int) (span ((start 32) (stop 33))))))
                (icit Expl) (span ((start 32) (stop 33))))))
             (body_ty (Expr_core_ty (ty Int) (span ((start 36) (stop 37)))))
             (span ((start 32) (stop 37))))))
-         (is_alias false)
+         (is_abstract false)
          (rhs
-          (Expr_abs
+          (Expr_fun
            (params
-            (((vars (((name x) (span ((start 42) (stop 43)))))) (ann ())
+            (((relevancy Relevant)
+              (names (((name x) (span ((start 42) (stop 43)))))) (ann ())
               (icit Expl) (span ((start 42) (stop 43))))))
            (ret_ty ())
            (body
             (Expr_app
              (func (Expr_var ((name first) (span ((start 46) (stop 47))))))
-             (args ((Expr_var ((name x) (span ((start 48) (stop 49)))))))
+             (args
+              (((arg (Expr_var ((name x) (span ((start 48) (stop 49))))))
+                (relevancy Relevant) (icit Expl))))
              (span ((start 46) (stop 49)))))
            (span ((start 40) (stop 49)))))
          (span ((start 26) (stop 49))))))
@@ -949,29 +999,27 @@ rec {
 let%expect_test "record patching" =
   check
     {|
-sig { let T : Type; let U : Type -> Type } where { T := Int; U := List }
+sig { val T : Type; val U : Type -> Type } where { T = Int; U = List }
 |};
   [%expect
     {|
     ((Expr_where
       (e
-       (Expr_ty_mod
-        (ty_decls
-         (((var ((name T) (span ((start 7) (stop 8)))))
-           (ty (Expr_universe (universe Type) (span ((start 11) (stop 12)))))
-           (span ((start 5) (stop 12))))
-          ((var ((name U) (span ((start 16) (stop 17)))))
+       (Expr_ty_struct
+        (field_specs
+         (((relevancy Relevant) (name ((name T) (span ((start 7) (stop 8)))))
+           (ty ((Expr_universe (size Type) (span ((start 11) (stop 12))))))
+           (rhs ()) (span ((start 5) (stop 12))))
+          ((relevancy Relevant) (name ((name U) (span ((start 16) (stop 17)))))
            (ty
-            (Expr_ty_fun
-             (param_tys
-              (((vars ())
-                (ty
-                 ((Expr_universe (universe Type) (span ((start 20) (stop 21))))))
-                (icit Expl) (span ((start 20) (stop 21))))))
-             (body_ty
-              (Expr_universe (universe Type) (span ((start 24) (stop 25)))))
-             (span ((start 20) (stop 25)))))
-           (span ((start 14) (stop 25))))))
+            ((Expr_ty_fun
+              (param_tys
+               (((relevancy Relevant) (names ())
+                 (ty ((Expr_universe (size Type) (span ((start 20) (stop 21))))))
+                 (icit Expl) (span ((start 20) (stop 21))))))
+              (body_ty (Expr_universe (size Type) (span ((start 24) (stop 25)))))
+              (span ((start 20) (stop 25))))))
+           (rhs ()) (span ((start 14) (stop 25))))))
         (span ((start 1) (stop 27)))))
       (patches
        (((path (T)) (rhs (Expr_core_ty (ty Int) (span ((start 36) (stop 37)))))
@@ -982,7 +1030,7 @@ sig { let T : Type; let U : Type -> Type } where { T := Int; U := List }
     |}];
   check
     {|
-Some_signature where { T.First.Second := Int; U := List }
+Some_signature where { T.First.Second = Int; U = List }
       |};
   [%expect
     {|
@@ -998,17 +1046,17 @@ Some_signature where { T.First.Second := Int; U := List }
     |}];
   check
     {|
-      Some_signature where { T.First.Second := Int; u := List} -> Int
+      Some_signature where { T.First.Second = Int; u = List} -> Int
       |};
   check
     {|
-      f a b c where { T := Int } -> f a b c where { T := Int } -> Int
+      f a b c where { T = Int } -> f a b c where { T = Int } -> Int
       |};
   [%expect
     {|
     ((Expr_ty_fun
       (param_tys
-       (((vars ())
+       (((relevancy Relevant) (names ())
          (ty
           ((Expr_where
             (e (Expr_var ((name Some_signature) (span ((start 2) (stop 3))))))
@@ -1025,15 +1073,18 @@ Some_signature where { T.First.Second := Int; U := List }
       (span ((start 2) (stop 29)))))
     ((Expr_ty_fun
       (param_tys
-       (((vars ())
+       (((relevancy Relevant) (names ())
          (ty
           ((Expr_where
             (e
              (Expr_app (func (Expr_var ((name f) (span ((start 2) (stop 3))))))
               (args
-               ((Expr_var ((name a) (span ((start 4) (stop 5)))))
-                (Expr_var ((name b) (span ((start 6) (stop 7)))))
-                (Expr_var ((name c) (span ((start 8) (stop 9)))))))
+               (((arg (Expr_var ((name a) (span ((start 4) (stop 5))))))
+                 (relevancy Relevant) (icit Expl))
+                ((arg (Expr_var ((name b) (span ((start 6) (stop 7))))))
+                 (relevancy Relevant) (icit Expl))
+                ((arg (Expr_var ((name c) (span ((start 8) (stop 9))))))
+                 (relevancy Relevant) (icit Expl))))
               (span ((start 2) (stop 9)))))
             (patches
              (((path (T))
@@ -1041,15 +1092,18 @@ Some_signature where { T.First.Second := Int; U := List }
                (span ((start 14) (stop 19))))))
             (span ((start 2) (stop 21))))))
          (icit Expl) (span ((start 2) (stop 21))))
-        ((vars ())
+        ((relevancy Relevant) (names ())
          (ty
           ((Expr_where
             (e
              (Expr_app (func (Expr_var ((name f) (span ((start 24) (stop 25))))))
               (args
-               ((Expr_var ((name a) (span ((start 26) (stop 27)))))
-                (Expr_var ((name b) (span ((start 28) (stop 29)))))
-                (Expr_var ((name c) (span ((start 30) (stop 31)))))))
+               (((arg (Expr_var ((name a) (span ((start 26) (stop 27))))))
+                 (relevancy Relevant) (icit Expl))
+                ((arg (Expr_var ((name b) (span ((start 28) (stop 29))))))
+                 (relevancy Relevant) (icit Expl))
+                ((arg (Expr_var ((name c) (span ((start 30) (stop 31))))))
+                 (relevancy Relevant) (icit Expl))))
               (span ((start 24) (stop 31)))))
             (patches
              (((path (T))
@@ -1062,14 +1116,468 @@ Some_signature where { T.First.Second := Int; U := List }
     |}];
   check
     {|
-sig { let first : Type; let second : Type } where { T = Int; }
+sig { val first : Type; val second : Type } where { T = Int; }
     |};
   [%expect
     {|
-    error[E0001]: Expected := in where patch
-     --> <input>:2:55
-      |
-    2 | sig { let first : Type; let second : Type } where { T = Int; }
-      |                                                       ^
+    ((Expr_where
+      (e
+       (Expr_ty_struct
+        (field_specs
+         (((relevancy Relevant) (name ((name first) (span ((start 7) (stop 8)))))
+           (ty ((Expr_universe (size Type) (span ((start 11) (stop 12))))))
+           (rhs ()) (span ((start 5) (stop 12))))
+          ((relevancy Relevant)
+           (name ((name second) (span ((start 16) (stop 17)))))
+           (ty ((Expr_universe (size Type) (span ((start 20) (stop 21))))))
+           (rhs ()) (span ((start 14) (stop 21))))))
+        (span ((start 1) (stop 23)))))
+      (patches
+       (((path (T)) (rhs (Expr_core_ty (ty Int) (span ((start 32) (stop 33)))))
+         (span ((start 28) (stop 33))))))
+      (span ((start 1) (stop 36)))))
+    |}]
+;;
+
+let%expect_test "block do" =
+  check
+    {|
+{
+  val first = 1234
+  do some_call a b c
+  do another 1234
+  first
+}
+    |};
+  [%expect
+    {|
+    ((Expr_block
+      (decls
+       ((Block_decl_val
+         ((relevancy Relevant) (name ((name first) (span ((start 6) (stop 7)))))
+          (ann ()) (is_abstract false)
+          (rhs (Expr_literal (literal (Int 1234)) (span ((start 10) (stop 11)))))
+          (span ((start 4) (stop 11)))))
+        (Block_decl_do
+         (e
+          (Expr_app
+           (func (Expr_var ((name some_call) (span ((start 16) (stop 17))))))
+           (args
+            (((arg (Expr_var ((name a) (span ((start 18) (stop 19))))))
+              (relevancy Relevant) (icit Expl))
+             ((arg (Expr_var ((name b) (span ((start 20) (stop 21))))))
+              (relevancy Relevant) (icit Expl))
+             ((arg (Expr_var ((name c) (span ((start 22) (stop 23))))))
+              (relevancy Relevant) (icit Expl))))
+           (span ((start 16) (stop 23)))))
+         (span ((start 14) (stop 23))))
+        (Block_decl_do
+         (e
+          (Expr_app
+           (func (Expr_var ((name another) (span ((start 28) (stop 29))))))
+           (args
+            (((arg
+               (Expr_literal (literal (Int 1234)) (span ((start 30) (stop 31)))))
+              (relevancy Relevant) (icit Expl))))
+           (span ((start 28) (stop 31)))))
+         (span ((start 26) (stop 31))))))
+      (ret (Expr_var ((name first) (span ((start 34) (stop 35))))))
+      (span ((start 1) (stop 37)))))
+    |}]
+;;
+
+let%expect_test "abstract val declaration" =
+  check
+    {|
+  {
+    abstract val first = 1234124
+    abstract val another = 1234
+    another
+  }
+    |};
+  [%expect
+    {|
+    ((Expr_block
+      (decls
+       ((Block_decl_val
+         ((relevancy Relevant) (name ((name first) (span ((start 9) (stop 10)))))
+          (ann ()) (is_abstract true)
+          (rhs
+           (Expr_literal (literal (Int 1234124)) (span ((start 13) (stop 14)))))
+          (span ((start 5) (stop 14)))))
+        (Block_decl_val
+         ((relevancy Relevant)
+          (name ((name another) (span ((start 21) (stop 22))))) (ann ())
+          (is_abstract true)
+          (rhs (Expr_literal (literal (Int 1234)) (span ((start 25) (stop 26)))))
+          (span ((start 17) (stop 26)))))))
+      (ret (Expr_var ((name another) (span ((start 29) (stop 30))))))
+      (span ((start 2) (stop 33)))))
+    |}]
+;;
+
+let%expect_test "transparent signatures" =
+  check
+    {|
+sig {
+  val first : Type
+  val second : Type = Int
+  val third : Type = Bool
+}
+    |};
+  [%expect
+    {|
+    ((Expr_ty_struct
+      (field_specs
+       (((relevancy Relevant) (name ((name first) (span ((start 8) (stop 9)))))
+         (ty ((Expr_universe (size Type) (span ((start 12) (stop 13))))))
+         (rhs ()) (span ((start 6) (stop 13))))
+        ((relevancy Relevant)
+         (name ((name second) (span ((start 18) (stop 19)))))
+         (ty ((Expr_universe (size Type) (span ((start 22) (stop 23))))))
+         (rhs ((Expr_core_ty (ty Int) (span ((start 26) (stop 27))))))
+         (span ((start 16) (stop 27))))
+        ((relevancy Relevant) (name ((name third) (span ((start 32) (stop 33)))))
+         (ty ((Expr_universe (size Type) (span ((start 36) (stop 37))))))
+         (rhs ((Expr_core_ty (ty Bool) (span ((start 40) (stop 41))))))
+         (span ((start 30) (stop 41))))))
+      (span ((start 1) (stop 43)))))
+    |}]
+;;
+
+let%expect_test "irrelevancy" =
+  check
+    {|
+sig {
+  val f : (type A B : Type) -> A -> B -> B
+  val second : (type A B : Type) -> type A -> B -> B
+  type third a b c = Int
+  type first : Type = Int
+  type second : Type -> Type
+}
+    |};
+  check
+    {|
+struct {
+  val first = fun (type A : Type) (type B : Type) (A : Type) -> A
+  type some_type = first (type Int)
+}
+    |};
+  [%expect
+    {|
+    ((Expr_ty_struct
+      (field_specs
+       (((relevancy Relevant) (name ((name f) (span ((start 8) (stop 9)))))
+         (ty
+          ((Expr_ty_fun
+            (param_tys
+             (((relevancy Irrelevant)
+               (names
+                (((name A) (span ((start 15) (stop 16))))
+                 ((name B) (span ((start 17) (stop 18))))))
+               (ty ((Expr_universe (size Type) (span ((start 21) (stop 22))))))
+               (icit Expl) (span ((start 13) (stop 22))))
+              ((relevancy Relevant) (names ())
+               (ty ((Expr_var ((name A) (span ((start 26) (stop 27)))))))
+               (icit Expl) (span ((start 26) (stop 27))))
+              ((relevancy Relevant) (names ())
+               (ty ((Expr_var ((name B) (span ((start 30) (stop 31)))))))
+               (icit Expl) (span ((start 30) (stop 31))))))
+            (body_ty (Expr_var ((name B) (span ((start 34) (stop 35))))))
+            (span ((start 13) (stop 35))))))
+         (rhs ()) (span ((start 6) (stop 35))))
+        ((relevancy Relevant)
+         (name ((name second) (span ((start 40) (stop 41)))))
+         (ty
+          ((Expr_ty_fun
+            (param_tys
+             (((relevancy Irrelevant)
+               (names
+                (((name A) (span ((start 47) (stop 48))))
+                 ((name B) (span ((start 49) (stop 50))))))
+               (ty ((Expr_universe (size Type) (span ((start 53) (stop 54))))))
+               (icit Expl) (span ((start 45) (stop 54))))
+              ((relevancy Irrelevant) (names ())
+               (ty ((Expr_var ((name A) (span ((start 60) (stop 61)))))))
+               (icit Expl) (span ((start 60) (stop 61))))
+              ((relevancy Relevant) (names ())
+               (ty ((Expr_var ((name B) (span ((start 64) (stop 65)))))))
+               (icit Expl) (span ((start 64) (stop 65))))))
+            (body_ty (Expr_var ((name B) (span ((start 68) (stop 69))))))
+            (span ((start 45) (stop 69))))))
+         (rhs ()) (span ((start 38) (stop 69))))
+        ((relevancy Irrelevant)
+         (name ((name third) (span ((start 74) (stop 75)))))
+         (ty
+          ((Expr_app (func (Expr_var ((name a) (span ((start 76) (stop 77))))))
+            (args
+             (((arg (Expr_var ((name b) (span ((start 78) (stop 79))))))
+               (relevancy Relevant) (icit Expl))
+              ((arg (Expr_var ((name c) (span ((start 80) (stop 81))))))
+               (relevancy Relevant) (icit Expl))))
+            (span ((start 76) (stop 81))))))
+         (rhs ((Expr_core_ty (ty Int) (span ((start 84) (stop 85))))))
+         (span ((start 72) (stop 85))))
+        ((relevancy Irrelevant)
+         (name ((name first) (span ((start 90) (stop 91)))))
+         (ty ((Expr_universe (size Type) (span ((start 94) (stop 95))))))
+         (rhs ((Expr_core_ty (ty Int) (span ((start 98) (stop 99))))))
+         (span ((start 88) (stop 99))))
+        ((relevancy Irrelevant)
+         (name ((name second) (span ((start 104) (stop 105)))))
+         (ty
+          ((Expr_ty_fun
+            (param_tys
+             (((relevancy Relevant) (names ())
+               (ty ((Expr_universe (size Type) (span ((start 108) (stop 109))))))
+               (icit Expl) (span ((start 108) (stop 109))))))
+            (body_ty (Expr_universe (size Type) (span ((start 112) (stop 113)))))
+            (span ((start 108) (stop 113))))))
+         (rhs ()) (span ((start 102) (stop 113))))))
+      (span ((start 1) (stop 115)))))
+    ((Expr_struct
+      (decls
+       ((Block_decl_val
+         ((relevancy Relevant) (name ((name first) (span ((start 8) (stop 9)))))
+          (ann ()) (is_abstract false)
+          (rhs
+           (Expr_fun
+            (params
+             (((relevancy Irrelevant)
+               (names (((name A) (span ((start 17) (stop 18))))))
+               (ann ((Expr_universe (size Type) (span ((start 21) (stop 22))))))
+               (icit Expl) (span ((start 17) (stop 22))))
+              ((relevancy Irrelevant)
+               (names (((name B) (span ((start 27) (stop 28))))))
+               (ann ((Expr_universe (size Type) (span ((start 31) (stop 32))))))
+               (icit Expl) (span ((start 27) (stop 32))))
+              ((relevancy Relevant)
+               (names (((name A) (span ((start 35) (stop 36))))))
+               (ann ((Expr_universe (size Type) (span ((start 39) (stop 40))))))
+               (icit Expl) (span ((start 35) (stop 40))))))
+            (ret_ty ())
+            (body (Expr_var ((name A) (span ((start 44) (stop 45))))))
+            (span ((start 12) (stop 45)))))
+          (span ((start 6) (stop 45)))))
+        (Block_decl_val
+         ((relevancy Irrelevant)
+          (name ((name some_type) (span ((start 50) (stop 51))))) (ann ())
+          (is_abstract false)
+          (rhs
+           (Expr_app
+            (func (Expr_var ((name first) (span ((start 54) (stop 55))))))
+            (args
+             (((arg (Expr_core_ty (ty Int) (span ((start 59) (stop 60)))))
+               (relevancy Irrelevant) (icit Expl))))
+            (span ((start 54) (stop 60)))))
+          (span ((start 48) (stop 60)))))))
+      (is_dependent true) (span ((start 1) (stop 63)))))
+    |}];
+  check
+    {|
+sig {
+  val f : [type A B : Type] -> [C D E] -> A
+  val another : Type = f [type A B] [C D]
+}
+    |};
+  [%expect
+    {|
+    ((Expr_ty_struct
+      (field_specs
+       (((relevancy Relevant) (name ((name f) (span ((start 8) (stop 9)))))
+         (ty
+          ((Expr_ty_fun
+            (param_tys
+             (((relevancy Irrelevant)
+               (names
+                (((name A) (span ((start 15) (stop 16))))
+                 ((name B) (span ((start 17) (stop 18))))))
+               (ty ((Expr_universe (size Type) (span ((start 21) (stop 22))))))
+               (icit Impl) (span ((start 13) (stop 22))))
+              ((relevancy Irrelevant)
+               (names
+                (((name C) (span ((start 27) (stop 28))))
+                 ((name D) (span ((start 29) (stop 30))))
+                 ((name E) (span ((start 31) (stop 32))))))
+               (ty ()) (icit Impl) (span ((start 27) (stop 32))))))
+            (body_ty (Expr_var ((name A) (span ((start 36) (stop 37))))))
+            (span ((start 13) (stop 37))))))
+         (rhs ()) (span ((start 6) (stop 37))))
+        ((relevancy Relevant)
+         (name ((name another) (span ((start 42) (stop 43)))))
+         (ty ((Expr_universe (size Type) (span ((start 46) (stop 47))))))
+         (rhs
+          ((Expr_app (func (Expr_var ((name f) (span ((start 50) (stop 51))))))
+            (args
+             (((arg
+                (Expr_app
+                 (func (Expr_var ((name type) (span ((start 53) (stop 54))))))
+                 (args
+                  (((arg (Expr_var ((name A) (span ((start 55) (stop 56))))))
+                    (relevancy Relevant) (icit Expl))
+                   ((arg (Expr_var ((name B) (span ((start 57) (stop 58))))))
+                    (relevancy Relevant) (icit Expl))))
+                 (span ((start 53) (stop 58)))))
+               (relevancy Irrelevant) (icit Impl))
+              ((arg
+                (Expr_app
+                 (func (Expr_var ((name C) (span ((start 61) (stop 62))))))
+                 (args
+                  (((arg (Expr_var ((name D) (span ((start 63) (stop 64))))))
+                    (relevancy Relevant) (icit Expl))))
+                 (span ((start 61) (stop 64)))))
+               (relevancy Irrelevant) (icit Impl))))
+            (span ((start 50) (stop 64))))))
+         (span ((start 40) (stop 64))))))
+      (span ((start 1) (stop 67)))))
+    |}]
+;;
+
+let%expect_test "data struct" =
+  check
+    {|
+struct {
+  val Types = data_rec {
+    data First (A : Type) (B : Type) {
+      first : A
+      second : B
+    }
+    
+    data Second (A : Type) {
+      third : First A A
+      fourth : Bool
+    }
+    
+    data Another (A : Type) {
+      Some of data {
+        first : A
+        second : A
+      }
+      None
+    }
+  }
+  
+  val Option = data (A : Type) {
+    Some of A
+    None
+  }
+}
+    |};
+  [%expect
+    {|
+    ((Expr_struct
+      (decls
+       ((Block_decl_val
+         ((relevancy Relevant) (name ((name Types) (span ((start 8) (stop 9)))))
+          (ann ()) (is_abstract false)
+          (rhs
+           (Expr_data_rec
+            (decls
+             (((name ((name First) (span ((start 19) (stop 20)))))
+               (data
+                ((params
+                  (((relevancy Relevant)
+                    (names (((name A) (span ((start 22) (stop 23))))))
+                    (ann
+                     ((Expr_universe (size Type) (span ((start 26) (stop 27))))))
+                    (icit Expl) (span ((start 22) (stop 27))))
+                   ((relevancy Relevant)
+                    (names (((name B) (span ((start 30) (stop 31))))))
+                    (ann
+                     ((Expr_universe (size Type) (span ((start 34) (stop 35))))))
+                    (icit Expl) (span ((start 30) (stop 35))))))
+                 (body
+                  ((First
+                    ((name ((name first) (span ((start 40) (stop 41)))))
+                     (ty (Expr_var ((name A) (span ((start 44) (stop 45))))))))
+                   (First
+                    ((name ((name second) (span ((start 48) (stop 49)))))
+                     (ty (Expr_var ((name B) (span ((start 52) (stop 53))))))))))
+                 (span ((start 17) (stop 56)))))
+               (span ((start 17) (stop 56))))
+              ((name ((name Second) (span ((start 63) (stop 64)))))
+               (data
+                ((params
+                  (((relevancy Relevant)
+                    (names (((name A) (span ((start 66) (stop 67))))))
+                    (ann
+                     ((Expr_universe (size Type) (span ((start 70) (stop 71))))))
+                    (icit Expl) (span ((start 66) (stop 71))))))
+                 (body
+                  ((First
+                    ((name ((name third) (span ((start 76) (stop 77)))))
+                     (ty
+                      (Expr_app
+                       (func
+                        (Expr_var ((name First) (span ((start 80) (stop 81))))))
+                       (args
+                        (((arg
+                           (Expr_var ((name A) (span ((start 82) (stop 83))))))
+                          (relevancy Relevant) (icit Expl))
+                         ((arg
+                           (Expr_var ((name A) (span ((start 84) (stop 85))))))
+                          (relevancy Relevant) (icit Expl))))
+                       (span ((start 80) (stop 85)))))))
+                   (First
+                    ((name ((name fourth) (span ((start 88) (stop 89)))))
+                     (ty (Expr_core_ty (ty Bool) (span ((start 92) (stop 93)))))))))
+                 (span ((start 61) (stop 96)))))
+               (span ((start 61) (stop 96))))
+              ((name ((name Another) (span ((start 103) (stop 104)))))
+               (data
+                ((params
+                  (((relevancy Relevant)
+                    (names (((name A) (span ((start 106) (stop 107))))))
+                    (ann
+                     ((Expr_universe (size Type) (span ((start 110) (stop 111))))))
+                    (icit Expl) (span ((start 106) (stop 111))))))
+                 (body
+                  ((Second
+                    ((name ((name Some) (span ((start 116) (stop 117)))))
+                     (ty
+                      ((Expr_data
+                        ((params ())
+                         (body
+                          ((First
+                            ((name
+                              ((name first) (span ((start 125) (stop 126)))))
+                             (ty
+                              (Expr_var
+                               ((name A) (span ((start 129) (stop 130))))))))
+                           (First
+                            ((name
+                              ((name second) (span ((start 133) (stop 134)))))
+                             (ty
+                              (Expr_var
+                               ((name A) (span ((start 137) (stop 138))))))))))
+                         (span ((start 120) (stop 141)))))))))
+                   (Second
+                    ((name ((name None) (span ((start 144) (stop 145)))))
+                     (ty ())))))
+                 (span ((start 101) (stop 148)))))
+               (span ((start 101) (stop 148))))))
+            (span ((start 12) (stop 151)))))
+          (span ((start 6) (stop 151)))))
+        (Block_decl_val
+         ((relevancy Relevant)
+          (name ((name Option) (span ((start 158) (stop 159))))) (ann ())
+          (is_abstract false)
+          (rhs
+           (Expr_data
+            ((params
+              (((relevancy Relevant)
+                (names (((name A) (span ((start 165) (stop 166))))))
+                (ann
+                 ((Expr_universe (size Type) (span ((start 169) (stop 170))))))
+                (icit Expl) (span ((start 165) (stop 170))))))
+             (body
+              ((Second
+                ((name ((name Some) (span ((start 175) (stop 176)))))
+                 (ty ((Expr_var ((name A) (span ((start 179) (stop 180)))))))))
+               (Second
+                ((name ((name None) (span ((start 183) (stop 184))))) (ty ())))))
+             (span ((start 162) (stop 187))))))
+          (span ((start 156) (stop 187)))))))
+      (is_dependent true) (span ((start 1) (stop 189)))))
     |}]
 ;;

@@ -1,8 +1,9 @@
 open Prelude
-module Syntax = Oak_syntax
+open Core
+module Core = Oak_core
+module Typed = Oak_typed
 module Snippet = Utility.Diagnostic.Snippet
 module Pretty = Oak_pretty
-module Common = Oak_common
 module Diagnostic = Oak_diagnostic
 
 let check ?(print_term = false) ?(show_singletons = false) s =
@@ -11,27 +12,28 @@ let check ?(print_term = false) ?(show_singletons = false) s =
   let files = String.Map.of_alist_exn [ file, Snippet.File.create s ] in
   if not (List.is_empty parse_diagnostics)
   then Diagnostic.print_many ~files ~color:false parse_diagnostics
-  else begin
+  else (
     match expr with
     | None -> print_string "no expression\n"
     | Some expr ->
       let rename_diagnostics, renamed = Oak_rename.rename source expr in
       if not (List.is_empty rename_diagnostics)
-      then begin
-        Diagnostic.print_many ~files ~color:false rename_diagnostics
-      end;
-      begin match Oak_elaborate.infer source renamed with
-      | Ok (term, ty) ->
-        if print_term then print_s [%message (term : Syntax.term) (ty : Syntax.ty)];
-        Pp.render_to_stdout
-          ~color:false
-          (Pretty.pp_value ~show_singletons Common.Name_list.empty ty);
-        Out_channel.newline stdout
-      | Error diagnostic ->
-        Diagnostic.print ~color:false ~files diagnostic;
-        Out_channel.newline stdout
-      end
-  end
+      then Diagnostic.print_many ~files ~color:false rename_diagnostics
+      else (
+        match Oak_elaborate.infer source renamed with
+        | Ok typed ->
+          if print_term
+          then
+            print_s
+              [%message
+                (Typed.Expr.term typed : Core.term) (Typed.Expr.ty typed : Core.ty)];
+          Pp.render_to_stdout
+            ~color:false
+            (Pretty.pp_ty ~show_singletons Core.Name_env.empty (Typed.Expr.ty typed));
+          Out_channel.newline stdout
+        | Error diagnostic ->
+          Diagnostic.print ~color:false ~files diagnostic;
+          Out_channel.newline stdout))
 ;;
 
 let%expect_test "smoke" =
@@ -49,512 +51,16 @@ fun x -> x
     |}];
   check
     {|
- fun (x : #t) -> x
-      |};
-  [%expect
-    {|
-    error: Not a type
-     --> <input>:2:11
-      |
-    2 |  fun (x : #t) -> x
-      |           ^^
-    |}];
-  check
-    {|
-{
-  let x := Bool
-  let y : x = #t
-  y
-}
-    |};
-  [%expect {| Bool |}];
-  check
-    {|
-mod {
-  let x := Bool
-  let y = {
-    let y : x = #t
-    y
-  }
-}
-      |};
-  [%expect {| sig { let x : (= Bool); let y : x } |}];
-  check
-    {|
-  mod {
-    let x := Type
-    let y := Type
-    let z := Type
-    let w := Kind
-  }
-      |};
-  [%expect
-    {| sig { let x : (= Type); let y : (= Type); let z : (= Type); let w : (= Kind) } |}];
-  check
-    {|
-      Sig
-      |};
-  [%expect
-    {|
-    error: Failed to find variable: Sig
-     --> <input>:2:7
-      |
-    2 |       Sig
-      |       ^^^
-
-    error: Cannot infer error term
-     --> <input>:2:7
-      |
-    2 |       Sig
-      |       ^^^
-    |}];
-  check
-    {|
-{
-  let r : Bool = {
-    bind x = pack #t
-    #t
-  }
-  r
-}
-
-      |};
-  [%expect {| Bool |}];
-  check
-    {|
-  {
-    let x = Bool
-    (#t : x)
-  }
-      |};
-  [%expect
-    {|
-    error: Types were not equal: Bool != x
-    note: failed to coerce inferred type Bool when checking against type x
-     --> <input>:4:6
-      |
-    4 |     (#t : x)
-      |      ^^
-    |}];
-  check
-    {|
-mod {
-  let x := Bool
-  let y := x
-  let f : (= x) -> (= x) = fun x -> x
-  let r := f Bool
-  let b : r = #t
-}
-      |};
-  [%expect
-    {| sig { let x : (= Bool); let y : (= x); let f : (= x) -> (= x); let r : (= f ((Bool))); let b : r } |}];
-  check
-    {|
-mod {
-  let M1 = mod {
-    let T := Bool
-  }
-  
-  let M2 := M1
-  
-  let M3 : sig {
-    let T : Type
-  } = mod {
-    let T := Bool
-  }
-  
-  let T1 := M1.T
-  
-  let T2 := M2.T
-  
-  let T3 := M3.T
-  
-  let T4 := T3
-}
-      |};
-  [%expect
-    {|
-    sig {
-      let M1 : sig { let T : (= Bool) }
-      let M2 : (= M1)
-      let M3 : sig { let T : Type }
-      let T1 : (= M1.T)
-      let T2 : (= M2.T)
-      let T3 : (= M3.T)
-      let T4 : (= T3)
-    }
-    |}];
-  check
-    {|
-mod {
-  let M1 : sig {
-    let M : sig {
-      let M : sig {
-        let T : Type
-      }
-    }
-  } = mod {
-    let M = mod {
-      let M = mod {
-        let T := Bool
-      }
-    }
-  }
-  
-  let M2 := M1
-  
-  let T1 := M1.M.M.T
-  
-  let T2 := M2.M.M.T
-  
-  let T3 := (M2.M.M : sig { let T : Type }).T
-}
-      |};
-  [%expect
-    {|
-    sig {
-      let M1 : sig { let M : sig { let M : sig { let T : Type } } }
-      let M2 : (= M1)
-      let T1 : (= M1.M.M.T)
-      let T2 : (= M2.M.M.T)
-      let T3 : (= M2.M.M.T)
-    }
-    |}];
-  check
-    {|
-mod {
-  let M = mod {
-    let M = mod {}
-  }
-  let T = M.M.T
-}
+fun (x : true) -> x
     |};
   [%expect
     {|
-    error: Module does not have field T
-     --> <input>:6:11
+    error: Type was not a universe: Bool
+     --> <input>:2:10
       |
-    6 |   let T = M.M.T
-      |           ^^^^^
-    |}];
-  check
-    {|
-(Kind : Type)
-      |};
-  [%expect
-    {|
-    error: Universes were not equal: Sig != Type
-    note: failed to coerce inferred type Sig when checking against type Type
-     --> <input>:2:2
-      |
-    2 | (Kind : Type)
-      |  ^^^^
-    |}];
-  check
-    {|
-(Type : Type)
-    |};
-  [%expect
-    {|
-    error: Universes were not equal: Kind != Type
-    note: failed to coerce inferred type Kind when checking against type Type
-     --> <input>:2:2
-      |
-    2 | (Type : Type)
-      |  ^^^^
-    |}];
-  check
-    {|
-(Bool : Type)
-      |};
-  [%expect {| Type |}];
-  check
-    {|
-{
-  let b = #t
-  let m = mod {
-    let T := Bool
-    let T' := (T : Type)
-    let x : T = #t
-  }
-  m
-}
-    |};
-  [%expect {| sig { let T : (= Bool); let T' : (= T); let x : T } |}];
-  check
-    {|
-alias (= mod {
-  let T := Bool
-  let T' := (T : Type)
-})
-      |};
-  [%expect {| (= (= mod { let T = Bool; let T' = Bool })) |}];
-  check
-    {|
-    alias (= (Bool : Type))
-    |};
-  [%expect {| (= (= Bool)) |}];
-  check
-    {|
-alias (= #t)
-    |};
-  [%expect {| (= (= ignore)) |}];
-  check
-    {|
-alias (#f : (= #t))
-    |};
-  [%expect {| (= ignore) |}];
-  check
-    {|
-({
-  let packed_ty = pack (Bool : Type)
-  bind T = packed_ty
-  T
-} : Type)
-    |};
-  [%expect
-    {|
-    error: Type was not ignorable: Type
-    note: in bind expression
-     --> <input>:2:2
-      |
-    2 | ({
-      |  ^...
-    |}];
-  check
-    {|
-({
-  let packed_ty = pack (Bool : Type)
-  bind T = packed_ty
-  pack T
-} : (Pack Type))
-      |};
-  [%expect {| Pack Type |}];
-  check
-    {|
-(mod {
-  let T = Bool
-  let x = #t
-} : sig {
-  let T : Type
-  let x : T
-})
-    |};
-  [%expect {| sig { let T : Type; let x : T } |}];
-  check
-    {|
-(mod {
-  let T = Unit
-  let x = #t
-} : sig {
-  let T : Type
-  let x : T
-})
-    |};
-  [%expect
-    {|
-    error: Core types were not equal: Bool != Unit
-    note: failed to coerce inferred type
-      sig { let T : Type; let x : Bool }
-    when checking against type
-      sig { let T : Type; let x : T }
-     --> <input>:2:2
-      |
-    2 | (mod {
-      |  ^^^^^...
-    |}];
-  check
-    {|
-mod {
-  let ty := (= fun (T : (= Bool)) -> T)
-  let f = ((fun (T : Type) -> Bool) : ty)
-  let T := f Bool
-}
-      |};
-  [%expect
-    {|
-    error: Types were not equal: Type != (= Bool)
-    note: parameter type annotation did not match expected type
-     --> <input>:4:13
-      |
-    4 |   let f = ((fun (T : Type) -> Bool) : ty)
-      |             ^^^^^^^^^^^^^^^^^^^^^^
-    |}];
-  check
-    {|
-  mod {
-    let f =
-      ((fun (T : Type) -> Bool) : (= fun (T : (= Bool)) -> T))
-    let T := f Int
-  }
-        |};
-  [%expect
-    {|
-    error: Types were not equal: Type != (= Bool)
-    note: parameter type annotation did not match expected type
-     --> <input>:4:9
-      |
-    4 |       ((fun (T : Type) -> Bool) : (= fun (T : (= Bool)) -> T))
-      |         ^^^^^^^^^^^^^^^^^^^^^^
-    |}];
-  check
-    {|
-    mod {
-      let f =
-        ((fun (T : Type) -> Bool) : (= fun (T : (= Bool)) -> T))
-      let T = f Int
-    }
-          |};
-  [%expect
-    {|
-    error: Types were not equal: Type != (= Bool)
-    note: parameter type annotation did not match expected type
-     --> <input>:4:11
-      |
-    4 |         ((fun (T : Type) -> Bool) : (= fun (T : (= Bool)) -> T))
-      |           ^^^^^^^^^^^^^^^^^^^^^^
-    |}];
-  check
-    {|
-    mod {
-      let Un := Unit
-      
-      let M1 = mod {
-        let T := Bool
-        let T' := T
-        let U := Int
-        let S := Un
-      }
-      
-      let M2 = mod {
-        let T := Bool
-        let T' := Bool
-        let S := Unit
-      }
-      
-      let M3 = (M1 : (= M2))
-    }
-    |};
-  [%expect
-    {|
-    sig {
-      let Un : (= Unit)
-      let M1 : sig { let T : (= Bool); let T' : (= T); let U : (= Int); let S : (= Un) }
-      let M2 : sig { let T : (= Bool); let T' : (= Bool); let S : (= Unit) }
-      let M3 : (= M2)
-    }
-    |}];
-  check
-    {|
-mod {
-  let Pair : (a b : Type) -> Type = fun A B -> Unit
-  
-  let Functor := sig {
-    let T : Type -> Type
-    
-    let map : [A B : Type] -> (A -> B) -> T A -> T B
-  }
-  
-  let Applicative := sig {
-    let T : Type -> Type
-    
-    let pure : [A : Type] -> T A
-    let map : [A B : Type] -> (A -> B) -> T A -> T B
-    let and : [A B : Type] -> T A -> T B -> T (Pair A B)
-  };
-  
-  let Monad : Kind := sig {
-    let T : Type -> Type
-    let return : [A : Type] -> A -> T A
-    let bind : [A B : Type] -> T A -> (A -> T B) -> T B
-  }
-  
-  let List := sig {
-    let T : Type -> Type
-    let nil : [A : Type] -> Unit -> T A
-    let cons : [A : Type] -> A -> T A -> T A
-  }
-  
-  let do_something = fun (A B : Type) (monad : Monad) (p : Pair (monad.T A) (monad.T B)) (x : monad.T A) (y : monad.T B) (list : List) -> ({
-    let first = list.cons () (list.nil ())
-    monad.bind x (fun x ->
-      monad.return ()
-    )
-  } : monad.T Unit)
-  
-  let do_something' :
-    [A B] ->
-    (monad : Monad) ->
-    Pair (monad.T A) (monad.T B) ->
-    monad.T A ->
-    monad.T B ->
-    (list : List) ->
-    monad.T (list.T Int) = fun [A B] monad p x y list -> {
-    let first = list.cons 1324 (list.nil ())
-    monad.bind x (fun x -> {
-      monad.return first
-    })
-  }
-}
-      |};
-  [%expect
-    {|
-    sig {
-      let Pair : (a : Type) -> (b : Type) -> Type
-      let Functor :
-        (= sig { let T : Type -> Type; let map : [A : Type] -> [B : Type] -> (A -> B) -> T A -> T B })
-      let Applicative :
-        ( =
-          sig {
-            let T : Type -> Type
-            let pure : [A : Type] -> T A
-            let map : [A : Type] -> [B : Type] -> (A -> B) -> T A -> T B
-            let and : [A : Type] -> [B : Type] -> T A -> T B -> T (Pair A B)
-          }
-        )
-      let Monad :
-        ( =
-          sig {
-            let T : Type -> Type
-            let return : [A : Type] -> A -> T A
-            let bind : [A : Type] -> [B : Type] -> T A -> (A -> T B) -> T B
-          }
-        )
-      let List :
-        ( =
-          sig {
-            let T : Type -> Type
-            let nil : [A : Type] -> Unit -> T A
-            let cons : [A : Type] -> A -> T A -> T A
-          }
-        )
-      let do_something :
-        (A : Type) ->
-        (B : Type) ->
-        (monad : Monad) ->
-        (p : Pair (monad.T A) (monad.T B)) ->
-        (x : monad.T A) ->
-        (y : monad.T B) ->
-        (list : List) ->
-        monad.T Unit
-      let do_something' :
-        [A : Type] ->
-        [B : Type] ->
-        (monad : Monad) ->
-        Pair (monad.T A) (monad.T B) ->
-        monad.T A ->
-        monad.T B ->
-        (list : List) ->
-        monad.T (list.T Int)
-    }
-    |}];
-  check
-    {|
-mod {
-  let f : (T : (= Bool)) -> T = fun x -> #t
-}
-      |};
-  [%expect {| sig { let f : (T : (= Bool)) -> T } |}]
+    2 | fun (x : true) -> x
+      |          ^^^^
+    |}]
 ;;
 
 let%expect_test "id" =
@@ -565,912 +71,629 @@ fun (x : Bool) -> x
   [%expect {| (x : Bool) -> Bool |}]
 ;;
 
-let%expect_test "modules" =
-  check
-    {|
-mod {
-  let first = #t
-  let second : Type = Bool
-  let ty := Type
-  let b : ty = Bool
-}
-    |};
-  [%expect
-    {| sig { let first : Bool; let second : Type; let ty : (= Type); let b : ty } |}];
-  check
-    {|
-  mod {
-    let first = #t
-    let second := Bool
-    let third := second
-  }
-      |};
-  [%expect {| sig { let first : Bool; let second : (= Bool); let third : (= second) } |}]
-;;
-
-let%expect_test "signatures" =
-  check
-    {|
-{
-  let S := sig {
-    let first : Bool
-    let second : Bool 
-  }
-  S
-}
-    |};
-  [%expect {| (= sig { let first : Bool; let second : Bool }) |}]
-;;
-
 let%expect_test "application" =
   check
     {|
-(fun (x : Bool) -> x) #t
+(fun (x : Bool) -> x) true
     |};
   [%expect {| Bool |}]
 ;;
 
-let%expect_test "duplicate declarations record" =
+let%expect_test "block lets" =
   check
     {|
-mod {
-  let first = 1234
-  let first = 1234
+{
+  val T : Type = Bool
+  val x : T = true
+  x
 }
     |};
-  [%expect
-    {|
-    error: Duplicate variable in module
-     --> <input>:4:7
-      |
-    4 |   let first = 1234
-      |       ^^^^^
-
-    error: Cannot infer error term
-     --> <input>:2:1
-      |
-    2 | mod {
-      | ^^^^^...
-    |}]
+  [%expect {| Bool |}]
 ;;
 
-let%expect_test "icit" =
+let%expect_test "struct concrete fields" =
   check
     {|
-alias ([A B : Type] -> A -> B -> B)
+struct {
+  val T : Type = Bool
+  val x : T = true
+}
     |};
-  [%expect {| (= [A : Type] -> [B : Type] -> A -> B -> B) |}];
-  check
-    {|
-fun [a b c : Type] -> a
-    |};
-  [%expect {| [a : Type] -> [b : Type] -> [c : Type] -> Type |}];
-  check
-    {|
-(fun [A B C : Type] -> A : [A B C : Type] -> Type)
-      |};
-  [%expect {| [A : Type] -> [B : Type] -> [C : Type] -> Type |}]
+  [%expect {| sig { val T : Type = Bool; val x : Bool = ignore } |}]
 ;;
 
-let%expect_test "reordering fields" =
+let%expect_test "struct abstract field" =
   check
     {|
-mod {
-  let T1 := sig {
-    let x : Int
-    let y : Int
-  }
-  
-  let T2 := sig {
-    let x : Int
-    let y : Int
-  }
-  
-  let M1 = mod {
-    let x = 134
-    let y = 234
-  }
-  
-  let M2 : T1 = M1
-  
-  let M3 : T2 = M1
-  
-  let M4 = mod {
-    let y = #t
-    let T := Bool
-    let x : T = #t
-  }
-  
-  let T3 := sig {
-    let x : Bool
-    let T : Type
-    let y : T
-  }
-  
-  let M5 : T3 = M4
+struct {
+  abstract val T : Type = Bool
+  val x : T = true
 }
     |};
   [%expect
     {|
-    sig {
-      let T1 : (= sig { let x : Int; let y : Int })
-      let T2 : (= sig { let x : Int; let y : Int })
-      let M1 : sig { let x : Int; let y : Int }
-      let M2 : T1
-      let M3 : T2
-      let M4 : sig { let y : Bool; let T : (= Bool); let x : T }
-      let T3 : (= sig { let x : Bool; let T : Type; let y : T })
-      let M5 : T3
-    }
-    |}]
-;;
-
-let%expect_test "singleton type not ignorable" =
-  check
-    {|
-({
-  bind x = pack 1324
-  alias Int
-} : (= Int))
-    |};
-  [%expect
-    {|
-    error: Type was not ignorable: Type
-    note: in bind expression
-     --> <input>:2:2
-      |
-    2 | ({
-      |  ^...
-    |}]
-;;
-
-let%expect_test "ignore equality" =
-  check
-    {|
-mod {
-  let f : Int -> Type -> sig {
-    let T : Type
-    let x : T
-  } = fun x y -> mod {
-    let T = Unit
-    let x = ()
-  }
-  
-  let m1 := f 123 Int
-  let x1 = m1.x
-  let x2 : (f ({ bind x = pack 123; 132 } : Int) Int).T = m1.x
-}
-    |};
-  [%expect
-    {|
-    sig {
-      let f : Int -> Type -> sig { let T : Type; let x : T }
-      let m1 : (= f ignore Int)
-      let x1 : m1.T
-      let x2 : (f ignore Int).T
-    }
-    |}];
-  check
-    {|
-mod {
-  let f : Int -> Type -> sig {
-    let T : Type
-    let x : T
-  } = fun x y -> mod {
-    let T = Unit
-    let x = ()
-  }
-  
-  let m1 := f 123 Int
-  let x1 = m1.x
-  let x2 : (f 123 Bool).T = m1.x
-}
-    |};
-  [%expect
-    {|
-    error: Base types were not equal: Int != Bool
-    note: failed to coerce inferred type m1.T when checking against type (f ignore Bool).T
-      --> <input>:13:29
-       |
-    13 |   let x2 : (f 123 Bool).T = m1.x
-       |                             ^^^^
-    |}];
-  check
-    {|
-  mod {
-    let f = fun (x : Int) (y : Type) -> (mod {
-      let T = Unit
-      let x = ()
-    } : sig {
-      let T : Type
-      let x : T
-    })
-    
-    let m1 := f 123 Int
-    let x1 = m1.x
-    let x2 : (f ({ bind x = pack 123; let y = 23; 132 } : Int) Int).T = m1.x
-  }
-      |};
-  [%expect
-    {|
-    sig {
-      let f : (x : Int) -> (y : Type) -> sig { let T : Type; let x : T }
-      let m1 : (= f ignore Int)
-      let x1 : m1.T
-      let x2 : (f ignore Int).T
-    }
-    |}];
-  check
-    {|
-mod {
-  let S := sig {
-    let T : Type
-    let x : T
-  }
-  
-  let M : sig {
-    let T : Type
-    let x : T
-    let y : T
-  } = mod {
-    let T = Unit
-    let x := ()
-    let y = x
-  }
-  
-  let F = fun (T : Type) (x : T) -> (mod {
-    let T = Unit
-    let x = ()
-  } : S)
-  
-  let x1 : (F M.T M.x).T := (F M.T M.x).x
-  let x2 : (F M.T M.y).T = x1
-}
-    |};
-  [%expect
-    {|
-    sig {
-      let S : (= sig { let T : Type; let x : T })
-      let M : sig { let T : Type; let x : T; let y : T }
-      let F : (T : Type) -> (x : T) -> S
-      let x1 : (= (F M.T M.x).x)
-      let x2 : (F M.T M.y).T
-    }
-    |}];
-  check
-    {|
-  mod {
-    let S := sig {
-      let T : Type
-      let x : T
-    }
-    
-    let M : sig {
-      let T : Kind
-      let x : T
-      let y : T
-    } = mod {
-      let T = Type
-      let x = Int
-      let y = Bool
-    }
-    
-    let F = fun (T : Kind) (x : T) -> (mod {
-      let T = Unit
-      let x = ()
-    } : S)
-    
-    let x1 : (F M.T M.x).T := (F M.T M.x).x
-    let x2 : (F M.T M.y).T := x1
-  }
-      |};
-  [%expect
-    {|
-    error: Fields were not equal in a projection: x != y
-    note: failed to coerce inferred type (= (F M.T M.x).x) when checking against type (F M.T M.y).T
-      --> <input>:24:31
-       |
-    24 |     let x2 : (F M.T M.y).T := x1
-       |                               ^^
-    |}]
-;;
-
-let%expect_test "unify signatures slightly different" =
-  check
-    {|
-mod {
-  let S : (= sig {
-    let T : (= Bool)
-    let U : (= T)
-  }) = sig {
-    let T : (= Bool)
-    let U : (= Bool)
-  }
-}
-  |};
-  [%expect
-    {|
-    error: Types were not equal: Type != (= Bool)
-    note: the value
-    sig { let T : (= Bool); let U : (= Bool) }
-    was not equal to
-    sig { let T : (= Bool); let U : (= T) }
-     --> <input>:6:8
-      |
-    6 |   }) = sig {
-      |        ^^^^^...
-    |}];
-  check
-    {|
-  mod {
-    let S : (= sig {
-      let T : (= Bool)
-      let U : (= T : Type)
-    }) = sig {
-      let T : (= Bool)
-      let U : (= Bool)
-    }
-  }
-    |};
-  [%expect {| sig { let S : (= sig { let T : (= Bool); let U : (= T) }) } |}]
-;;
-
-let%expect_test "universe" =
-  check
-    {|
-  sig {}
-    |};
-  [%expect {| Kind |}];
-  check {|(= Bool)|};
-  [%expect {| Kind |}];
-  check
-    {|
-    sig { let T : Type }
-    |};
-  [%expect {| Kind |}];
-  check
-    {|
-    sig { let T : Kind }
-    |};
-  [%expect {| Sig |}];
-  check
-    {|
-    Int -> Int
-    |};
-  [%expect {| Type |}];
-  check
-    {|
-    Type -> Int
-    |};
-  [%expect {| Kind |}];
-  check
-    {|
-    sig {} -> Int
-    |};
-  [%expect {| Kind |}];
-  check
-    {|
-    sig { let T : Kind } -> Int
-    |};
-  [%expect {| Sig |}];
-  check
-    {|
-    Int -> sig { let T : Kind }
-    |};
-  [%expect {| Sig |}]
-;;
-
-let%expect_test "implicits" =
-  check
-    {|
-mod {
-  let id = fun [A : Type] (x : A) -> x
-  
-  let id' = id
-  
-  let x = id 1234
-  
-  let y = id [Int] 1234
-  
-  let z = id' #t
-}
-    |};
-  [%expect
-    {|
-    sig {
-      let id : [A : Type] -> (x : A) -> A
-      let id' : [A : Type] -> (x : A) -> A
-      let x : Int
-      let y : Int
-      let z : Bool
-    }
-    |}];
-  check
-    {|
-mod {
-  let const = fun [A B : Type] (x : A) (y : B) -> x
-  
-  let w = const #t 123
-}
-      |};
-  [%expect
-    {| sig { let const : [A : Type] -> [B : Type] -> (x : A) -> (y : B) -> A; let w : Bool } |}];
-  check
-    {|
-  mod {
-    let const = fun [A B : Type] (x : A) (y : B) -> x
-    
-    let w = const #t
-  }
-        |};
-  [%expect
-    {|
-    error: Unsolved meta variable: ?B_1
-     --> <input>:5:13
-      |
-    5 |     let w = const #t
-      |             ^^^^^^^^
-    |}];
-  check
-    {|
-    mod {
-      let const = fun [B A : Type] (x : A) (y : B) -> x
-      
-      let w = const [Int] #t
-      
-      let x = const [Int] [Bool] #t
-    }
-          |};
-  [%expect
-    {|
-    sig {
-      let const : [B : Type] -> [A : Type] -> (x : A) -> (y : B) -> A
-      let w : (y : Int) -> Bool
-      let x : (y : Int) -> Bool
-    }
-    |}];
-  check
-    {|
-      [A : Type -> Type] -> Unit
-      |};
-  [%expect
-    {|
-    error: Types were not equal: Type -> Type != Type
-    note: Implicit paramters only work for kind Type
-     --> <input>:2:12
-      |
-    2 |       [A : Type -> Type] -> Unit
-      |            ^^^^^^^^^^^^
-    |}];
-  check
-    {|
-    fun [A : Type -> Type] -> Unit
-    |};
-  [%expect
-    {|
-    error: Types were not equal: Type -> Type != Type
-    note: Implicit paramters only work for kind Type
-     --> <input>:2:14
-      |
-    2 |     fun [A : Type -> Type] -> Unit
-      |              ^^^^^^^^^^^^
-    |}]
-;;
-
-let%expect_test "rec" =
-  check
-    {|
-mod {
-  let m = rec {
-    let first : int = 234
-  }
-}
-    |};
-  [%expect
-    {|
-    error: Failed to find variable: int
-     --> <input>:4:17
-      |
-    4 |     let first : int = 234
-      |                 ^^^
-
-    error: Cannot infer error term
-     --> <input>:4:17
-      |
-    4 |     let first : int = 234
-      |                 ^^^
-    |}];
-  check
-    {|
-  mod {
-    let m = rec {
-      let first : Int = second
-      let second : Int = first
-    }
-  }
-      |};
-  [%expect {| sig { let m : sig { let first : Int; let second : Int } } |}];
-  check
-    {|
-  mod {
-    let m = rec {
-      let first : (= Int) = Int
-      let second : (= Int) = Int
-    }
-  }
-      |};
-  [%expect
-    {|
-    error: Type was not ignorable: (= Int)
-    note: in recursive block
-     --> <input>:4:19
-      |
-    4 |       let first : (= Int) = Int
-      |                   ^^^^^^^
-    note: Types must be ignorable inside of a recursive block
-    |}];
-  check
-    {|
-  mod {
-    let m = rec {
-      let even : Int -> Bool = fun x -> odd x
-      let odd : Int -> Bool = fun x -> even x
-    }
-  }
-      |};
-  [%expect {| sig { let m : sig { let even : Int -> Bool; let odd : Int -> Bool } } |}];
-  check
-    {|
-  mod {
-    let m = rec {
-      let poly_rec1 : [A : Type] -> A -> A = fun [A] x -> (poly_rec2 [A -> A] (fun y -> y)) x
-      let poly_rec2 : [A : Type] -> A -> A = fun [A] x -> (poly_rec1 [A -> A] (fun y -> y)) x
-    }
-  }
-    |};
-  [%expect
-    {| sig { let m : sig { let poly_rec1 : [A : Type] -> A -> A; let poly_rec2 : [A : Type] -> A -> A } } |}];
-  check
-    {|
-  mod {
-    let m = rec {
-      let x : y = ()
-      let y : x = ()
-    }
-  }
-      |};
-  [%expect
-    {|
-    error: Failed to find variable: y
+    error: Types were not equal: Bool != T
+    error: while checking the expression against the expected type
      --> <input>:4:15
       |
-    4 |       let x : y = ()
-      |               ^
-
-    error: Failed to find variable: x
-     --> <input>:5:15
-      |
-    5 |       let y : x = ()
-      |               ^
-
-    error: Cannot infer error term
-     --> <input>:4:15
-      |
-    4 |       let x : y = ()
-      |               ^
-    |}];
-  check
-    {|
-mod {
-  let m = rec {
-    let x : (= y) = y
-    let y : (= x) = x
-  }
-}
-      |};
-  [%expect
-    {|
-    error: Failed to find variable: y
-     --> <input>:4:16
-      |
-    4 |     let x : (= y) = y
-      |                ^
-
-    error: Failed to find variable: x
-     --> <input>:5:16
-      |
-    5 |     let y : (= x) = x
-      |                ^
-
-    error: Cannot infer error term
-     --> <input>:4:16
-      |
-    4 |     let x : (= y) = y
-      |                ^
+    4 |   val x : T = true
+      |               ^^^^
     |}]
 ;;
 
-let%expect_test "singleton checking mode" =
+let%expect_test "struct annotation subtyping" =
   check
     {|
-mod {
-  let x : (= fun x -> x : Int -> Int) = fun x -> x
+(struct {
+  val T : Type = Bool
+  val x : T = true
+} : sig {
+  val T : Type
+  val x : T
+})
+    |};
+  [%expect {| sig { val T : Type; val x : T } |}]
+;;
+
+let%expect_test "nondependent struct punning" =
+  check
+    {|
+{
+  val x : Type = Bool
+  struct (val x)
 }
     |};
-  [%expect {| sig { let x : (= fun x -> x) } |}];
+  [%expect {| sig { val x : Type = Bool } |}]
+;;
+
+let%expect_test "nondependent struct fields do not bind later fields" =
   check
     {|
-mod {
-  let x : (= fun x -> x : Int -> Int) = alias (fun x -> x)
+{
+  val x : Type = Bool
+  struct (val x = Unit, val y = x)
 }
     |};
-  [%expect {| sig { let x : (= fun x -> x) } |}];
+  [%expect {| sig { val x : Type = Unit; val y : Type = Bool } |}]
+;;
+
+let%expect_test "nondependent struct checking reorders fields" =
   check
     {|
-mod {
-  let x : (= fun x y -> x : Type -> Type -> Type) = fun x y -> x
-}
-    |};
-  [%expect {| sig { let x : (= fun x y -> x) } |}];
-  (* TODO: make this error message better, the underscore is because we use the type binder name *)
-  check
-    {|
-mod {
-  let x : (= fun x y -> x : Type -> Type -> Type) = fun x y -> y
+struct {
+  val T : Type = Bool
+  val x : sig {
+    val T = Bool
+    val y : T = true
+  } = struct (val y = true, val T)
 }
     |};
   [%expect
     {|
-    error: Variables were not equal: _ != _@1
-    note: the value fun x y -> y was not equal to fun x y -> x
-     --> <input>:3:53
-      |
-    3 |   let x : (= fun x y -> x : Type -> Type -> Type) = fun x y -> y
-      |                                                     ^^^^^^^^^^^^
-    |}];
-  check
-    {|
-  mod {
-    let x : (= fun x y -> x : (x y : Type) -> Type) = fun x y -> y
-  }
-      |};
-  [%expect
-    {|
-    error: Variables were not equal: y != x
-    note: the value fun x y -> y was not equal to fun x y -> x
-     --> <input>:3:55
-      |
-    3 |     let x : (= fun x y -> x : (x y : Type) -> Type) = fun x y -> y
-      |                                                       ^^^^^^^^^^^^
-    |}];
-  check
-    {|
-    mod {
-      let f : Type -> Type -> Type = fun x y -> Unit
-      let g : Type -> Type -> Type = fun x y -> Unit
-      let x : (= g) = f
+    sig {
+      val T : Type = Bool
+      val x : sig { val y : Bool = ignore; val T : Type = T } = struct (val y = ignore, val T = T)
     }
+    |}]
+;;
+
+let%expect_test "field reordering" =
+  check
+    {|
+(struct {
+  val y = true
+  val T : Type = Bool
+  val x : T = true
+} : sig {
+  val x : Bool
+  val T : Type
+  val y : T
+})
+    |};
+  [%expect {| sig { val x : Bool; val T : Type; val y : T } |}]
+;;
+
+let%expect_test "universes" =
+  check
+    {|
+struct {
+  val x = Type
+  val y = Type
+}
+    |};
+  [%expect {| sig { val x : Sig = Type; val y : Sig = Type } |}];
+  check
+    {|
+struct {
+  val x = Type
+  val y = Type
+  val z = Sig
+}
+    |};
+  [%expect {| sig { val x : Sig = Type; val y : Sig = Type; val z : SIG = Sig } |}];
+  check
+    {|
+struct {
+  val S1 = sig {
+    val x : Type = Int
+    val y : Type = Int
+  }
+  
+  val S2 = sig {
+    val z : Sig = Type
+    val w : Sig
+    val x = sig {
+      val x : Type
+      val z = x
+    }
+  }
+}
     |};
   [%expect
     {|
-    error: Variables were not equal: f != g
-    note: the value f was not equal to g
-     --> <input>:5:23
-      |
-    5 |       let x : (= g) = f
-      |                       ^
+    sig {
+      val S1 : Sig = sig { val x : Type = Int; val y : Type = Int }
+      val S2 :
+        SIG
+      =
+        sig { val z : Sig = Type; val w : Sig; val x : Sig = sig { val x : Type; val z : Type = x } }
+    }
     |}];
   check
     {|
-mod {
-  let x : (= mod { let x = 213; let T = Int }) = mod { let x = 1234; let T = Bool }
+struct {
+  val S1 = sig {
+    val T = Int
+  }
+}
+      |};
+  [%expect {| sig { val S1 : Sig = sig { val T : Type = Int } } |}];
+  check
+    {|
+struct {
+  val S1 = sig {
+    val T
+  }
 }
       |};
   [%expect
     {|
-    error: Base types were not equal: Bool != Int
-    note: the value
-    mod { let x = ignore; let T = Bool }
-    was not equal to
-    mod { let x = ignore; let T = Int }
-     --> <input>:3:50
+    error: Signature declarations require either a type annotation or a definition
+     --> <input>:4:5
       |
-    3 |   let x : (= mod { let x = 213; let T = Int }) = mod { let x = 1234; let T = Bool }
-      |                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    |}];
-  check
-    {|
-      mod {
-        let f : Type -> Type -> Int = fun x y -> 0
-        let g : Type -> Type -> Int = fun x y -> 1
-        let x : (= g) = f
-      }
-      |};
-  [%expect
-    {| sig { let f : Type -> Type -> Int; let g : Type -> Type -> Int; let x : (= g) } |}]
+    4 |     val T
+      |     ^^^^^
+    |}]
 ;;
 
 let%expect_test "eta laws" =
   check
     {|
-mod {
-  let f : Type -> Type = fun x -> Unit
-  let x : (= f) = fun x -> f x
-  let y : (= fun (x : Type) -> f x) = f
-  let S := sig { let T : Type; let U : Type -> Type; let x : T }
-  let m : S = mod {
-    let T := Unit
-    let U := fun (x : Type) -> Unit
-    let x : T = ()
-  } 
-  let z1 : (= m) = mod { let T = m.T; let U = m.U; let x = m.x }
-  let z2 : (= m : sig { let T : Type }) = mod { let T = m.T; let U = Unit }
-  let z3 : (= m : sig { let T : Type }) = m
-  let z4 : (= mod { let T = m.T; let U = m.U; let x = m.x } : S) = m
-  let z5 : (= m) = mod { let T = m.T; let U = fun (x : Type) -> m.U x; let x = m.x }
+struct {
+  val f : Type -> Type = fun x -> Unit
+  val x : sig { val f = f } = struct { val f : Type -> Type = fun x -> f x }
 }
     |};
   [%expect
     {|
     sig {
-      let f : Type -> Type
-      let x : (= f)
-      let y : (= fun x -> f x)
-      let S : (= sig { let T : Type; let U : Type -> Type; let x : T })
-      let m : S
-      let z1 : (= m)
-      let z2 : (= m)
-      let z3 : (= m)
-      let z4 : (= mod { let T = m.T; let U = m.U; let x = m.x })
-      let z5 : (= m)
+      val f : Type -> Type = fun x -> Unit
+      val x : sig { val f : Type -> Type = fun x -> f x } = struct (val f = fun x -> f x)
     }
     |}]
 ;;
 
-let%expect_test "shadowing" =
+let%expect_test "eta laws 2" =
   check
     {|
-mod {
-  let x = 1324
-  let hello := (= fun (x : Type) -> x)
+struct {
+  val f : Type -> Type = fun x -> Unit
+  val x : sig { val f = f } = struct { val f : Type -> Type = fun x -> f x }
+  val y : sig { val f = fun (x : Type) -> f x } = struct { val f = f }
+  val S = sig { val T : Type; val U : Type -> Type; val x : T }
+  val m : S = struct {
+    val T : Type = Unit
+    val U : Type -> Type = fun (x : Type) -> Unit
+    val x : T = ()
+  }
+  val z1 : sig { val v = m } = struct { val v : S = struct { val T = m.T; val U = m.U; val x = m.x } }
+  val z3 : sig { val v = m } = struct { val v = m }
+  val z5 : sig { val v = m } = struct { val v : S = struct { val T = m.T; val U = fun (x : Type) -> m.U x; val x = m.x } }
+}
+|};
+  [%expect
+    {|
+    sig {
+      val f : Type -> Type = fun x -> Unit
+      val x : sig { val f : Type -> Type = fun x -> f x } = struct (val f = fun x -> f x)
+      val y : sig { val f : Type -> Type = f } = struct (val f = f)
+      val S : Sig = sig { val T : Type; val U : Type -> Type; val x : T }
+      val m : S = struct (val T = Unit, val U = fun x -> Unit, val x = ignore)
+      val z1 :
+        sig { val v : S = struct (val T = m.T, val U = m.U, val x = m.x) }
+      =
+        struct (val v = struct (val T = m.T, val U = m.U, val x = m.x))
+      val z3 :
+        sig { val v : sig { val T : Type; val U : Type -> Type; val x : T } = m }
+      =
+        struct (val v = m)
+      val z5 :
+        sig { val v : S = struct (val T = m.T, val U = fun x -> m.U x, val x = m.x) }
+      =
+        struct (val v = struct (val T = m.T, val U = fun x -> m.U x, val x = m.x))
+    }
+    |}]
+;;
+
+let%expect_test "bind" =
+  check
+    {|
+struct{
+  val r : Bool = {
+    bind x = pack true
+    true
+  }
 }
     |};
-  [%expect {| sig { let x : Int; let hello : (= (= fun x -> x)) } |}]
+  [%expect {| sig { val r : Bool = ignore } |}];
+  check
+    {|
+struct {
+  val r : Bool = {
+    bind x = true
+    true
+  }
+}
+    |};
+  [%expect
+    {|
+    error: Expected pack type, got Bool
+    error: while checking the right-hand side of the bind expression
+     --> <input>:4:14
+      |
+    4 |     bind x = true
+      |              ^^^^
+    |}];
+  check
+    {|
+struct {
+  val r : Type = {
+    bind x = true
+    Int
+  }
+}
+      |};
+  [%expect
+    {|
+    error: Universes are not transparent: Type
+    error: while checking the bind expression
+     --> <input>:4:5
+      |
+    4 |     bind x = true
+      |     ^^^^^^^^^^^^^
+    |}];
+  check
+    {|
+struct {
+  val r : sig { val x : Bool; val T = Int } = {
+    bind x = pack true
+    struct (val x = true, val T = Int)
+  }
+  val z : sig { val x = r } = struct(val x = struct(val x = true, val T = Int))
+}
+    |};
+  [%expect
+    {|
+    sig {
+      val r : sig { val x : Bool; val T : Type = Int } = struct (val x = ignore, val T = Int)
+      val z :
+        sig { val x : sig { val x : Bool; val T : Type = Int } = r }
+      =
+        struct (val x = struct (val x = ignore, val T = Int))
+    }
+    |}];
+  check
+    {|
+  struct {
+    val r : (U : Type) -> sig { val x : Bool; val T = U } = {
+      bind x = pack true
+      fun (U : Type) -> struct(val x = true, val T = U)
+    }
+  }
+      |};
+  [%expect
+    {|
+    sig {
+      val r :
+        (U : Type) -> sig { val x : Bool; val T : Type = U }
+      =
+        fun U -> struct (val x = ignore, val T = U)
+    }
+    |}]
 ;;
 
 let%expect_test "record patching" =
   check
     ~show_singletons:true
     {|
-mod {
-  let S := sig { let T : Type; let x : T }
-  let S' := S where { T := Int }
+struct {
+  val S = sig { val T : Type; val x : T }
+  val S' = S where { T = Int }
 }
     |};
   [%expect
     {|
     sig {
-      let S : (= sig { let T : Type; let x : T })
-      let S' : (= sig { let T : (= Int); let x : T.out })
+      val S : Sig = sig { val T : Type; val x : T }
+      val S' : Sig = sig { val T : Type = Int; val x : T.out }
     }
     |}];
   check
     ~show_singletons:true
     {|
-mod {
-  let S := sig {
-    let m : sig {
-      let m : sig {
-        let T : Type
-        let x : T
-      }
-      let x : m.T
-    }
-    let x : m.m.T
-  }
-  let S' := S where { m.m.T := Int }
-}
-      |};
-  [%expect
-    {|
-    sig {
-      let S :
-        (= sig { let m : sig { let m : sig { let T : Type; let x : T }; let x : m.T }; let x : m.m.T })
-      let S' :
-        ( =
-          sig {
-            let m : sig { let m : sig { let T : (= Int); let x : T.out }; let x : m.T.out }
-            let x : m.m.T.out
-          }
-        )
-    }
-    |}];
-  check
-    ~show_singletons:true
-    {|
-  mod {
-    let S := sig {
-      let m : sig {
-        let m : sig {
-          let T : Type
-          let U : Type
-          let V : Type
-          let x : T
-          let y : U
-          let z : V
+  struct {
+    val S = sig {
+      val m : sig {
+        val m : sig {
+          val T : Type
+          val x : T
         }
-        let x : m.T
-        let y : m.U
-        let z : m.V
+        val x : m.T
       }
-      let x : m.m.T
-      let y : m.m.U
-      let z : m.m.V
+      val x : m.m.T
     }
-    let m = mod {
-      let T := Int
-      let U := Bool
-      let V := Unit
-      let x = 123
-      let y = #t
-      let z = ()
-    }
-    let S' := S where { m.m := m }
+    val S' = S where { m.m.T = Int }
   }
         |};
   [%expect
     {|
     sig {
-      let S :
-        ( =
-          sig {
-            let m :
-              sig {
-                let m :
-                  sig { let T : Type; let U : Type; let V : Type; let x : T; let y : U; let z : V }
-                let x : m.T
-                let y : m.U
-                let z : m.V
-              }
-            let x : m.m.T
-            let y : m.m.U
-            let z : m.m.V
-          }
-        )
-      let m :
+      val S :
+        Sig
+      =
+        sig { val m : sig { val m : sig { val T : Type; val x : T }; val x : m.T }; val x : m.m.T }
+      val S' :
+        Sig
+      =
         sig {
-          let T : (= Int)
-          let U : (= Bool)
-          let V : (= Unit)
-          let x : Int
-          let y : Bool
-          let z : Unit
+          val m : sig { val m : sig { val T : Type = Int; val x : T.out }; val x : m.T.out }
+          val x : m.m.T.out
         }
-      let S' :
-        ( =
-          sig {
-            let m :
-              sig {
-                let m :
-                  ( =
-                    mod {
-                      let T = m.T.out
-                      let U = m.U.out
-                      let V = m.V.out
-                      let x = m.x
-                      let y = m.y
-                      let z = m.z
-                    }
-                  )
-                let x : m.out.T
-                let y : m.out.U
-                let z : m.out.V
-              }
-            let x : m.m.out.T
-            let y : m.m.out.U
-            let z : m.m.out.V
-          }
-        )
+    }
+    |}];
+  check
+    ~show_singletons:true
+    {|
+  struct {
+    val S = sig {
+      val m : sig {
+        val m : sig {
+          val T : Type
+          val U : Type
+          val V : Type
+          val x : T
+          val y : U
+          val z : V
+        }
+        val x = m.T
+        val y = m.U
+        val z = m.V
+      }
+      val x = m.m.T
+      val y = m.m.U
+      val z = m.m.V
+    }
+    
+    abstract val m : sig {
+      val T : Type
+      val U : Type
+      val V : Type
+      val x : T
+      val y : U
+      val z : V
+    } = struct {
+      val T = Int
+      val U = Bool
+      val V = Unit
+      val x = 123
+      val y = true
+      val z = ()
+    }
+    
+    val S' = S where { m.m = m }
+  }
+        |};
+  [%expect
+    {|
+    sig {
+      val S :
+        Sig
+      =
+        sig {
+          val m :
+            sig {
+              val m : sig { val T : Type; val U : Type; val V : Type; val x : T; val y : U; val z : V }
+              val x : Type = m.T
+              val y : Type = m.U
+              val z : Type = m.V
+            }
+          val x : Type = m.m.T
+          val y : Type = m.m.U
+          val z : Type = m.m.V
+        }
+      val m : sig { val T : Type; val U : Type; val V : Type; val x : T; val y : U; val z : V }
+      val S' :
+        Sig
+      =
+        sig {
+          val m :
+            sig {
+              val m :
+                sig { val T : Type; val U : Type; val V : Type; val x : T; val y : U; val z : V }
+              =
+                m
+              val x : Type = m.out.T
+              val y : Type = m.out.U
+              val z : Type = m.out.V
+            }
+          val x : Type = m.m.out.T
+          val y : Type = m.m.out.U
+          val z : Type = m.m.out.V
+        }
+    }
+    |}]
+;;
+
+let%expect_test "subtype" =
+  check
+    {|
+struct {
+  abstract val m : sig {
+    val T : Type
+    val x : T
+  } = struct {
+    val T = Int
+    val x = 123
+  }
+  
+  val another : sig {
+    val T : Type
+    val x : T
+  } = m
+}
+    |};
+  [%expect
+    {| sig { val m : sig { val T : Type; val x : T }; val another : sig { val T : Type; val x : T } = m } |}]
+;;
+
+let%expect_test "where commutative" =
+  check
+    {|
+struct {
+  val S1 = sig {
+    val M : sig {
+      val M : sig {
+        val T : Type
+        val x : T
+      }
+    }
+  }
+  
+  val T = Int
+  
+  val M = struct {
+    val M = struct {
+      val T = Int
+      val x : T = 1234
+    }
+  }
+  
+  val S2 = S1 where { M = M; M.M = M.M; M.M.T = M.M.T }
+  val S3 = S1 where { M.M.T = M.M.T; M.M = M.M; M = M }
+  val S4 = S1 where { M.M = M.M; M.M.T = M.M.T; M = M }
+  
+  val EQ1 : sig { val S = S2 } = struct(val S = S3)
+  val EQ2 : sig { val S = S2 } = struct(val S = S4)
+}
+    |};
+  [%expect
+    {|
+    sig {
+      val S1 : Sig = sig { val M : sig { val M : sig { val T : Type; val x : T } } }
+      val T : Type = Int
+      val M :
+        sig {
+          val M :
+            sig { val T : Type = Int; val x : Int = ignore }
+          =
+            struct (val T = Int, val x = ignore)
+        }
+      =
+        struct (val M = struct (val T = Int, val x = ignore))
+      val S2 :
+        Sig
+      =
+        sig {
+          val M :
+            sig {
+              val M : sig { val T : Type = M.M.T; val x : T } = struct (val T = M.M.T, val x = M.M.x)
+            }
+          =
+            struct (val M = struct (val T = M.M.T, val x = M.M.x))
+        }
+      val S3 :
+        Sig
+      =
+        sig {
+          val M :
+            sig {
+              val M : sig { val T : Type = M.M.T; val x : T } = struct (val T = M.M.T, val x = M.M.x)
+            }
+          =
+            struct (val M = struct (val T = M.M.T, val x = M.M.x))
+        }
+      val S4 :
+        Sig
+      =
+        sig {
+          val M :
+            sig {
+              val M : sig { val T : Type = M.M.T; val x : T } = struct (val T = M.M.T, val x = M.M.x)
+            }
+          =
+            struct (val M = struct (val T = M.M.T, val x = M.M.x))
+        }
+      val EQ1 : sig { val S : Sig = S3 } = struct (val S = S3)
+      val EQ2 : sig { val S : Sig = S4 } = struct (val S = S4)
+    }
+    |}]
+;;
+
+let%expect_test "where already transparent" =
+  check
+    ~show_singletons:true
+    {|
+struct {
+  val T = Int
+  
+  val S1 = sig {
+    val T = Int
+  }
+  
+  val S4 = S1
+  
+  val S2 = S1 where { T = Int }
+}
+    |};
+  [%expect
+    {|
+    sig {
+      val T : Type = Int
+      val S1 : Sig = sig { val T : Type = Int }
+      val S4 : Sig = S1.out
+      val S2 : Sig = S1.out
+    }
+    |}]
+;;
+
+let%expect_test "tests" =
+  check
+    {|
+struct {
+  val Eq
+    : (A : Type) -> A -> A -> Sig
+    = fun A x y -> (P : A -> Type) -> P x -> P y
+    
+  val refl
+    : (A : Type) -> (x : A) -> Eq A x x
+    = fun A x P px -> px
+}
+    |};
+  [%expect
+    {|
+    sig {
+      val Eq : (A : Type) -> A -> A -> Sig = fun A x y -> (P : A -> Type) -> P x -> P y
+      val refl : (A : Type) -> (x : A) -> Eq A x x = fun A x P px -> px
     }
     |}]
 ;;

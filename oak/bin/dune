@@ -1,6 +1,17 @@
 (executable
  (name main)
+ (modules main)
  (public_name oak)
+ (preprocess
+  (pps ppx_jane))
+ (flags
+  (:standard -warn-error -A+49 -w -23))
+ (libraries oak core utility))
+
+(executable
+ (name debug)
+ (modules debug)
+ (public_name oak_debug)
  (preprocess
   (pps ppx_jane))
  (flags

@@ -1,19 +1,16 @@
 open Prelude
-
-open struct
-  module Surface = Oak_surface
-  module Syntax = Oak_syntax
-  module Spanned = Utility.Spanned
-  module Span = Utility.Span
-  module Level = Syntax.Level
-  module Index = Syntax.Index
-  module Var = Surface.Var
-  module Diagnostic = Oak_diagnostic
-  module Doc = Utility.Pp.Doc
-  module Source = Oak_source
-  module Common = Oak_common
-  module Abstract = Oak_abstract
-end
+module Surface = Oak_surface
+module Spanned = Utility.Spanned
+module Span = Utility.Span
+module Diagnostic = Oak_diagnostic
+module Doc = Utility.Pp.Doc
+module Source = Oak_source
+module Common = Oak_common
+module Level = Common.Level
+module Index = Common.Index
+module Abstract = Oak_abstract
+module Name = Common.Name
+module Relevancy = Common.Relevancy
 
 module Error = struct
   type t = string Spanned.t
@@ -21,31 +18,31 @@ end
 
 module State = struct
   type t =
-    { var_map : Syntax.Level.t list Var.Table.t
-    ; mutable var_stack : Var.t list
+    { var_map : Level.t list Name.Table.t
+    ; mutable var_stack : Name.t list
     ; mutable errors : Error.t list
     ; mutable context_size : int
     }
 
   let create () =
-    { var_map = Var.Table.create (); var_stack = []; errors = []; context_size = 0 }
+    { var_map = Name.Table.create (); var_stack = []; errors = []; context_size = 0 }
   ;;
 
-  let push_var st var =
-    Hashtbl.add_multi st.var_map ~key:var ~data:(Level.of_int st.context_size);
-    st.var_stack <- var :: st.var_stack;
+  let push_var st name =
+    Hashtbl.add_multi st.var_map ~key:name ~data:(Level.of_int st.context_size);
+    st.var_stack <- name :: st.var_stack;
     st.context_size <- st.context_size + 1
   ;;
 
   let pop_var st =
-    let var = List.hd_exn st.var_stack in
+    let name = List.hd_exn st.var_stack in
     st.var_stack <- List.tl_exn st.var_stack;
-    Hashtbl.remove_multi st.var_map var;
+    Hashtbl.remove_multi st.var_map name;
     st.context_size <- st.context_size - 1
   ;;
 
-  let with_var st var ~f =
-    push_var st var;
+  let with_var st name ~f =
+    push_var st name;
     let result = f () in
     pop_var st;
     result
@@ -54,35 +51,35 @@ module State = struct
   let add_error st error = st.errors <- error :: st.errors
 end
 
-let var_info (var : Var.t) : Syntax.Var_info.t = { name = var.name; pos = var.span.start }
+let generated_name span = Name.create "<generated>" span
 
-let check_vars_distinct st vars =
-  let used_vars = Surface.Var.Hash_set.create () in
+let check_names_distinct st names ~error_message =
+  let used_names = Name.Hash_set.create () in
   let duplicate = ref false in
-  List.iter vars ~f:(fun var ->
-    if Hash_set.mem used_vars var
+  List.iter names ~f:(fun name ->
+    if Hash_set.mem used_names name
     then begin
       duplicate := true;
-      State.add_error st (Spanned.create "Duplicate variable in module" var.span)
+      State.add_error st (Spanned.create error_message name.span)
     end;
-    Hash_set.add used_vars var);
+    Hash_set.add used_names name);
   !duplicate
 ;;
 
 let rec rename_expr st (expr : Surface.expr) : Abstract.expr =
   match expr with
-  | Surface.Expr_var var ->
-    let span = var.span in
-    if String.equal var.name "_"
+  | Surface.Expr_var name ->
+    let span = name.span in
+    if String.equal name.name "_"
     then begin
       State.add_error st (Spanned.create "Cannot use underscore as a variable" span);
       Abstract.Expr_error { span }
     end
     else begin
-      match Hashtbl.find_multi st.var_map var with
-      | level :: _ -> Expr_var { var = Index.of_level st.context_size level; span }
+      match Hashtbl.find_multi st.var_map name with
+      | level :: _ -> Expr_var { index = Index.of_level st.context_size level; span }
       | [] ->
-        State.add_error st (Spanned.create ("Failed to find variable: " ^ var.name) span);
+        State.add_error st (Spanned.create ("Failed to find variable: " ^ name.name) span);
         Abstract.Expr_error { span }
     end
   | Surface.Expr_ann { e; ty; span } ->
@@ -91,29 +88,28 @@ let rec rename_expr st (expr : Surface.expr) : Abstract.expr =
     Expr_ann { e; ty; span }
   | Surface.Expr_app { func; args; span = _ } ->
     let func = rename_expr st func in
-    List.fold args ~init:func ~f:(fun func arg ->
-      let icit, arg =
-        match arg with
-        | Surface.Expr_brack { e; _ } -> Syntax.Icit.Impl, rename_expr st e
-        | _ -> Syntax.Icit.Expl, rename_expr st arg
-      in
-      Abstract.Expr_app
-        { func
-        ; arg
-        ; icit
-        ; span = Span.combine (Abstract.Expr.span func) (Abstract.Expr.span arg)
-        })
-  | Surface.Expr_brack { e = _; span } ->
+    List.fold
+      args
+      ~init:func
+      ~f:(fun func ({ arg; relevancy; icit } : Surface.expr_arg) ->
+        let arg = rename_expr st arg in
+        Abstract.Expr_app
+          { func
+          ; arg
+          ; param_modifiers = ({ icit; relevancy } : Common.Param_modifiers.t)
+          ; span = Span.combine (Abstract.Expr.span func) (Abstract.Expr.span arg)
+          })
+  | Surface.Expr_brack { span; _ } ->
     State.add_error st (Spanned.create "Invalid bracket expression" span);
     Expr_error { span }
-  | Surface.Expr_abs { params; ret_ty = _; body; span } ->
-    let all_vars =
+  | Surface.Expr_fun { params; ret_ty = _; body; span } ->
+    let all_params =
       Non_empty_list.to_list params
       |> List.concat_map ~f:(fun (param : Surface.param) ->
-        Non_empty_list.to_list param.vars
-        |> List.map ~f:(fun var -> var, param.ann, param.icit))
+        Non_empty_list.to_list param.names
+        |> List.map ~f:(fun name -> name, param.ann, param.icit, param.relevancy))
     in
-    rename_abs st all_vars body span
+    rename_fun st all_params body span
   | Surface.Expr_ty_fun { param_tys; body_ty; span } ->
     let all_params =
       Non_empty_list.to_list param_tys
@@ -121,43 +117,42 @@ let rec rename_expr st (expr : Surface.expr) : Abstract.expr =
         let ty =
           Option.value
             param_ty.ty
-            ~default:(Expr_universe { universe = Syntax.Universe.type_; span })
+            ~default:(Surface.Expr_universe { size = Common.Size.type_; span })
         in
-        match param_ty.vars with
-        | [] -> [ None, ty, param_ty.icit ]
-        | vars -> List.map vars ~f:(fun var -> Some var, ty, param_ty.icit))
+        match param_ty.names with
+        | [] -> [ None, ty, param_ty.icit, param_ty.relevancy ]
+        | names ->
+          List.map names ~f:(fun name -> Some name, ty, param_ty.icit, param_ty.relevancy))
     in
     rename_ty_fun st all_params body_ty span
-  | Surface.Expr_proj { mod_e; field; span } ->
-    let mod_e = rename_expr st mod_e in
-    Expr_proj { mod_e; field; span }
-  | Surface.Expr_mod { decls; span } ->
-    let vars =
-      List.filter_map decls ~f:(fun decl ->
-        match decl with
-        | Block_decl_let { var; _ } | Block_decl_bind { var; _ } -> Some var
-        | Block_decl_expr _ -> None)
+  | Surface.Expr_proj { strukt; field; span } ->
+    let strukt = rename_expr st strukt in
+    Expr_proj { strukt; field; span }
+  | Surface.Expr_struct { decls; is_dependent; span } ->
+    let names =
+      List.filter_map decls ~f:(function
+        | Surface.Block_decl_val decl -> Some decl.name
+        | Surface.Block_decl_bind { name; _ } -> Some name
+        | Surface.Block_decl_do _ -> None)
     in
-    let duplicate = check_vars_distinct st vars in
-    if duplicate
+    if check_names_distinct st names ~error_message:"Duplicate variable in struct"
     then Expr_error { span }
-    else begin
-      let decls = rename_decls st decls in
-      Expr_mod { decls; span }
-    end
-  | Surface.Expr_ty_mod { ty_decls; span } ->
-    let ty_decls = rename_ty_decls st ty_decls in
-    Expr_ty_mod { ty_decls; span }
+    else (
+      let decls =
+        if is_dependent then rename_decls st decls else rename_decls_nondependent st decls
+      in
+      Expr_struct { decls; is_dependent; span })
+  | Surface.Expr_ty_struct { field_specs; span } ->
+    let names = List.map field_specs ~f:(fun decl -> decl.name) in
+    if check_names_distinct st names ~error_message:"Duplicate variable in signature"
+    then Expr_error { span }
+    else (
+      let field_specs = rename_field_specs st field_specs in
+      Expr_ty_struct { field_specs; span })
   | Surface.Expr_block { decls; ret; span } -> rename_block st decls ret span
-  | Expr_alias { e; span } ->
-    let e = rename_expr st e in
-    Abstract.Expr_alias { identity = e; span }
-  | Surface.Expr_ty_sing { identity; span } ->
-    let identity = rename_expr st identity in
-    Expr_ty_sing { identity; span }
   | Surface.Expr_literal { literal; span } -> Expr_literal { literal; span }
   | Surface.Expr_core_ty { ty; span } -> Expr_core_ty { ty; span }
-  | Surface.Expr_universe { universe; span } -> Expr_universe { universe; span }
+  | Surface.Expr_universe { size; span } -> Expr_universe { size; span }
   | Surface.Expr_if { cond; body1; body2; span } ->
     let cond = rename_expr st cond in
     let body1 = rename_expr st body1 in
@@ -166,6 +161,7 @@ let rec rename_expr st (expr : Surface.expr) : Abstract.expr =
   | Surface.Expr_ty_pack { ty; span } ->
     let ty = rename_expr st ty in
     Expr_ty_pack { ty; span }
+  | Surface.Expr_alias { e; span = _ } -> rename_expr st e
   | Surface.Expr_pack { e; span } ->
     let e = rename_expr st e in
     Expr_pack { e; span }
@@ -176,12 +172,10 @@ let rec rename_expr st (expr : Surface.expr) : Abstract.expr =
       let rhs = rename_expr st patch.rhs in
       Abstract.Expr_where { e; path = patch.path; rhs; span })
   | Surface.Expr_rec { decls; span } ->
-    List.iter decls ~f:(fun decl ->
-      if decl.is_alias
-      then
-        State.add_error st (Spanned.create "Cannot have alias inside rec block" decl.span));
-    let vars = List.map decls ~f:(fun decl -> decl.var) in
-    let duplicate = check_vars_distinct st vars in
+    let names = List.map decls ~f:(fun decl -> decl.name) in
+    let duplicate =
+      check_names_distinct st names ~error_message:"Duplicate variable in struct"
+    in
     let num_decls = List.length decls in
     let tys =
       List.filter_map decls ~f:(fun decl ->
@@ -196,113 +190,226 @@ let rec rename_expr st (expr : Surface.expr) : Abstract.expr =
     if duplicate || missing_annotation
     then Expr_error { span }
     else begin
-      let tys = List.map tys ~f:(fun ty -> rename_expr st ty) in
-      (* push *)
-      List.iter decls ~f:(fun decl -> State.push_var st decl.var);
+      let tys = List.map tys ~f:(rename_expr st) in
+      List.iter decls ~f:(fun decl -> State.push_var st decl.name);
       let rhs_exprs = List.map decls ~f:(fun decl -> rename_expr st decl.rhs) in
       List.iter decls ~f:(fun _ -> State.pop_var st);
-      (* pop *)
       let decls =
         List.zip_exn tys rhs_exprs
-        |> List.zip_exn vars
-        |> List.map ~f:(fun (var, (ty, rhs)) ->
-          ({ var = var_info var; ty; e = rhs } : Abstract.expr_rec_decl))
+        |> List.zip_exn names
+        |> List.map ~f:(fun (name, (ty, rhs)) ->
+          ({ name; ty; e = rhs } : Abstract.expr_rec_decl))
       in
       Expr_rec { decls; span }
     end
+  | Surface.Expr_data { params; body; span } ->
+    (match rename_data_expr st [] { params; body; span } with
+     | Some data -> Expr_data data
+     | None -> Expr_error { span })
+  | Surface.Expr_data_rec { decls; span } ->
+    let names = List.map decls ~f:(fun decl -> decl.name) in
+    if check_names_distinct st names ~error_message:"Duplicate data declaration"
+    then Expr_error { span }
+    else begin
+      let decls =
+        List.map decls ~f:(fun (decl : Surface.data_decl) ->
+          Option.map (rename_data_expr st decls decl.data) ~f:(fun data ->
+            ({ name = decl.name; data; span = decl.span } : Abstract.data_decl)))
+      in
+      match Option.all decls with
+      | Some decls -> Expr_data_rec { decls; span }
+      | None -> Expr_error { span }
+    end
 
-and rename_abs st vars body span =
-  match vars with
+and rename_rhs st ann rhs span =
+  match ann with
+  | Some ty ->
+    let ty = rename_expr st ty in
+    let rhs = rename_expr st rhs in
+    Abstract.Expr_ann { e = rhs; ty; span }
+  | None -> rename_expr st rhs
+
+and rename_fun st params body span =
+  match params with
   | [] -> rename_expr st body
-  | (var, ann, icit) :: rest ->
+  | (name, ann, icit, relevancy) :: rest ->
     let param_ty = Option.map ann ~f:(rename_expr st) in
-    State.with_var st var ~f:(fun () ->
-      let body = rename_abs st rest body span in
-      Abstract.Expr_abs { var = var_info var; param_ty; icit; body; span })
+    let param_modifiers : Common.Param_modifiers.t = { icit; relevancy } in
+    State.with_var st name ~f:(fun () ->
+      let body = rename_fun st rest body span in
+      Abstract.Expr_fun { name; param_ty; param_modifiers; body; span })
 
 and rename_ty_fun st params body_ty span =
   match params with
   | [] -> rename_expr st body_ty
-  | (var, ty, icit) :: rest ->
+  | (name, ty, icit, relevancy) :: rest ->
     let param_ty = rename_expr st ty in
-    let var = Option.value var ~default:{ Var.name = "_"; span } in
+    let name = Option.value name ~default:(Name.create "_" span) in
+    let param_modifiers : Common.Param_modifiers.t = { icit; relevancy } in
     let body_ty =
-      State.with_var st var ~f:(fun () -> rename_ty_fun st rest body_ty span)
+      State.with_var st name ~f:(fun () -> rename_ty_fun st rest body_ty span)
     in
-    Abstract.Expr_ty_fun { var = var_info var; param_ty; icit; body_ty; span }
+    Abstract.Expr_ty_fun { name; param_ty; param_modifiers; body_ty; span }
+
+and rename_data_expr st decls ({ params; body; span } : Surface.expr_data)
+  : Abstract.expr_data option
+  =
+  let params = rename_data_params st params in
+  (* The declaration names are only in scope inside the *body* *)
+  List.iter decls ~f:(fun decl -> State.push_var st decl.name);
+  let body = rename_data_body st body ~span in
+  List.iter decls ~f:(fun _ -> State.pop_var st);
+  List.iter params ~f:(fun _ -> State.pop_var st);
+  Option.map body ~f:(fun body -> ({ params; body; span } : Abstract.expr_data))
+
+and rename_data_params st (params : Surface.param list) : Abstract.data_param list =
+  let params =
+    List.concat_map params ~f:(fun (param : Surface.param) ->
+      Non_empty_list.to_list param.names
+      |> List.map ~f:(fun name -> name, param.ann, param.span))
+  in
+  let rec loop params =
+    match params with
+    | [] -> []
+    | (name, ann, span) :: rest ->
+      let ty =
+        match ann with
+        | Some ty -> rename_expr st ty
+        | None ->
+          State.add_error
+            st
+            (Spanned.create "Data parameters require type annotations" span);
+          Expr_error { span }
+      in
+      State.push_var st name;
+      ({ name; ty } : Abstract.data_param) :: loop rest
+  in
+  loop params
+
+and rename_data_body st body ~span : Abstract.data_body option =
+  let fields, constructors = List.partition_map body ~f:Fn.id in
+  if List.is_empty constructors
+  then (
+    let names = List.map fields ~f:(fun (field : Surface.data_field) -> field.name) in
+    if check_names_distinct st names ~error_message:"Duplicate field in data record"
+    then None
+    else
+      Some
+        (Data_record
+           { fields =
+               List.map fields ~f:(fun ({ name; ty } : Surface.data_field) ->
+                 ({ name; ty = rename_expr st ty } : Abstract.data_field))
+           }))
+  else if List.is_empty fields
+  then (
+    let names =
+      List.map constructors ~f:(fun (constructor : Surface.data_constructor) ->
+        constructor.name)
+    in
+    if
+      check_names_distinct st names ~error_message:"Duplicate constructor in data variant"
+    then None
+    else
+      Some
+        (Data_variant
+           { constructors =
+               List.map constructors ~f:(fun ({ name; ty } : Surface.data_constructor) ->
+                 ({ name; ty = Option.map ty ~f:(rename_expr st) }
+                  : Abstract.data_constructor))
+           }))
+  else (
+    State.add_error
+      st
+      (Spanned.create "Data body cannot mix fields and constructors" span);
+    None)
 
 and rename_block st decls ret span =
   match decls with
   | [] -> rename_expr st ret
-  | Surface.Block_decl_let { var; ann; rhs; is_alias; _ } :: rest ->
-    (* Important that the annotation goes first, before the alias. *)
-    let rhs =
-      match ann with
-      | Some ty ->
-        let ty = rename_expr st ty in
-        let rhs = rename_expr st rhs in
-        Abstract.Expr_ann { e = rhs; ty; span }
-      | None -> rename_expr st rhs
-    in
-    let rhs =
-      if is_alias
-      then Abstract.Expr_alias { identity = rhs; span = Abstract.Expr.span rhs }
-      else rhs
-    in
-    State.with_var st var ~f:(fun () ->
+  | Surface.Block_decl_val ({ name; ann; rhs; relevancy; is_abstract; _ } as decl) :: rest
+    ->
+    let rhs = rename_rhs st ann rhs decl.span in
+    State.with_var st name ~f:(fun () ->
       let body = rename_block st rest ret span in
-      Abstract.Expr_let { var = var_info var; rhs; body; span })
-  | Surface.Block_decl_bind { var; rhs; span = _ } :: rest ->
+      Abstract.Expr_let { name; rhs; relevancy; is_abstract; body; span })
+  | Surface.Block_decl_bind { name; rhs; span = decl_span } :: rest ->
     let rhs = rename_expr st rhs in
-    State.with_var st var ~f:(fun () ->
+    State.with_var st name ~f:(fun () ->
       let body = rename_block st rest ret span in
-      Abstract.Expr_bind { var = var_info var; rhs; body; span })
-  | Surface.Block_decl_expr { e; span } :: rest ->
+      Abstract.Expr_bind { name; rhs; body; span = decl_span })
+  | Surface.Block_decl_do { e; span = decl_span } :: rest ->
     let e = rename_expr st e in
-    State.with_var st { name = "<generated>"; span } ~f:(fun () ->
+    let name = generated_name decl_span in
+    State.with_var st name ~f:(fun () ->
       let body = rename_block st rest ret span in
-      Abstract.Expr_let { var = Abstract.Var_info.generated; rhs = e; body; span })
+      Abstract.Expr_let
+        { name
+        ; rhs = e
+        ; relevancy = Relevancy.Relevant
+        ; is_abstract = false
+        ; body
+        ; span = decl_span
+        })
 
 and rename_decls st decls =
   match decls with
   | [] -> []
   | (decl : Surface.block_decl) :: rest -> begin
     match decl with
-    | Block_decl_let { var; ann; is_alias; rhs; span } ->
-      let rhs =
-        match ann with
-        | Some ty ->
-          let ty = rename_expr st ty in
-          let rhs = rename_expr st rhs in
-          Abstract.Expr_ann { e = rhs; ty; span }
-        | None -> rename_expr st rhs
-      in
-      let rhs =
-        if is_alias
-        then Abstract.Expr_alias { identity = rhs; span = Abstract.Expr.span rhs }
-        else rhs
-      in
-      let d : Abstract.expr_decl = { var = var_info var; e = rhs; span } in
-      State.with_var st var ~f:(fun () -> d :: rename_decls st rest)
-    | Block_decl_bind { span; _ } ->
+    | Surface.Block_decl_val { name; ann; rhs; relevancy; is_abstract; span } ->
+      let rhs = rename_rhs st ann rhs span in
+      let d : Abstract.expr_decl = { name; relevancy; e = rhs; is_abstract; span } in
+      State.with_var st name ~f:(fun () -> d :: rename_decls st rest)
+    | Surface.Block_decl_bind { span; _ } ->
       State.add_error
         st
-        (Spanned.create "Bind declarations are not allowed at the top level" span);
+        (Spanned.create "Bind declarations are not allowed inside structs" span);
       rename_decls st rest
-    | Block_decl_expr { span; _ } ->
+    | Surface.Block_decl_do { span; _ } ->
       State.add_error
         st
-        (Spanned.create "Expression declarations are not allowed at the top level" span);
+        (Spanned.create "Do declarations are not allowed inside structs" span);
       rename_decls st rest
   end
 
-and rename_ty_decls st ty_decls =
-  match ty_decls with
+and rename_decls_nondependent st decls =
+  match decls with
   | [] -> []
-  | (decl : Surface.ty_decl) :: rest ->
-    let ty = rename_expr st decl.ty in
-    let d : Abstract.expr_ty_decl = { var = var_info decl.var; ty; span = decl.span } in
-    State.with_var st decl.var ~f:(fun () -> d :: rename_ty_decls st rest)
+  | (decl : Surface.block_decl) :: rest -> begin
+    match decl with
+    | Surface.Block_decl_val { name; ann; rhs; relevancy; is_abstract; span } ->
+      let rhs = rename_rhs st ann rhs span in
+      let d : Abstract.expr_decl = { name; relevancy; e = rhs; is_abstract; span } in
+      d :: rename_decls_nondependent st rest
+    | Surface.Block_decl_bind { span; _ } ->
+      State.add_error
+        st
+        (Spanned.create "Bind declarations are not allowed inside structs" span);
+      rename_decls_nondependent st rest
+    | Surface.Block_decl_do { span; _ } ->
+      State.add_error
+        st
+        (Spanned.create "Do declarations are not allowed inside structs" span);
+      rename_decls_nondependent st rest
+  end
+
+and rename_field_specs st field_specs =
+  match field_specs with
+  | [] -> []
+  | (decl : Surface.field_spec) :: rest ->
+    if Option.is_none decl.ty && Option.is_none decl.rhs
+    then
+      State.add_error
+        st
+        (Spanned.create
+           "Signature declarations require either a type annotation or a definition"
+           decl.span);
+    let ty = Option.map decl.ty ~f:(rename_expr st) in
+    let rhs = Option.map decl.rhs ~f:(rename_expr st) in
+    let d : Abstract.expr_field_spec =
+      { name = decl.name; relevancy = decl.relevancy; ty; rhs; span = decl.span }
+    in
+    State.with_var st decl.name ~f:(fun () -> d :: rename_field_specs st rest)
 ;;
 
 let error_to_diagnostic (source : Source.t) (e : Error.t) : Diagnostic.t =

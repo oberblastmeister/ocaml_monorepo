@@ -1,10 +1,6 @@
 open Prelude
-
-open struct
-  module Name_list = Oak_common.Name_list
-  module Syntax = Oak_syntax
-  module Evaluate = Oak_evaluate
-end
+module Core = Oak_core
+module Common = Oak_common
 
 module Make (Config : sig
     val show_singletons : bool
@@ -41,20 +37,26 @@ struct
        ^^ Doc.char '}')
   ;;
 
-  let is_spine_atom (spine : Syntax.spine) =
-    match spine with
-    | Empty | Snoc (_, (Elim_proj _ | Elim_out)) -> true
-    | Snoc (_, Elim_app _) -> false
+  let args docs =
+    Doc.group
+      (Doc.char '('
+       ^^ Doc.indent 2 (Doc.break0 ^^ Doc.concat docs ~sep:(Doc.char ',' ^^ Doc.break1))
+       ^^ Doc.break0
+       ^^ Doc.char ')')
   ;;
 
-  let rec pp_value (names : Name_list.t) (value : Syntax.value) =
+  let is_spine_atom (spine : Core.spine) =
+    match spine with
+    | Empty | Snoc (_, (Proj _ | Out)) -> true
+    | Snoc (_, App _) -> false
+  ;;
+
+  let rec pp_value (names : Core.name_env) (value : Core.value) =
     match value with
     | Value_ignore -> Doc.string "ignore"
     | Value_neutral neutral -> Doc.group (pp_neutral names neutral)
-    | Value_core_ty ty -> Syntax.Core_ty.pp ty
-    | Value_universe u -> Syntax.Universe.pp u
-    | Value_abs abs ->
-      let params, names, body = collect_abs_params names [] abs in
+    | Value_fun abs ->
+      let params, names, body = collect_fun_params names [] abs in
       Doc.group
         (Doc.string "fun"
          ^^ Doc.break1
@@ -62,127 +64,153 @@ struct
          ^^ Doc.break1
          ^^ Doc.string "->"
          ^^ Doc.indent 2 (Doc.break1 ^^ pp_value names body))
-    | Syntax.Value_ty_fun { var; param_ty; icit; body_ty } ->
-      let params, names', body_ty =
-        collect_ty_fun_params names [] { var; param_ty; icit; body_ty }
-      in
+    | Value_sing_in e ->
+      if Config.show_singletons
+      then
+        Doc.group (Doc.string "in" ^^ Doc.indent 2 (Doc.break1 ^^ pp_value_atom names e))
+      else pp_value names e
+    | Value_struct strukt -> pp_struct names strukt
+    | Value_encode_ty { ty; props = _ } -> pp_ty names ty
+
+  and pp_ty (names : Core.name_env) (ty : Core.ty) =
+    match ty with
+    | Ty_universe props -> Common.Size.pp props.size
+    | Ty_sing { identity; ty = _ } ->
+      Doc.group (parens (Doc.string "=" ^^ Doc.break1 ^^ pp_value names identity))
+    | Ty_struct strukt -> pp_ty_struct names strukt
+    | Ty_fun ty_fun ->
+      let params, names, body_ty = collect_ty_fun_params names [] ty_fun in
       Doc.group
         (Doc.concat params ~sep:(Doc.space ^^ Doc.string "->" ^^ Doc.break1)
          ^^ Doc.space
          ^^ Doc.string "->"
          ^^ Doc.break1
-         ^^ pp_value names' body_ty)
-    | Value_ty_sing { identity; ty = _ } ->
-      Doc.group (parens (Doc.string "=" ^^ Doc.break1 ^^ pp_value names identity))
-    | Value_sing_in e ->
-      if Config.show_singletons
-      then Doc.group (Doc.string "in" ^^ Doc.indent 2 (Doc.break1 ^^ pp_atom names e))
-      else pp_atom names e
-    | Value_mod { fields } ->
-      let decls =
-        List.map fields ~f:(fun ({ name; e } : Syntax.value_field) ->
-          Doc.group
-            (Doc.string "let"
-             ^^ Doc.space
-             ^^ Doc.string name
-             ^^ Doc.space
-             ^^ Doc.string "="
-             ^^ Doc.indent 2 (Doc.break1 ^^ pp_value names e)))
-      in
-      Doc.group (Doc.string "mod" ^^ Doc.space ^^ block decls)
-    | Value_ty_mod ty_mod -> pp_ty_mod names ty_mod
-    | Value_ty_pack ty -> Doc.group (Doc.string "Pack" ^^ Doc.break1 ^^ pp_atom names ty)
-    | Value_ty_meta meta -> begin
-      match meta.state with
-      | Meta_link ty | Meta_solved ty -> pp_value names ty
-      | Meta_unsolved -> Syntax.Meta.pp meta
-    end
+         ^^ pp_ty names body_ty)
+    | Ty_core ty -> Common.Core_ty.pp ty
+    | Ty_pack ty -> Doc.group (Doc.string "Pack" ^^ Doc.break1 ^^ pp_ty_atom names ty)
+    | Ty_decode e -> Doc.group (pp_neutral names e)
 
-  and pp_ty_mod names (ty_mod : Syntax.value_ty_mod_closure) =
+  and pp_struct names ({ field_impls } : Core.value_struct) =
+    let decls =
+      List.map field_impls ~f:(fun ({ name; e } : Core.value_field_impl) ->
+        Doc.group
+          (Doc.string "val"
+           ^^ Doc.space
+           ^^ Doc.string name
+           ^^ Doc.space
+           ^^ Doc.string "="
+           ^^ Doc.indent 2 (Doc.break1 ^^ pp_value names e)))
+    in
+    Doc.group (Doc.string "struct" ^^ Doc.space ^^ args decls)
+
+  and pp_ty_struct names (ty : Core.ty_struct) =
     let (~names:_, ..), decls =
       List.fold_map
-        ty_mod.ty_decls
-        ~init:(~names, ~closure_env:ty_mod.env)
-        ~f:(fun (~names, ~closure_env) decl ->
-          let ty = Evaluate.eval closure_env decl.ty in
-          let name = decl.var.name in
-          let doc =
-            Doc.group
-              (Doc.string "let"
-               ^^ Doc.space
-               ^^ Doc.string name
-               ^^ Doc.space
-               ^^ Doc.string ":"
-               ^^ Doc.indent 2 (Doc.break1 ^^ pp_value names ty))
+        (Core.Ty_struct.field_locations ty)
+        ~init:(~names, ~running_field_impls:Bwd.Empty)
+        ~f:(fun (~names, ~running_field_impls) field ->
+          let running_struct_value =
+            Core.Value.create_struct (Bwd.to_list running_field_impls)
           in
-          ( ( ~names:(Name_list.push name names)
-            , ~closure_env:
-                (Syntax.Env.push (Syntax.Value.free (Name_list.next_level names)) closure_env)
-            )
-          , doc ))
+          let field_spec = Core.Ty_struct.proj running_struct_value ty field in
+          let ty = field_spec.ty in
+          let name = field_spec.name.name in
+          let doc =
+            match ty with
+            | Ty_sing { identity; ty } ->
+              Doc.group
+                (Doc.string "val"
+                 ^^ Doc.space
+                 ^^ Doc.string name
+                 ^^ Doc.space
+                 ^^ Doc.string ":"
+                 ^^ Doc.indent 2 (Doc.break1 ^^ pp_ty names ty)
+                 ^^ Doc.break1
+                 ^^ Doc.string "="
+                 ^^ Doc.indent 2 (Doc.break1 ^^ pp_value names identity))
+            | _ ->
+              Doc.group
+                (Doc.string "val"
+                 ^^ Doc.space
+                 ^^ Doc.string name
+                 ^^ Doc.space
+                 ^^ Doc.string ":"
+                 ^^ Doc.indent 2 (Doc.break1 ^^ pp_ty names ty))
+          in
+          let level = Core.Level.of_int (Core.Name_env.length names) in
+          let names = Core.Name_env.push field_spec.name names in
+          let running_field_impls =
+            Bwd.snoc
+              running_field_impls
+              (Core.Value_field_impl.create field.name (Core.Value.free level))
+          in
+          (~names, ~running_field_impls), doc)
     in
     Doc.group (Doc.string "sig" ^^ Doc.space ^^ block decls)
 
-  and collect_abs_params
+  and collect_fun_params
         names
         (docs : Doc.t list)
-        ({ var; body; icit } : Syntax.value_abs)
+        ({ name; body = _; icit = _ } as value : Core.value_fun)
     =
-    let level = Name_list.next_level names in
-    let arg = Syntax.Value.free level in
-    let param_doc =
-      if Syntax.Icit.equal icit Impl
-      then bracks (Doc.string var.name)
-      else Doc.string var.name
-    in
-    let names = Name_list.push var.name names in
-    let docs = param_doc :: docs in
-    let body = Evaluate.eval_closure1 body arg in
+    let level = Core.Level.of_int (Core.Name_env.length names) in
+    let arg = Core.Value.free level in
+    let names = Core.Name_env.push name names in
+    let docs = Doc.string name.name :: docs in
+    let body = Core.Fun.app value arg in
     match body with
-    | Syntax.Value_abs abs -> collect_abs_params names docs abs
+    | Value_fun abs -> collect_fun_params names docs abs
     | _ -> List.rev docs, names, body
 
-  and collect_ty_fun_params names acc_params (ty : Syntax.value_ty_fun) =
+  and collect_ty_fun_params
+        names
+        acc_params
+        ({ name; param_ty; param_modifiers; _ } as ty_fun : Core.ty_fun)
+    =
     let param_doc =
-      if String.equal ty.var.name "_"
-      then pp_non_arrow names ty.param_ty
-      else begin
-        let param =
-          Doc.string ty.var.name
-          ^^ Doc.space
-          ^^ Doc.string ":"
-          ^^ Doc.break1
-          ^^ pp_value names ty.param_ty
-        in
-        if Syntax.Icit.equal ty.icit Impl then bracks param else parens param
-      end
+      if String.equal name.name "_"
+      then pp_ty_non_arrow names param_ty
+      else
+        parens
+          (Doc.string name.name
+           ^^ Doc.space
+           ^^ Doc.string ":"
+           ^^ Doc.break1
+           ^^ pp_ty names param_ty)
     in
-    let arg = Syntax.Value.free (Name_list.next_level names) in
-    let names' = Name_list.push ty.var.name names in
-    let body_ty = Evaluate.eval_closure1 ty.body_ty arg in
+    let arg = Core.Value.free (Core.Level.of_int (Core.Name_env.length names)) in
+    let names = Core.Name_env.push name names in
+    let body_ty =
+      Core.Ty_fun.app ty_fun ({ e = arg; icit = param_modifiers.icit } : Core.value_arg)
+    in
     match body_ty with
-    | Syntax.Value_ty_fun tf' ->
-      collect_ty_fun_params names' (param_doc :: acc_params) tf'
+    | Ty_fun ty_fun -> collect_ty_fun_params names (param_doc :: acc_params) ty_fun
     | _ ->
       let params = List.rev (param_doc :: acc_params) in
-      params, names', body_ty
+      params, names, body_ty
 
-  and pp_non_arrow (name : Name_list.t) (value : Syntax.value) =
-    match value with
-    | Value_ty_fun _ -> pp_atom name value
-    | _ -> pp_value name value
+  and pp_ty_non_arrow (names : Core.name_env) (ty : Core.ty) =
+    match ty with
+    | Ty_fun _ -> pp_ty_atom names ty
+    | _ -> pp_ty names ty
 
-  and pp_atom (names : Name_list.t) (value : Syntax.value) =
+  and pp_value_atom (names : Core.name_env) (value : Core.value) =
     match value with
     | Value_ignore -> pp_value names value
     | Value_neutral { head; spine } when is_spine_atom spine ->
       Doc.group (pp_neutral names { head; spine })
-    | Value_core_ty _ | Value_universe _ | Value_ty_sing _ -> pp_value names value
+    | Value_encode_ty { ty; props = _ } -> pp_ty_atom names ty
     | _ -> parens (pp_value names value)
 
-  and pp_var names var = Doc.string (Name_list.get names var)
+  and pp_ty_atom (names : Core.name_env) (ty : Core.ty) =
+    match ty with
+    | Ty_universe _ | Ty_core _ -> pp_ty names ty
+    | Ty_decode e when is_spine_atom e.spine -> pp_ty names ty
+    | _ -> parens (pp_ty names ty)
 
-  and pp_proj names ({ head; spine } : Syntax.neutral) field =
+  and pp_var names var = Doc.string (Core.Name_env.get_level_exn names var).name
+
+  and pp_proj names ({ head; spine } : Core.neutral) field =
     let doc =
       if is_spine_atom spine
       then pp_neutral names { head; spine }
@@ -190,30 +218,23 @@ struct
     in
     doc ^^ Doc.break0 ^^ Doc.char '.' ^^ Doc.string field
 
-  and pp_icit names arg icit =
-    if Syntax.Icit.equal icit Expl then pp_atom names arg else bracks (pp_value names arg)
+  and pp_arg names ({ e; icit = _ } : Core.value_arg) = pp_value_atom names e
 
-  and pp_neutral names ({ head; spine } : Syntax.neutral) =
+  and pp_neutral names ({ head; spine } : Core.neutral) =
     match spine with
-    | Snoc (spine, Elim_app { arg; icit }) ->
-      pp_neutral names { head; spine } ^^ Doc.break1 ^^ pp_icit names arg icit
-    | Snoc (spine, Elim_out) ->
+    | Snoc (spine, App arg) ->
+      pp_neutral names { head; spine } ^^ Doc.break1 ^^ pp_arg names arg
+    | Snoc (spine, Out) ->
       if Config.show_singletons
       then pp_proj names { head; spine } "out"
       else pp_neutral names { head; spine }
-    | Snoc (spine, Elim_proj { field; field_index = _ }) ->
-      pp_proj names { head; spine } field
-    | Empty -> pp_var names head
+    | Snoc (spine, Proj { name; index = _ }) -> pp_proj names { head; spine } name
+    | Empty -> pp_head names head
 
-  and pp_elim names (elim : Syntax.elim) =
-    match elim with
-    | Elim_app { arg; icit } -> Doc.break1 ^^ pp_icit names arg icit
-    | Elim_proj { field; field_index = _ } ->
-      Doc.break0 ^^ Doc.char '.' ^^ Doc.string field
-    | Elim_out ->
-      if Config.show_singletons
-      then Doc.break0 ^^ Doc.char '.' ^^ Doc.string "out"
-      else Doc.empty
+  and pp_head names (head : Core.head) =
+    match head with
+    | Free free -> pp_var names free
+    | Data _ | Data_rec _ -> failwith ""
   ;;
 end
 
@@ -224,4 +245,13 @@ let pp_value ?(show_singletons = false) names value =
     end)
   in
   P.pp_value names value
+;;
+
+let pp_ty ?(show_singletons = false) names ty =
+  let module P =
+    Make (struct
+      let show_singletons = show_singletons
+    end)
+  in
+  P.pp_ty names ty
 ;;

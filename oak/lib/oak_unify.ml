@@ -1,445 +1,476 @@
 open Prelude
-open Oak_syntax
+module Core = Oak_core
+module Bwd = Utility.Bwd
+module Common = Oak_common
+module Core_ty = Common.Core_ty
+module Icit = Common.Icit
+module Relevancy = Common.Relevancy
+module Size = Common.Size
+module Diagnostic = Oak_diagnostic
+module Context = Oak_context
+module State = Oak_elaborate_state
+module Typed = Oak_typed
 
-open struct
-  module Spanned = Utility.Spanned
-  module Common = Oak_common
-  module Name_list = Common.Name_list
-  module Diagnostic = Oak_diagnostic
-  module Pretty = Oak_pretty
-  module Context = Oak_context
-  module Infer_simple = Oak_infer_simple
-  module Universe = Common.Universe
-  module Evaluate = Oak_evaluate
-  module Close = Evaluate.Close
-end
+let is_id_coe = function
+  | Typed.Id_coe -> true
+  | Typed.Fun_coe _ | Typed.Struct_coe _ -> false
+;;
 
-exception Type_mismatch of Diagnostic.Part.t
-
-let raise_type_mismatch part = raise_notrace (Type_mismatch part)
-
-let rec occurs_check_adjust (cx : Context.t) (meta : meta_unsolved) (ty : ty) : ty =
-  match Context.unfold cx ty with
-  | Value_ignore | Value_mod _ | Value_abs _ | Value_sing_in _ -> failwith "not a type"
-  | Value_core_ty _ | Value_universe _ -> ty
-  | Value_neutral neutral ->
-    let neutral = occurs_check_adjust_neutral cx meta neutral in
-    Value_neutral (Whnf_neutral.to_neutral neutral)
-  | Value_ty_meta meta' ->
-    if meta'.meta.id = meta.meta.id
-    then
-      raise_type_mismatch
-        (Diagnostic.Part.create
-           (Doc.string "Occurs check failed: meta variable "
-            ^^ Meta.pp meta.meta
-            ^^ Doc.string " occurs in its own solution"));
-    if meta.meta.context_size < meta'.meta.context_size
-    then Meta_unsolved.adjust_context_size meta' meta.meta.context_size;
-    Value_ty_meta meta'.meta
-  | Value_ty_sing { identity; ty } ->
-    let identity = occurs_check_adjust cx meta identity in
-    let ty = occurs_check_adjust cx meta ty in
-    Value_ty_sing { identity; ty }
-  | Value_ty_fun ({ var; param_ty; icit; body_ty = _ } as ty) ->
-    let param_ty = occurs_check_adjust cx meta param_ty in
-    let cx' = Context.bind var param_ty cx in
-    let body_ty =
-      occurs_check_adjust cx' meta (Evaluate.Fun_ty.app ty (Context.next_free cx))
-      |> Context.quote cx'
-      |> Evaluate.close_single (Context.next_level cx)
-    in
-    Value_ty_fun { var; param_ty; icit; body_ty = { env = Env.empty; body = body_ty } }
-  | Value_ty_pack ty ->
-    let ty = occurs_check_adjust cx meta ty in
-    Value_ty_pack ty
-  | Value_ty_mod ty ->
-    let (~cx:_, ..), ty_decls =
-      List.fold_map
-        ty.ty_decls
-        ~init:(~cx, ~closure_env:ty.env, ~close:Close.empty)
-        ~f:(fun (~cx, ~closure_env, ~close) { var; ty } ->
-          let ty = occurs_check_adjust cx meta (Evaluate.eval closure_env ty) in
-          ( ( ~cx:(Context.bind var ty cx)
-            , ~closure_env:(Env.push ty closure_env)
-            , ~close:(Close.add_exn (Context.next_level cx) Index.zero (Close.lift 1 close))
-            )
-          , ({ var; ty = Context.quote cx ty |> Evaluate.close close } : term_ty_decl) ))
-    in
-    Value_ty_mod { env = Env.empty; ty_decls }
-
-and occurs_check_adjust_neutral
-      (cx : Context.t)
-      (meta : meta_unsolved)
-      (neutral : whnf_neutral)
-  : whnf_neutral
+let mk_fun_coe (arg_coe : Typed.runtime_coe) (ret_coe : Typed.runtime_coe)
+  : Typed.runtime_coe
   =
-  if neutral.head.level >= meta.meta.context_size
-  then
-    raise_type_mismatch
-      (Diagnostic.Part.create
-         (Doc.string "Free variable "
-          ^^ Context.pp_value cx (Value.free neutral.head)
-          ^^ Doc.string " is out of scope of meta variable "
-          ^^ Meta.pp meta.meta));
-  let spine =
-    Bwd.map neutral.spine ~f:(fun elim ->
-      match elim with
-      | Whnf_elim_app { arg; icit } ->
-        let arg = occurs_check_adjust cx meta arg in
-        Whnf_elim_app { arg; icit }
-      | Whnf_elim_proj _ -> elim)
-  in
-  { head = neutral.head; spine }
+  if is_id_coe arg_coe && is_id_coe ret_coe
+  then Typed.Id_coe
+  else Typed.Fun_coe { arg_coe; ret_coe }
 ;;
 
-let solve_meta (cx : Context.t) (meta : meta_unsolved) (ty : ty) =
-  let universe = Infer_simple.infer_value_universe cx.ty_env ty in
-  if not (Universe.is_type universe)
-  then
-    raise_type_mismatch
-      (Diagnostic.Part.create
-         (Context.pp_value cx ty
-          ^^ Doc.string " was not of kind Type when solving meta variable "
-          ^^ Context.pp_value cx (Value_ty_meta meta.meta)));
-  let ty = occurs_check_adjust cx meta ty in
-  Meta_unsolved.link_to meta ty
-;;
-
-(* precondition: e1 and e2 must have type ty. ty must be an element of some universe. *)
-(* TODO: implement approximate conversion checking *)
-let rec unify (cx : Context.t) (e1 : value) (e2 : value) (ty : value) : unit =
-  match Context.unfold cx ty with
-  | Value_ignore | Value_mod _ | Value_abs _ | Value_sing_in _ ->
-    raise_s [%message "Not a type" (ty : value)]
-  (* These have kind Type, so can be ignored *)
-  | Value_ty_meta _ | Value_ty_pack _ | Value_core_ty _ -> ()
-  (* Singletons can be immediately eliminated using unwrap, and since both values have the same singleton type they must be equal. *)
-  | Value_ty_sing _ -> ()
-  | Value_universe _ ->
-    (* both types are elements of some universe *)
-    unify_ty cx e1 e2
-  | Value_neutral neutral ->
-    (* If e1 and e2 have a type that is neutral, we can think of their type as being abstract. *)
-    let universe =
-      Infer_simple.infer_neutral cx.ty_env (Whnf_neutral.to_neutral neutral)
-      |> Context.unfold cx
-      |> Whnf.universe_val_exn
-    in
-    if not (Universe.equal universe Universe.type_)
-    then begin
-      let ty1 = Context.unfold cx e1 |> Whnf.neutral_val_exn in
-      let ty2 = Context.unfold cx e2 |> Whnf.neutral_val_exn in
-      let _ = unify_neutral cx ty1 ty2 in
-      ()
-    end
-  | Value_ty_fun ty -> begin
-    let var_value = Context.next_free cx in
-    unify
-      (Context.bind ty.var ty.param_ty cx)
-      (Evaluate.Value.app e1 var_value ty.icit)
-      (Evaluate.Value.app e2 var_value ty.icit)
-      (Evaluate.Fun_ty.app ty var_value)
+let mk_struct_coe is_same_shape (field_coes : Typed.runtime_field_coe list)
+  : Typed.runtime_coe
+  =
+  if is_same_shape
+  then begin
+    if List.for_all field_coes ~f:(fun field_coe -> is_id_coe field_coe.coe)
+    then Id_coe
+    else Struct_coe field_coes
   end
-  | Value_ty_mod ty ->
-    let closure_env = ty.env in
-    let _ =
-      List.foldi ty.ty_decls ~init:closure_env ~f:(fun field_index closure_env ty_decl ->
-        let e1 = Evaluate.Value.proj e1 ty_decl.var.name field_index in
-        let e2 = Evaluate.Value.proj e2 ty_decl.var.name field_index in
-        unify cx e1 e2 (Evaluate.eval closure_env ty_decl.ty);
-        Env.push e1 closure_env)
-    in
-    ()
-
-(*
-  precondition: both ty1 and ty2 must be an element of some universe, but they may be different universes.
-*)
-and unify_ty (cx : Context.t) (ty1 : ty) (ty2 : ty) : unit =
-  match Context.unfold cx ty1, Context.unfold cx ty2 with
-  | Value_ty_meta meta, ty2 -> solve_meta cx meta (Whnf.to_value ty2)
-  | ty1, Value_ty_meta meta -> solve_meta cx meta (Whnf.to_value ty1)
-  | Value_ty_sing ty1, Value_ty_sing ty2 ->
-    unify_ty cx ty1.ty ty2.ty;
-    (* we now know that ty1 = ty2 *)
-    unify cx ty1.identity ty2.identity ty1.ty
-  | Value_universe universe1, Value_universe universe2 ->
-    if not (Universe.equal universe1 universe2)
-    then
-      raise_type_mismatch
-        (Diagnostic.Part.create
-           (Doc.string "Universes were not equal: "
-            ^^ Universe.pp universe1
-            ^^ Doc.string " != "
-            ^^ Universe.pp universe2))
-  | Value_ty_fun ty1, Value_ty_fun ty2 ->
-    unify_ty cx ty1.param_ty ty2.param_ty;
-    unify_ty
-      (Context.bind ty1.var ty1.param_ty cx)
-      (Evaluate.Fun_ty.app ty1 (Context.next_free cx))
-      (Evaluate.Fun_ty.app ty2 (Context.next_free cx))
-  | Value_ty_pack ty1, Value_ty_pack ty2 -> unify_ty cx ty1 ty2
-  | Value_ty_mod ty1, Value_ty_mod ty2 ->
-    let zipped_ty_decls =
-      match List.zip ty1.ty_decls ty2.ty_decls with
-      | Ok t -> t
-      | Unequal_lengths ->
-        raise_type_mismatch
-          (Diagnostic.Part.create
-             (Doc.string "Record had different number of declarations. This record had"
-              ^^ Doc.space
-              ^^ Doc.string (Int.to_string (List.length ty1.ty_decls))
-              ^^ Doc.indent 2 (Doc.break1 ^^ Context.pp_value cx (Value_ty_mod ty1))
-              ^^ Context.pp_value cx (Value_ty_mod ty2)
-              ^^ Doc.break1
-              ^^ Doc.string "while this record had"
-              ^^ Doc.space
-              ^^ Doc.string (Int.to_string (List.length ty1.ty_decls))
-              ^^ Doc.indent 2 (Doc.break1 ^^ Context.pp_value cx (Value_ty_mod ty2))))
-    in
-    let _ =
-      List.fold
-        zipped_ty_decls
-        ~init:(~closure_env1:ty1.env, ~closure_env2:ty2.env, ~cx)
-        ~f:(fun (~closure_env1, ~closure_env2, ~cx) (ty_decl1, ty_decl2) ->
-          let name1 = ty_decl1.var.name in
-          let name2 = ty_decl2.var.name in
-          if not (String.equal name1 name2)
-          then
-            raise_type_mismatch
-              (Diagnostic.Part.create
-                 (Doc.string "Declaration name not equal: "
-                  ^^ Doc.string name1
-                  ^^ Doc.string " != "
-                  ^^ Doc.string name2));
-          let ty1 = Evaluate.eval closure_env1 ty_decl1.ty in
-          let ty2 = Evaluate.eval closure_env2 ty_decl2.ty in
-          unify_ty cx ty1 ty2;
-          let var_value = Context.next_free cx in
-          ( ~closure_env1:(Env.push var_value closure_env1)
-          , ~closure_env2:(Env.push var_value closure_env2)
-          , ~cx:(Context.bind ty_decl1.var ty1 cx) ))
-    in
-    ()
-  | Value_core_ty ty1, Value_core_ty ty2 ->
-    if not (Core_ty.equal ty1 ty2)
-    then
-      raise_type_mismatch
-        (Diagnostic.Part.create
-           (Doc.string "Base types were not equal: "
-            ^^ Context.pp_value cx (Value_core_ty ty1)
-            ^^ Doc.string " != "
-            ^^ Context.pp_value cx (Value_core_ty ty2)))
-  | Value_neutral ty1, Value_neutral ty2 ->
-    (* ty1 and ty2 are elements of some universe, and the kind of a universe is at least Kind *)
-    let _ = unify_neutral cx ty1 ty2 in
-    ()
-  | _ ->
-    raise_type_mismatch
-      (Diagnostic.Part.create
-         (Doc.string "Types were not equal: "
-          ^^ Context.pp_value cx ty1
-          ^^ Doc.string " != "
-          ^^ Context.pp_value cx ty2))
-
-(*
-  Precondition: if e1 : t1 and e2 : t2 then t1 : U_i and t2 : U_j where i > 0 and j > 0, so both types must have universe at least Kind.
-  In other words, both inputs must be at least types.
-  Checks if e1 = e2. Returns the kind that they are equivalent at.
-*)
-and unify_neutral (cx : Context.t) (ty1 : whnf_neutral) (ty2 : whnf_neutral) : value =
-  if not (Level.equal ty1.head ty2.head)
-  then
-    raise_type_mismatch
-      (Diagnostic.Part.create
-         (Doc.string "Variables were not equal: "
-          ^^ Context.pp_value cx (Value.free ty1.head)
-          ^^ Doc.string " != "
-          ^^ Context.pp_value cx (Value.free ty2.head)));
-  let spine1 = Bwd.to_list ty1.spine in
-  let spine2 = Bwd.to_list ty2.spine in
-  let zipped_spines =
-    match List.zip spine1 spine2 with
-    | Unequal_lengths ->
-      raise_type_mismatch
-        (Diagnostic.Part.create
-           (Doc.string "Types were not equal (spine lengths differ)"))
-    | Ok t -> t
-  in
-  let ~ty, .. =
-    List.fold
-      zipped_spines
-      ~init:(~spine:Bwd.Empty, ~ty:(Context.level_var_ty cx ty1.head))
-      ~f:(fun (~spine, ~ty) (elim1, elim2) ->
-        let ty =
-          match elim1, elim2 with
-          | ( Whnf_elim_app { arg = arg1; icit = icit1 }
-            , Whnf_elim_app { arg = arg2; icit = icit2 } ) ->
-            assert (Icit.equal icit1 icit2);
-            let func_kind = Context.unfold cx ty |> Whnf.ty_fun_val_exn in
-            unify cx arg1 arg2 func_kind.param_ty;
-            Evaluate.Fun_ty.app func_kind arg1
-          | ( Whnf_elim_proj { field = field1; field_index = field_index1; _ }
-            , Whnf_elim_proj { field = field2; field_index = field_index2; _ } ) ->
-            if not (field_index1 = field_index2)
-            then
-              raise_type_mismatch
-                (Diagnostic.Part.create
-                   (Doc.string "Fields were not equal in a projection: "
-                    ^^ Doc.string field1
-                    ^^ Doc.string " != "
-                    ^^ Doc.string field2));
-            Evaluate.Ty.proj
-              cx.ty_env
-              (Value_neutral { head = ty1.head; spine })
-              ty
-              field_index1
-          | _ ->
-            raise_type_mismatch
-              (Diagnostic.Part.create
-                 (Doc.string "Types were not equal: "
-                  ^^ Context.pp_value cx (Value_neutral (Whnf_neutral.to_neutral ty1))
-                  ^^ Doc.string " != "
-                  ^^ Context.pp_value cx (Value_neutral (Whnf_neutral.to_neutral ty2))))
-        in
-        ~spine:(spine <: Whnf_elim.to_elim elim1), ~ty)
-  in
-  ty
+  else Typed.Struct_coe field_coes
 ;;
 
-let rec coerce_singleton cx (e : term) (ty : ty) : term * whnf =
-  match Context.unfold cx ty with
-  | Value_ty_sing { identity = _; ty = kind } ->
-    coerce_singleton cx (Term_sing_out e) kind
+let rec coerce_singleton (cx : Context.t) (e : Core.term) (ty : Core.ty)
+  : Core.term * Core.ty
+  =
+  match Core.Ty.whnf cx.ty_env ty with
+  | Ty_sing { identity = _; ty = kind } -> coerce_singleton cx (Term_sing_out e) kind
   | ty -> e, ty
 ;;
 
-(*
-  Check whether A <= B, and coerces the term if it is.
-  Returns none when the types were equal, to prevent useless eta expansion
-*)
-let rec sub cx (e : term) (ty1 : ty) (ty2 : ty) : term option =
-  match Context.unfold cx ty1, Context.unfold cx ty2 with
-  | Value_universe ty1, Value_universe ty2 ->
-    if not (Universe.equal ty1 ty2)
-    then
-      raise_type_mismatch
-        (Diagnostic.Part.create
-           (Doc.string "Universes were not equal: "
-            ^^ Common.Universe.pp ty1
-            ^^ Doc.string " != "
-            ^^ Common.Universe.pp ty2));
-    None
-  | Value_core_ty ty1, Value_core_ty ty2 ->
+let rec unify_value
+          (st : State.t)
+          (cx : Context.t)
+          (e1 : Core.value)
+          (e2 : Core.value)
+          (ty : Core.ty)
+  : unit
+  =
+  match Core.Ty.whnf cx.ty_env ty with
+  (* These are all transparent *)
+  | Ty_pack _ | Ty_core _ | Ty_sing _ -> ()
+  | Ty_universe _props -> unify_ty st cx (Core.Value.decode e1) (Core.Value.decode e2)
+  | Ty_struct ty ->
+    let _ =
+      List.foldi
+        ty.field_specs
+        ~init:Bwd.Empty
+        ~f:(fun index running_field_impls (field_spec : Core.term_field_spec) ->
+          let field : Core.field_loc = { name = field_spec.name.name; index } in
+          let e1 = Core.Value.proj e1 field in
+          let e2 = Core.Value.proj e2 field in
+          let running_struct_value =
+            Core.Value.create_struct (Bwd.to_list running_field_impls)
+          in
+          unify_value st cx e1 e2 (Core.Ty_struct.proj running_struct_value ty field).ty;
+          Bwd.snoc running_field_impls (Core.Value_field_impl.create field.name e1))
+    in
+    ()
+  | Ty_fun ty ->
+    let var_value = Context.next_free cx in
+    let arg : Core.value_arg = { e = var_value; icit = ty.param_modifiers.icit } in
+    unify_value
+      st
+      (Context.bind ty.name ty.param_ty cx)
+      (Core.Value.app e1 arg)
+      (Core.Value.app e2 arg)
+      (Core.Ty_fun.app ty arg)
+  | Ty_decode ty ->
+    let props = Core.Neutral.infer_universe cx.ty_env ty in
+    if not (Size.is_type props.size)
+    then begin
+      let e1 = Core.Value.whnf cx.ty_env e1 |> Core.Value.neutral_val_exn in
+      let e2 = Core.Value.whnf cx.ty_env e2 |> Core.Value.neutral_val_exn in
+      unify_neutral st cx e1 e2
+    end
+
+and unify_ty (st : State.t) (cx : Context.t) (ty1 : Core.ty) (ty2 : Core.ty) =
+  match Core.Ty.whnf cx.ty_env ty1, Core.Ty.whnf cx.ty_env ty2 with
+  | Ty_universe props1, Ty_universe props2 -> unify_ty_props st props1 props2
+  | Ty_sing ty1, Ty_sing ty2 ->
+    unify_ty st cx ty1.ty ty2.ty;
+    unify_value st cx ty1.identity ty2.identity ty1.ty
+  | Ty_fun ty1, Ty_fun ty2 ->
+    unify_ty st cx ty1.param_ty ty2.param_ty;
+    unify_param_modifiers st ty1.param_modifiers ty2.param_modifiers;
+    let arg : Core.value_arg =
+      { e = Context.next_free cx; icit = ty1.param_modifiers.icit }
+    in
+    unify_ty
+      st
+      (Context.bind ty1.name ty1.param_ty cx)
+      (Core.Ty_fun.app ty1 arg)
+      (Core.Ty_fun.app ty2 arg)
+  | Ty_struct ty1, Ty_struct ty2 ->
+    let zipped_field_specs =
+      match List.zip ty1.field_specs ty2.field_specs with
+      | Ok t -> t
+      | Unequal_lengths ->
+        State.throw
+          st
+          [ Diagnostic.Part.create
+              (Doc.string "Record had different number of declarations. This record had"
+               ^^ Doc.space
+               ^^ Doc.string (Int.to_string (List.length ty1.field_specs))
+               ^^ Doc.indent 2 (Doc.break1 ^^ Context.pp_ty cx (Ty_struct ty1))
+               ^^ Context.pp_ty cx (Ty_struct ty2)
+               ^^ Doc.break1
+               ^^ Doc.string "while this record had"
+               ^^ Doc.space
+               ^^ Doc.string (Int.to_string (List.length ty1.field_specs))
+               ^^ Doc.indent 2 (Doc.break1 ^^ Context.pp_ty cx (Ty_struct ty2)))
+          ]
+    in
+    let _ =
+      List.foldi
+        zipped_field_specs
+        ~init:(~running_field_impls1:Bwd.Empty, ~running_field_impls2:Bwd.Empty, ~cx)
+        ~f:
+          (fun
+            index
+            (~running_field_impls1, ~running_field_impls2, ~cx)
+            (field_spec1, field_spec2)
+          ->
+          let name1 = field_spec1.name.name in
+          let name2 = field_spec2.name.name in
+          if not (String.equal name1 name2)
+          then
+            State.throw
+              st
+              [ Diagnostic.Part.create
+                  (Doc.string "Declaration name not equal: "
+                   ^^ Doc.string name1
+                   ^^ Doc.string " != "
+                   ^^ Doc.string name2)
+              ];
+          unify_relevancy st field_spec1.relevancy field_spec2.relevancy;
+          let field = Core.Field_loc.create name1 index in
+          let running_struct_value1 =
+            Core.Value.create_struct (Bwd.to_list running_field_impls1)
+          in
+          let running_struct_value2 =
+            Core.Value.create_struct (Bwd.to_list running_field_impls2)
+          in
+          let ty1 = (Core.Ty_struct.proj running_struct_value1 ty1 field).ty in
+          let ty2 = (Core.Ty_struct.proj running_struct_value2 ty2 field).ty in
+          unify_ty st cx ty1 ty2;
+          let var_value = Context.next_free cx in
+          ( ~running_field_impls1:(Bwd.snoc
+                                     running_field_impls1
+                                     (Core.Value_field_impl.create name1 var_value))
+          , ~running_field_impls2:(Bwd.snoc
+                                     running_field_impls2
+                                     (Core.Value_field_impl.create name2 var_value))
+          , ~cx:(Context.bind field_spec1.name ty1 cx) ))
+    in
+    ()
+  | Ty_core ty1, Ty_core ty2 ->
     if not (Core_ty.equal ty1 ty2)
     then
-      raise_type_mismatch
-        (Diagnostic.Part.create
-           (Doc.string "Core types were not equal: "
-            ^^ Context.pp_value cx (Value_core_ty ty1)
-            ^^ Doc.string " != "
-            ^^ Context.pp_value cx (Value_core_ty ty2)));
-    None
-  | Value_ty_sing ty1, Value_ty_sing ty2 ->
-    let e' = sub cx (Term_sing_out e) ty1.ty ty2.ty in
+      State.throw
+        st
+        [ Diagnostic.Part.create
+            (Doc.string "Base types were not equal: "
+             ^^ Context.pp_ty cx (Ty_core ty1)
+             ^^ Doc.string " != "
+             ^^ Context.pp_ty cx (Ty_core ty2))
+        ]
+  | Ty_pack ty1, Ty_pack ty2 -> unify_ty st cx ty1 ty2
+  | Ty_decode ty1, Ty_decode ty2 ->
+    (* both ty1 and ty2 are whnf, or otherwise the decode is not whnf *)
+    unify_neutral st cx ty1 ty2
+  | _, _ ->
+    State.throw
+      st
+      [ Diagnostic.Part.create
+          (Doc.string "Types were not equal: "
+           ^^ Context.pp_ty cx ty1
+           ^^ Doc.string " != "
+           ^^ Context.pp_ty cx ty2)
+      ]
+
+and unify_icit (st : State.t) (icit1 : Icit.t) (icit2 : Icit.t) =
+  if not (Icit.equal icit1 icit2)
+  then
+    State.throw
+      st
+      [ Diagnostic.Part.create
+          (Doc.string "Icitness was not equal: "
+           ^^ Icit.pp icit1
+           ^^ Doc.string " != "
+           ^^ Icit.pp icit2)
+      ]
+
+and unify_param_modifiers
+      (st : State.t)
+      (param_modifiers1 : Common.Param_modifiers.t)
+      (param_modifiers2 : Common.Param_modifiers.t)
+  : unit
+  =
+  unify_icit st param_modifiers1.icit param_modifiers2.icit;
+  unify_relevancy st param_modifiers1.relevancy param_modifiers2.relevancy
+
+and unify_relevancy (st : State.t) (relevancy1 : Relevancy.t) (relevancy2 : Relevancy.t)
+  : unit
+  =
+  if not (Relevancy.equal relevancy1 relevancy2)
+  then
+    State.throw
+      st
+      [ Diagnostic.Part.create
+          (Doc.string "Relevancy was not equal: "
+           ^^ Relevancy.pp relevancy1
+           ^^ Doc.string " != "
+           ^^ Relevancy.pp relevancy2)
+      ]
+
+and unify_ty_props (st : State.t) (props1 : Core.Ty_props.t) (props2 : Core.Ty_props.t)
+  : unit
+  =
+  if not (Size.equal props1.size props2.size)
+  then
+    State.throw
+      st
+      [ Diagnostic.Part.create
+          (Doc.string "Sizes were not equal: "
+           ^^ Size.pp props1.size
+           ^^ Doc.string " != "
+           ^^ Size.pp props2.size)
+      ]
+
+(* precondition: should be whnf *)
+and unify_neutral (st : State.t) (cx : Context.t) (e1 : Core.neutral) (e2 : Core.neutral)
+  : unit
+  =
+  unify_head st cx e1.head e2.head;
+  let spine1 = Bwd.to_list e1.spine in
+  let spine2 = Bwd.to_list e2.spine in
+  let zipped_spines =
+    match List.zip spine1 spine2 with
+    | Unequal_lengths ->
+      State.throw
+        st
+        [ Diagnostic.Part.create
+            (Doc.string "Types were not equal (spine lengths differ)")
+        ]
+    | Ok t -> t
+  in
+  let _ =
+    List.fold
+      zipped_spines
+      ~init:(~spine:Bwd.Empty, ~ty:(Core.Head.infer_ty cx.ty_env e1.head))
+      ~f:(fun (~spine, ~ty) (frame1, frame2) ->
+        let ty =
+          match frame1, frame2 with
+          | Out, _ | _, Out -> failwith "should be whnf"
+          | App arg1, App arg2 ->
+            let fun_ty = Core.Ty.whnf cx.ty_env ty |> Core.Ty.ty_fun_val_exn in
+            unify_value st cx arg1.e arg2.e fun_ty.param_ty;
+            Core.Ty_fun.app fun_ty arg1
+          | Proj field1, Proj field2 ->
+            if not (field1.index = field2.index)
+            then
+              State.throw
+                st
+                [ Diagnostic.Part.create
+                    (Doc.string "Fields were not equal in a projection: "
+                     ^^ Doc.string field1.name
+                     ^^ Doc.string " != "
+                     ^^ Doc.string field2.name)
+                ];
+            (Core.Ty.proj cx.ty_env (Value_neutral { head = e1.head; spine }) ty field1)
+              .ty
+          | _ ->
+            State.throw
+              st
+              [ Diagnostic.Part.create
+                  (Doc.string "Types were not equal: "
+                   ^^ Context.pp_value cx (Value_neutral e1)
+                   ^^ Doc.string " != "
+                   ^^ Context.pp_value cx (Value_neutral e2))
+              ]
+        in
+        ~spine:(spine <: frame1), ~ty)
+  in
+  ()
+
+and unify_head (st : State.t) (cx : Context.t) (e1 : Core.head) (e2 : Core.head) : unit =
+  match e1, e2 with
+  | Free e1, Free e2 ->
+    if not (Core.Level.equal e1 e2)
+    then
+      State.throw
+        st
+        [ Diagnostic.Part.create
+            (Doc.string "Variables were not equal: "
+             ^^ Context.pp_value cx (Core.Value.free e1)
+             ^^ Doc.string " != "
+             ^^ Context.pp_value cx (Core.Value.free e2))
+        ]
+  | _ -> failwith ""
+
+(* TODO: fix this, the runtime_coe is wrong *)
+(* postcondition: if term is None then runtime_coe must be Id_coe *)
+and sub (st : State.t) (cx : Context.t) (e : Core.term) (ty1 : Core.ty) (ty2 : Core.ty)
+  : Core.term option * Typed.runtime_coe
+  =
+  match Core.Ty.whnf cx.ty_env ty1, Core.Ty.whnf cx.ty_env ty2 with
+  | Ty_universe props1, Ty_universe props2 ->
+    (* TODO: maybe do cumulativity here *)
+    unify_ty_props st props1 props2;
+    None, Typed.Id_coe
+  | Ty_core ty1, Ty_core ty2 ->
+    if not (Core_ty.equal ty1 ty2)
+    then
+      State.throw
+        st
+        [ Diagnostic.Part.create
+            (Doc.string "Base types were not equal: "
+             ^^ Context.pp_ty cx (Ty_core ty1)
+             ^^ Doc.string " != "
+             ^^ Context.pp_ty cx (Ty_core ty2))
+        ];
+    None, Typed.Id_coe
+  | Ty_sing ty1, Ty_sing ty2 ->
+    let e', coe = sub st cx (Term_sing_out e) ty1.ty ty2.ty in
     begin match e' with
     | None ->
-      unify cx ty1.identity ty2.identity ty1.ty;
-      None
+      unify_value st cx ty1.identity ty2.identity ty1.ty;
+      None, coe
     | Some e' ->
-      unify cx (Evaluate.eval Env.empty e') ty2.identity ty2.ty;
-      Some (Term_sing_in e')
+      unify_value st cx (Core.Term.eval Core.Value_env.empty e') ty2.identity ty2.ty;
+      ((Some (Term_sing_in e'), coe) : Core.term option * Typed.runtime_coe)
     end
-  | Value_ty_sing _, _ ->
+  | Ty_sing _, _ ->
     let e, ty1 = coerce_singleton cx e ty1 in
-    Some (coerce cx e (Whnf.to_value ty1) ty2)
-  | _, Value_ty_sing ty2 ->
-    let e = coerce cx e ty1 ty2.ty in
-    unify cx (Evaluate.eval Env.empty e) ty2.identity ty2.ty;
-    Some (Term_sing_in e)
-  | Value_ty_fun ty1, Value_ty_fun ty2 ->
-    let var = ty2.var in
-    let free = Level.of_int (Context.size cx) in
-    let arg_var_value = Value.free free in
-    let cx = Context.bind var ty2.param_ty cx in
-    let arg_var_term = Context.quote cx arg_var_value in
-    let arg = sub cx arg_var_term ty2.param_ty ty1.param_ty in
-    begin match arg with
-    | None ->
-      let body =
-        sub
-          cx
-          (Term_app { func = e; arg = arg_var_term; icit = ty1.icit })
-          (Evaluate.Fun_ty.app ty1 arg_var_value)
-          (Evaluate.Fun_ty.app ty2 arg_var_value)
-      in
-      Option.map body ~f:(fun body ->
-        Term_abs { var; body = Evaluate.close_single free body; icit = ty2.icit })
-    | Some arg ->
-      let arg_value = Evaluate.eval Env.empty arg in
-      let body =
-        coerce
-          cx
-          (Term_app { func = e; arg; icit = ty1.icit })
-          (Evaluate.Fun_ty.app ty1 arg_value)
-          (Evaluate.Fun_ty.app ty2 arg_value)
-      in
-      Some (Term_abs { var; body = Evaluate.close_single free body; icit = ty2.icit })
-    end
-  | Value_ty_mod ty1, Value_ty_mod ty2 ->
-    let value = Evaluate.eval Env.empty e in
-    let ty1_map =
-      List.fold_mapi ty1.ty_decls ~init:ty1.env ~f:(fun field_index closure_env ty_decl ->
-        let proj_ty = Evaluate.eval closure_env ty_decl.ty in
-        let field_name = ty_decl.var.name in
-        ( Env.push (Evaluate.Value.proj value field_name field_index) closure_env
-        , (field_name, (field_index, proj_ty)) ))
-      |> snd
-      |> String.Map.of_alist_exn
+    let e', coe = sub st cx e ty1 ty2 in
+    Some (Option.value ~default:e e'), coe
+  | _, Ty_sing ty2 ->
+    let e', coe = sub st cx e ty1 ty2.ty in
+    let e' = Option.value ~default:e e' in
+    unify_value st cx (Core.Term.eval Core.Value_env.empty e') ty2.identity ty2.ty;
+    ((Some (Term_sing_in e'), coe) : Core.term option * Typed.runtime_coe)
+  | Ty_fun ty1, Ty_fun ty2 ->
+    unify_param_modifiers st ty1.param_modifiers ty2.param_modifiers;
+    let free = Context.next_level cx in
+    let arg_var_value = Context.next_free cx in
+    let cx = Context.bind ty2.name ty2.param_ty cx in
+    let arg_var_term = Core.Value.quote arg_var_value in
+    let arg', arg_coe = sub st cx arg_var_term ty2.param_ty ty1.param_ty in
+    let arg_term = Option.value ~default:arg_var_term arg' in
+    let arg_value = Core.Term.eval Core.Value_env.empty arg_term in
+    let app_term : Core.term =
+      Term_app
+        { func = e
+        ; arg = ({ e = arg_term; icit = ty1.param_modifiers.icit } : Core.term_arg)
+        }
     in
-    let (~did_coerce, ..), fields =
-      List.fold_map
-        ty2.ty_decls
-        ~init:(~did_coerce:false, ~closure_env:ty2.env)
-        ~f:(fun (~did_coerce, ~closure_env) ty2_decl ->
-          let field_name = ty2_decl.var.name in
-          let ty1_field_index, ty1_proj_ty =
-            match Map.find ty1_map field_name with
+    let body', ret_coe =
+      sub
+        st
+        cx
+        app_term
+        (Core.Ty_fun.app
+           ty1
+           ({ e = arg_value; icit = ty1.param_modifiers.icit } : Core.value_arg))
+        (Core.Ty_fun.app
+           ty2
+           ({ e = arg_value; icit = ty2.param_modifiers.icit } : Core.value_arg))
+    in
+    let runtime_coe = mk_fun_coe arg_coe ret_coe in
+    let body_term = Option.value ~default:app_term body' in
+    if Option.is_none arg' && Option.is_none body'
+    then None, Typed.Id_coe
+    else
+      (( Some
+           (Term_fun
+              { name = ty2.name
+              ; icit = ty2.param_modifiers.icit
+              ; body = Core.Term.close_single free body_term
+              })
+       , runtime_coe )
+       : Core.term option * Typed.runtime_coe)
+  | Ty_struct ty1, Ty_struct ty2 ->
+    let value1 = Core.Term.eval Core.Value_env.empty e in
+    let ty1_name_to_index =
+      Core.Ty_struct.field_locations ty1
+      |> List.map ~f:(fun field -> field.name, field.index)
+      |> String.Table.of_alist_exn
+    in
+    let ty2_field_locations = Core.Ty_struct.field_locations ty2 in
+    let ~did_coerce, ~running_field_impls2, ~running_field_coes =
+      List.fold
+        ty2_field_locations
+        ~init:
+          ( ~did_coerce:false
+          , ~running_field_impls2:Bwd.Empty
+          , ~running_field_coes:Bwd.Empty )
+        ~f:(fun (~did_coerce, ~running_field_impls2, ~running_field_coes) field2 ->
+          let field1 =
+            match Hashtbl.find ty1_name_to_index field2.name with
+            | Some index -> ({ name = field2.name; index } : Core.field_loc)
             | None ->
-              raise_type_mismatch
-                (Diagnostic.Part.create
-                   (Doc.string "Module is not a subtype: could not find field "
-                    ^^ Doc.string field_name))
-            | Some t -> t
+              State.throw
+                st
+                [ Diagnostic.Part.create
+                    (Doc.string "Source struct is missing field "
+                     ^^ Doc.string field2.name
+                     ^^ Doc.string " required by the target signature")
+                ]
           in
-          let proj_term =
-            Term_proj { mod_e = e; field = field_name; field_index = ty1_field_index }
+          let running_struct_value2 =
+            Core.Value.create_struct (Bwd.to_list running_field_impls2)
           in
-          let coerced_proj_term =
-            sub cx proj_term ty1_proj_ty (Evaluate.eval closure_env ty2_decl.ty)
+          let field_impl1 = Core.Value.proj value1 field1 in
+          let field_spec1 = Core.Ty_struct.proj value1 ty1 field1 in
+          let field_spec2 = Core.Ty_struct.proj running_struct_value2 ty2 field2 in
+          unify_relevancy st field_spec1.relevancy field_spec2.relevancy;
+          let coerced_field_impl2, field_coe =
+            sub st cx (Core.Value.quote field_impl1) field_spec1.ty field_spec2.ty
           in
-          let did_coerce = did_coerce || Option.is_some coerced_proj_term in
-          let coerced_proj_term = Option.value coerced_proj_term ~default:proj_term in
-          let field : term_field = { name = field_name; e = coerced_proj_term } in
-          ( ( ~did_coerce
-            , ~closure_env:(Env.push (Evaluate.eval Env.empty coerced_proj_term) closure_env)
-            )
-          , field ))
+          let did_coerce = did_coerce || Option.is_some coerced_field_impl2 in
+          let coerced_field_impl2 =
+            Option.value ~default:(Core.Value.quote field_impl1) coerced_field_impl2
+          in
+          let value_field_impl2 : Core.value_field_impl =
+            { name = field2.name
+            ; e = Core.Term.eval Core.Value_env.empty coerced_field_impl2
+            }
+          in
+          let field_coe : Typed.runtime_field_coe = { field = field2; coe = field_coe } in
+          ( ~did_coerce
+          , ~running_field_impls2:(Bwd.snoc running_field_impls2 value_field_impl2)
+          , ~running_field_coes:(Bwd.snoc running_field_coes field_coe) ))
     in
-    if not did_coerce then None else Some (Term_mod { fields })
+    let field_impls2 = Bwd.to_list running_field_impls2 in
+    let field_coes = Bwd.to_list running_field_coes in
+    let is_same_shape =
+      match
+        List.for_all2
+          (Core.Ty_struct.field_locations ty1)
+          (Core.Ty_struct.field_locations ty2)
+          ~f:(fun field1 field2 -> String.equal field1.name field2.name)
+      with
+      | Ok x -> x
+      | Unequal_lengths -> false
+    in
+    let runtime_coe = mk_struct_coe is_same_shape field_coes in
+    if not did_coerce
+    then None, Typed.Id_coe
+    else
+      Some (Core.Value.quote (Value_struct { field_impls = field_impls2 })), runtime_coe
   | _ ->
-    (* Otherwise fallback to checking for equivalence *)
-    unify_ty cx ty1 ty2;
-    None
-
-and coerce cx e ty1 ty2 = sub cx e ty1 ty2 |> Option.value ~default:e
-
-let catch_type_mismatch f =
-  try Ok (f ()) with
-  | Type_mismatch part -> Error part
+    unify_ty st cx ty1 ty2;
+    None, Typed.Id_coe
 ;;
 
-let unify cx e1 e2 ty = catch_type_mismatch (fun () -> unify cx e1 e2 ty)
-let unify_ty cx ty1 ty2 = catch_type_mismatch (fun () -> unify_ty cx ty1 ty2)
-let unify_neutral cx ty1 ty2 = catch_type_mismatch (fun () -> unify_neutral cx ty1 ty2)
-let sub cx e ty1 ty2 = catch_type_mismatch (fun () -> sub cx e ty1 ty2)
-let coerce cx e ty1 ty2 = catch_type_mismatch (fun () -> coerce cx e ty1 ty2)
+let coerce st cx e ty1 ty2 =
+  let e', _ = sub st cx e ty1 ty2 in
+  Option.value e' ~default:e
+;;

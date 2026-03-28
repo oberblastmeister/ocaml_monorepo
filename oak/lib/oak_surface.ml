@@ -1,33 +1,15 @@
 open Prelude
-
-open struct
-  module Span = Utility.Span
-  module Common = Oak_common
-end
-
+module Span = Utility.Span
+module Common = Oak_common
 module Core_ty = Common.Core_ty
-module Universe = Common.Universe
+module Size = Common.Size
 module Literal = Common.Literal
 module Icit = Common.Icit
-
-module Var = struct
-  module T = struct
-    type t =
-      { name : string
-      ; span : Span.t [@equal.ignore] [@compare.ignore] [@hash.ignore]
-      }
-    [@@deriving sexp_of, compare, equal, hash]
-  end
-
-  include T
-  include Comparable.Make_plain (T)
-  include Hashable.Make_plain (T)
-
-  let create name span = { name; span }
-end
+module Name = Common.Name
+module Relevancy = Common.Relevancy
 
 type expr =
-  | Expr_var of Var.t
+  | Expr_var of Name.t
   | Expr_ann of
       { e : expr
       ; ty : expr
@@ -35,10 +17,10 @@ type expr =
       }
   | Expr_app of
       { func : expr
-      ; args : expr list
+      ; args : expr_arg list
       ; span : Span.t
       }
-  | Expr_abs of
+  | Expr_fun of
       { params : param Non_empty_list.t
       ; ret_ty : expr option
       ; body : expr
@@ -50,26 +32,22 @@ type expr =
       ; span : Span.t
       }
   | Expr_proj of
-      { mod_e : expr
+      { strukt : expr
       ; field : string
       ; span : Span.t
       }
-  | Expr_mod of
+  | Expr_struct of
       { decls : block_decl list
+      ; is_dependent : bool
       ; span : Span.t
       }
-  | Expr_ty_mod of
-      { ty_decls : ty_decl list
+  | Expr_ty_struct of
+      { field_specs : field_spec list
       ; span : Span.t
       }
   | Expr_block of
       { decls : block_decl list
       ; ret : expr
-      ; span : Span.t
-      }
-    (* Also known as the singleton type, or the static extent.  *)
-  | Expr_ty_sing of
-      { identity : expr
       ; span : Span.t
       }
   | Expr_literal of
@@ -81,7 +59,7 @@ type expr =
       ; span : Span.t
       }
   | Expr_universe of
-      { universe : Universe.t
+      { size : Size.t
       ; span : Span.t
       }
   | Expr_if of
@@ -111,7 +89,7 @@ type expr =
       ; span : Span.t
       }
   | Expr_rec of
-      { decls : let_decl list
+      { decls : val_decl list
       ; span : Span.t
       }
   | Expr_where of
@@ -119,6 +97,39 @@ type expr =
       ; patches : where_patch list
       ; span : Span.t
       }
+  | Expr_data_rec of
+      { decls : data_decl list
+      ; span : Span.t
+      }
+  | Expr_data of expr_data
+
+and data_decl =
+  { name : Name.t
+  ; data : expr_data
+  ; span : Span.t
+  }
+
+and expr_data =
+  { params : param list
+  ; body : (data_field, data_constructor) Either.t list
+  ; span : Span.t
+  }
+
+and data_field =
+  { name : Name.t
+  ; ty : expr
+  }
+
+and data_constructor =
+  { name : Name.t
+  ; ty : expr option
+  }
+
+and expr_arg =
+  { arg : expr
+  ; relevancy : Relevancy.t
+  ; icit : Icit.t
+  }
 
 and where_patch =
   { path : string Non_empty_list.t
@@ -127,49 +138,46 @@ and where_patch =
   }
 
 and block_decl =
-  | Block_decl_let of let_decl
+  | Block_decl_val of val_decl
   | Block_decl_bind of
-      { var : Var.t
+      { name : Name.t
       ; rhs : expr
       ; span : Span.t
       }
-  | Block_decl_expr of
+  | Block_decl_do of
       { e : expr
       ; span : Span.t
       }
 
-and let_decl =
-  { var : Var.t
+and val_decl =
+  { relevancy : Relevancy.t
+  ; name : Name.t
   ; ann : expr option
-  ; is_alias : bool
+  ; is_abstract : bool
   ; rhs : expr
   ; span : Span.t
   }
 
-and decl =
-  { var : Var.t
-  ; ann : expr option
-  ; is_alias : bool
-  ; e : expr
-  ; span : Span.t
-  }
-
-and ty_decl =
-  { var : Var.t
-  ; ty : expr
+and field_spec =
+  { relevancy : Relevancy.t
+  ; name : Name.t
+  ; ty : expr option
+  ; rhs : expr option
   ; span : Span.t
   }
 [@@deriving sexp_of]
 
 and param =
-  { vars : Var.t Non_empty_list.t
+  { relevancy : Relevancy.t
+  ; names : Name.t Non_empty_list.t
   ; ann : expr option
   ; icit : Icit.t
   ; span : Span.t
   }
 
 and param_ty =
-  { vars : Var.t list
+  { relevancy : Relevancy.t
+  ; names : Name.t list
   ; ty : expr option (* can only be none when icit is Impl *)
   ; icit : Icit.t
   ; span : Span.t
@@ -180,13 +188,12 @@ let expr_span (e : expr) : Span.t =
   | Expr_var { span; _ }
   | Expr_ann { span; _ }
   | Expr_app { span; _ }
-  | Expr_abs { span; _ }
+  | Expr_fun { span; _ }
   | Expr_ty_fun { span; _ }
   | Expr_proj { span; _ }
-  | Expr_mod { span; _ }
-  | Expr_ty_mod { span; _ }
+  | Expr_struct { span; _ }
+  | Expr_ty_struct { span; _ }
   | Expr_block { span; _ }
-  | Expr_ty_sing { span; _ }
   | Expr_core_ty { span; _ }
   | Expr_universe { span; _ }
   | Expr_if { span; _ }
@@ -197,5 +204,7 @@ let expr_span (e : expr) : Span.t =
   | Expr_brack { span; _ }
   | Expr_rec { span; _ }
   | Expr_paren { span; _ }
+  | Expr_data_rec { span; _ }
+  | Expr_data { span; _ }
   | Expr_where { span; _ } -> span
 ;;
