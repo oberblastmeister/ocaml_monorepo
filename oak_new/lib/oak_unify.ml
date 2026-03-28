@@ -97,7 +97,9 @@ and unify_ty (cx : Context.t) (ty1 : Core.ty) (ty2 : Core.ty) =
   | Ty_fun ty1, Ty_fun ty2 ->
     unify_ty cx ty1.param_ty ty2.param_ty;
     unify_param_modifiers cx ty1.param_modifiers ty2.param_modifiers;
-    let arg : Core.value_arg = { e = Context.next_free cx; icit = ty1.param_modifiers.icit } in
+    let arg : Core.value_arg =
+      { e = Context.next_free cx; icit = ty1.param_modifiers.icit }
+    in
     unify_ty
       (Context.bind ty1.name ty1.param_ty cx)
       (Core.Ty_fun.app ty1 arg)
@@ -186,8 +188,7 @@ and unify_ty (cx : Context.t) (ty1 : Core.ty) (ty2 : Core.ty) =
            ^^ Context.pp_ty cx ty2)
       ]
 
-and unify_icit (cx : Context.t) (icit1 : Icit.t) (icit2 : Icit.t)
-  =
+and unify_icit (cx : Context.t) (icit1 : Icit.t) (icit2 : Icit.t) =
   if not (Icit.equal icit1 icit2)
   then
     Context.throw
@@ -383,18 +384,35 @@ and sub (cx : Context.t) (e : Core.term) (ty1 : Core.ty) (ty2 : Core.ty)
        : Core.term option * Typed.runtime_coe)
   | Ty_struct ty1, Ty_struct ty2 ->
     let value1 = Core.Term.eval Core.Value_env.empty e in
+    let ty1_name_to_index =
+      Core.Ty_struct.field_locations ty1
+      |> List.map ~f:(fun field -> field.name, field.index)
+      |> String.Table.of_alist_exn
+    in
     let ty2_field_locations = Core.Ty_struct.field_locations ty2 in
     let did_coerce, field_impls2, field_coes =
       List.fold
         ty2_field_locations
         ~init:(false, Bwd.Empty, Bwd.Empty)
-        ~f:(fun (did_coerce, running_field_impls2, running_field_coes) field ->
+        ~f:(fun (did_coerce, running_field_impls2, running_field_coes) field2 ->
+          let field1 =
+            match Hashtbl.find ty1_name_to_index field2.name with
+            | Some index -> ({ name = field2.name; index } : Core.field_loc)
+            | None ->
+              Context.throw
+                cx
+                [ Diagnostic.Part.create
+                    (Doc.string "Source struct is missing field "
+                     ^^ Doc.string field2.name
+                     ^^ Doc.string " required by the target signature")
+                ]
+          in
           let running_struct_value2 =
             Core.Value.create_struct (Bwd.to_list running_field_impls2)
           in
-          let field_impl1 = Core.Value.proj value1 field in
-          let field_spec1 = Core.Ty_struct.proj value1 ty1 field in
-          let field_spec2 = Core.Ty_struct.proj running_struct_value2 ty2 field in
+          let field_impl1 = Core.Value.proj value1 field1 in
+          let field_spec1 = Core.Ty_struct.proj value1 ty1 field1 in
+          let field_spec2 = Core.Ty_struct.proj running_struct_value2 ty2 field2 in
           unify_relevancy cx field_spec1.relevancy field_spec2.relevancy;
           let coerced_field_impl2, field_coe =
             sub cx (Core.Value.quote field_impl1) field_spec1.ty field_spec2.ty
@@ -404,9 +422,11 @@ and sub (cx : Context.t) (e : Core.term) (ty1 : Core.ty) (ty2 : Core.ty)
             Option.value ~default:(Core.Value.quote field_impl1) coerced_field_impl2
           in
           let value_field_impl2 : Core.value_field_impl =
-            { name = field.name; e = Core.Term.eval Core.Value_env.empty coerced_field_impl2 }
+            { name = field2.name
+            ; e = Core.Term.eval Core.Value_env.empty coerced_field_impl2
+            }
           in
-          let field_coe : Typed.runtime_field_coe = { field; coe = field_coe } in
+          let field_coe : Typed.runtime_field_coe = { field = field2; coe = field_coe } in
           ( did_coerce
           , Bwd.snoc running_field_impls2 value_field_impl2
           , Bwd.snoc running_field_coes field_coe ))

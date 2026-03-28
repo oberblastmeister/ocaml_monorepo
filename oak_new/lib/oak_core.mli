@@ -175,11 +175,18 @@ module Struct : sig
   val proj : t -> field_loc -> value
 end
 
+module Term_ty_struct : sig
+  type t = term_ty_struct [@@deriving sexp_of]
+
+  val of_iterated_binders : term_field_spec list -> term_ty_struct
+end
+
 module Ty_struct : sig
   type t = ty_struct [@@deriving sexp_of]
 
   val field_locations : t -> field_loc list
   val proj : value -> t -> field_loc -> value_field_spec
+  val of_iterated_binders : term_field_spec list -> ty_struct
 end
 
 module Fun : sig

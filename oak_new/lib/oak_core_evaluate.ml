@@ -1,6 +1,12 @@
 open Prelude
 module Core = Oak_core_syntax
 
+(*
+  It is fine to use this value as the context_size as long as we don't call any other functions that use this context_size.
+  In other words we cannot be reentrant.
+*)
+let temporary_context_size = Int.max_value / 2
+
 let rec eval_value (env : Core.env) (e : Core.term) : Core.value =
   match e with
   | Term_bound index -> Core.Seq.get_index_exn env index
@@ -460,23 +466,6 @@ and close_field_impl (c : Close.t) ({ name; e } : Core.term_field_impl) =
 
 and close_arg (c : Close.t) ({ e; icit } : Core.term_arg) = { e = close c e; icit }
 
-(* Since we only use the context size to generate fresh free variables, we can just use a really large context size *)
-let quote_value = quote_value (Int.max_value / 2)
-let quote_ty = quote_ty (Int.max_value / 2)
-
-let struct_ty_of_iterated_binders (field_specs : Core.term_field_spec list) =
-  let res =
-    List.fold_map
-      ~init:Core.Seq.empty
-      ~f:(fun running_env ({ name; ty; relevancy } : Core.term_field_spec) ->
-        let field_spec : Core.value_field_spec =
-          { name; ty = eval_ty running_env ty; relevancy }
-        in
-        running_env, field_spec)
-  in
-  failwith ""
-;;
-
 module Term = struct
   let close = close
   let close_single = close_single
@@ -512,7 +501,8 @@ module Ty_fun = Fun_ty
 module Value = struct
   let whnf = whnf_value
   let eval = eval_value
-  let quote = quote_value
+  let quote_with = quote_value
+  let quote = quote_value temporary_context_size
   let proj = proj_value
   let app = app_value
   let out = out_value
@@ -523,7 +513,8 @@ module Ty = struct
   let infer_props = infer_props
   let whnf = whnf_ty
   let eval = eval_ty
-  let quote = quote_ty
+  let quote_with = quote_ty
+  let quote = quote_ty temporary_context_size
   let proj = proj_ty
   let app = app_ty
   let out = out_ty

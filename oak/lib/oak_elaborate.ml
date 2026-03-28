@@ -238,9 +238,7 @@ let rec apply_patch
             (* add the coerced value to the environment, instead of the original free variable, because we just patched the type of the original free variable *)
             let closure_env' = Env.push coerced_value closure_env in
             (* close the free variables that we have created *)
-            let close' =
-              Close.push_exn (Context.next_level cx) close
-            in
+            let close' = Close.push_exn (Context.next_level cx) close in
             let coerced_fields' =
               Bwd.snoc
                 coerced_fields
@@ -257,8 +255,7 @@ let rec apply_patch
                 }
             in
             ( (cx', closure_env', close', coerced_fields', true)
-            , (
-              { var = ty_decls.var
+            , ({ var = ty_decls.var
                ; ty = Context.quote cx patched_ty |> Evaluate.close close
                }
                : term_ty_decl) )
@@ -359,8 +356,7 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : term * ty =
         let ty_decl : term_ty_decl =
           { var = decl.var; ty = Context.quote cx ty |> Evaluate.close close }
         in
-        ( ( Context.bind decl.var ty cx
-          , Close.push_exn (Context.next_level cx) close )
+        ( (Context.bind decl.var ty cx, Close.push_exn (Context.next_level cx) close)
         , (let_tuple, ty_decl) ))
     in
     let lets, ty_decls = List.unzip stuff in

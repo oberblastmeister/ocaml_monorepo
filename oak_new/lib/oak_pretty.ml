@@ -90,8 +90,7 @@ struct
          ^^ Doc.break1
          ^^ pp_ty names body_ty)
     | Ty_core ty -> Common.Core_ty.pp ty
-    | Ty_pack ty ->
-      Doc.group (Doc.string "Pack" ^^ Doc.break1 ^^ pp_ty_atom names ty)
+    | Ty_pack ty -> Doc.group (Doc.string "Pack" ^^ Doc.break1 ^^ pp_ty_atom names ty)
     | Ty_decode e -> Doc.group (pp_neutral names e)
 
   and pp_struct names ({ field_impls } : Core.value_struct) =
@@ -107,13 +106,17 @@ struct
     in
     Doc.group (Doc.string "struct" ^^ Doc.space ^^ args decls)
 
-  and pp_ty_struct names ({ env; field_specs } : Core.ty_struct) =
+  and pp_ty_struct names (ty : Core.ty_struct) =
     let _, decls =
       List.fold_map
-        field_specs
-        ~init:(names, env)
-        ~f:(fun (names, closure_env) field_spec ->
-          let ty = Core.Term_ty.eval closure_env field_spec.ty in
+        (Core.Ty_struct.field_locations ty)
+        ~init:(names, Bwd.Empty)
+        ~f:(fun (names, running_field_impls) field ->
+          let running_struct_value =
+            Core.Value.create_struct (Bwd.to_list running_field_impls)
+          in
+          let field_spec = Core.Ty_struct.proj running_struct_value ty field in
+          let ty = field_spec.ty in
           let name = field_spec.name.name in
           let doc =
             match ty with
@@ -139,8 +142,12 @@ struct
           in
           let level = Core.Level.of_int (Core.Name_env.length names) in
           let names = Core.Name_env.push field_spec.name names in
-          let closure_env = Core.Value_env.push (Core.Value.free level) closure_env in
-          (names, closure_env), doc)
+          let running_field_impls =
+            Bwd.snoc
+              running_field_impls
+              (Core.Value_field_impl.create field.name (Core.Value.free level))
+          in
+          (names, running_field_impls), doc)
     in
     Doc.group (Doc.string "sig" ^^ Doc.space ^^ block decls)
 
@@ -180,8 +187,7 @@ struct
       Core.Ty_fun.app ty_fun ({ e = arg; icit = param_modifiers.icit } : Core.value_arg)
     in
     match body_ty with
-    | Ty_fun ty_fun ->
-      collect_ty_fun_params names (param_doc :: acc_params) ty_fun
+    | Ty_fun ty_fun -> collect_ty_fun_params names (param_doc :: acc_params) ty_fun
     | _ ->
       let params = List.rev (param_doc :: acc_params) in
       params, names, body_ty
@@ -225,8 +231,7 @@ struct
       if Config.show_singletons
       then pp_proj names { head; spine } "out"
       else pp_neutral names { head; spine }
-    | Snoc (spine, Proj { name; index = _ }) ->
-      pp_proj names { head; spine } name
+    | Snoc (spine, Proj { name; index = _ }) -> pp_proj names { head; spine } name
     | Empty -> pp_head names head
 
   and pp_head names (head : Core.head) =

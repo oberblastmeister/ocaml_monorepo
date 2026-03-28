@@ -1,6 +1,7 @@
 open Prelude
 module Syntax = Oak_core_syntax
 module Evaluate = Oak_core_evaluate
+module Core_utils = Oak_core_utils
 module Common = Oak_common
 module Icit = Common.Icit
 module Level = Common.Level
@@ -299,6 +300,12 @@ module Head = struct
   let infer_ty = Evaluate.Head.infer_ty
 end
 
+module Term_ty_struct = struct
+  type t = term_ty_struct [@@deriving sexp_of]
+
+  let of_iterated_binders = Core_utils.struct_ty_of_iterated_binders
+end
+
 module Struct = struct
   type t = value_struct [@@deriving sexp_of]
 
@@ -307,6 +314,12 @@ end
 
 module Ty_struct = struct
   type t = ty_struct [@@deriving sexp_of]
+
+  let of_iterated_binders field_specs : t =
+    { env = Syntax.Seq.empty
+    ; field_specs = (Term_ty_struct.of_iterated_binders field_specs).field_specs
+    }
+  ;;
 
   let field_locations = Syntax.Ty_struct.field_locations
   let proj = Evaluate.Ty_struct.proj
