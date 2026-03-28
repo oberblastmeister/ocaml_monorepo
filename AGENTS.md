@@ -310,6 +310,40 @@ Benefits:
 - Compiler ensures all variants in the or-pattern bind the same names
 - Makes it obvious that all cases are handled uniformly
 
+### Use Labeled Tuples for Multi-Accumulator Folds
+
+When a `fold`, `fold_map`, `fold_mapi`, `foldi`, or similar traversal threads multiple accumulator values, use labeled tuples instead of positional tuples. When destructuring the final accumulator, use the `..` pattern so the code only names the pieces it actually needs.
+
+```ocaml
+(* Good: labeled tuple accumulator with `..` destructuring *)
+let ~typed_decls, ~field_specs, .. =
+  List.fold
+    decls
+    ~init:(~cx, ~close:Close.empty, ~typed_decls:Bwd.Empty, ~field_specs:Bwd.Empty)
+    ~f:(fun (~cx, ~close, ~typed_decls, ~field_specs) decl ->
+      let e = infer cx decl.e in
+      let ty = Typed.Expr.ty e in
+      let field_spec = ... in
+      ( ~cx:(Context.bind decl.name ty cx)
+      , ~close:(Close.push_exn (Context.next_level cx) close)
+      , ~typed_decls:(Bwd.snoc typed_decls ...)
+      , ~field_specs:(Bwd.snoc field_specs field_spec) ))
+
+(* Less preferred: positional tuple accumulator *)
+let _, _, typed_decls, field_specs =
+  List.fold
+    decls
+    ~init:(cx, Close.empty, Bwd.Empty, Bwd.Empty)
+    ~f:(fun (cx, close, typed_decls, field_specs) decl ->
+      ...)
+```
+
+Benefits:
+
+- Avoids depending on tuple position when several accumulators are in flight
+- Makes each accumulator's role explicit at both the initialization and update sites
+- Makes partial destructuring at the end clearer and less brittle
+
 ## Naming conventions
 
 Follow core library naming conventions:

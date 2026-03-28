@@ -127,11 +127,11 @@ and unify_ty (cx : Context.t) (ty1 : Core.ty) (ty2 : Core.ty) =
     let _ =
       List.foldi
         zipped_field_specs
-        ~init:(Bwd.Empty, Bwd.Empty, cx)
+        ~init:(~running_field_impls1:Bwd.Empty, ~running_field_impls2:Bwd.Empty, ~cx)
         ~f:
           (fun
             index
-            (running_field_impls1, running_field_impls2, cx)
+            (~running_field_impls1, ~running_field_impls2, ~cx)
             (field_spec1, field_spec2)
           ->
           let name1 = field_spec1.name.name in
@@ -158,9 +158,13 @@ and unify_ty (cx : Context.t) (ty1 : Core.ty) (ty2 : Core.ty) =
           let ty2 = (Core.Ty_struct.proj running_struct_value2 ty2 field).ty in
           unify_ty cx ty1 ty2;
           let var_value = Context.next_free cx in
-          ( Bwd.snoc running_field_impls1 (Core.Value_field_impl.create name1 var_value)
-          , Bwd.snoc running_field_impls2 (Core.Value_field_impl.create name2 var_value)
-          , Context.bind field_spec1.name ty1 cx ))
+          ( ~running_field_impls1:(Bwd.snoc
+                                     running_field_impls1
+                                     (Core.Value_field_impl.create name1 var_value))
+          , ~running_field_impls2:(Bwd.snoc
+                                     running_field_impls2
+                                     (Core.Value_field_impl.create name2 var_value))
+          , ~cx:(Context.bind field_spec1.name ty1 cx) ))
     in
     ()
   | Ty_core ty1, Ty_core ty2 ->
@@ -251,8 +255,8 @@ and unify_neutral (cx : Context.t) (e1 : Core.neutral) (e2 : Core.neutral) : uni
   let _ =
     List.fold
       zipped_spines
-      ~init:(Bwd.Empty, Core.Head.infer_ty cx.ty_env e1.head)
-      ~f:(fun (spine, ty) (frame1, frame2) ->
+      ~init:(~spine:Bwd.Empty, ~ty:(Core.Head.infer_ty cx.ty_env e1.head))
+      ~f:(fun (~spine, ~ty) (frame1, frame2) ->
         let ty =
           match frame1, frame2 with
           | Out, _ | _, Out -> failwith "should be whnf"
@@ -283,7 +287,7 @@ and unify_neutral (cx : Context.t) (e1 : Core.neutral) (e2 : Core.neutral) : uni
                    ^^ Context.pp_value cx (Value_neutral e2))
               ]
         in
-        spine <: frame1, ty)
+        ~spine:(spine <: frame1), ~ty)
   in
   ()
 
@@ -390,11 +394,14 @@ and sub (cx : Context.t) (e : Core.term) (ty1 : Core.ty) (ty2 : Core.ty)
       |> String.Table.of_alist_exn
     in
     let ty2_field_locations = Core.Ty_struct.field_locations ty2 in
-    let did_coerce, field_impls2, field_coes =
+    let ~did_coerce, ~running_field_impls2, ~running_field_coes =
       List.fold
         ty2_field_locations
-        ~init:(false, Bwd.Empty, Bwd.Empty)
-        ~f:(fun (did_coerce, running_field_impls2, running_field_coes) field2 ->
+        ~init:
+          ( ~did_coerce:false
+          , ~running_field_impls2:Bwd.Empty
+          , ~running_field_coes:Bwd.Empty )
+        ~f:(fun (~did_coerce, ~running_field_impls2, ~running_field_coes) field2 ->
           let field1 =
             match Hashtbl.find ty1_name_to_index field2.name with
             | Some index -> ({ name = field2.name; index } : Core.field_loc)
@@ -427,12 +434,12 @@ and sub (cx : Context.t) (e : Core.term) (ty1 : Core.ty) (ty2 : Core.ty)
             }
           in
           let field_coe : Typed.runtime_field_coe = { field = field2; coe = field_coe } in
-          ( did_coerce
-          , Bwd.snoc running_field_impls2 value_field_impl2
-          , Bwd.snoc running_field_coes field_coe ))
+          ( ~did_coerce
+          , ~running_field_impls2:(Bwd.snoc running_field_impls2 value_field_impl2)
+          , ~running_field_coes:(Bwd.snoc running_field_coes field_coe) ))
     in
-    let field_impls2 = Bwd.to_list field_impls2 in
-    let field_coes = Bwd.to_list field_coes in
+    let field_impls2 = Bwd.to_list running_field_impls2 in
+    let field_coes = Bwd.to_list running_field_coes in
     let is_same_shape =
       match
         List.for_all2

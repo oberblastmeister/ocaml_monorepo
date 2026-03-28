@@ -15,19 +15,21 @@ end
 
 (* precondition: the neutral must be well typed, but it *doesn't* have to be an element of some universe. *)
 let rec infer_neutral (ty_env : Env.t) (e : neutral) : value =
-  Bwd.fold_left
-    e.spine
-    ~init:(Bwd.Empty, Env.find_level_exn ty_env e.head)
-    ~f:(fun (spine, ty) elim ->
-      let ty =
-        match elim with
-        | Elim_app { arg; icit = _ } -> Evaluate.Ty.app ty_env ty arg
-        | Elim_proj { field = _; field_index } ->
-          Evaluate.Ty.proj ty_env (Value_neutral { head = e.head; spine }) ty field_index
-        | Elim_out -> Evaluate.Ty.out ty_env ty
-      in
-      spine <: elim, ty)
-  |> snd
+  let ~ty, .. =
+    Bwd.fold_left
+      e.spine
+      ~init:(~spine:Bwd.Empty, ~ty:(Env.find_level_exn ty_env e.head))
+      ~f:(fun (~spine, ~ty) elim ->
+        let ty =
+          match elim with
+          | Elim_app { arg; icit = _ } -> Evaluate.Ty.app ty_env ty arg
+          | Elim_proj { field = _; field_index } ->
+            Evaluate.Ty.proj ty_env (Value_neutral { head = e.head; spine }) ty field_index
+          | Elim_out -> Evaluate.Ty.out ty_env ty
+        in
+        ~spine:(spine <: elim), ~ty)
+  in
+  ty
 ;;
 
 (* precondition: value must be well typed and must be in some universe *)
@@ -56,19 +58,20 @@ let rec infer_value_universe (ty_env : Env.t) (e : value) : Universe.t =
     Universe.max universe1 universe2
   | Value_ty_mod { env = closure_env; ty_decls } ->
     (* Modules have at least universe Kind because they include subtyping *)
-    let _, _, universe =
+    let ~universe, .. =
       List.fold
         ty_decls
-        ~init:(closure_env, ty_env, Universe.kind_)
-        ~f:(fun (closure_env, ty_env, universe) ty_decl ->
+        ~init:(~closure_env, ~ty_env, ~universe:Universe.kind_)
+        ~f:(fun (~closure_env, ~ty_env, ~universe) ty_decl ->
           let ty = Evaluate.eval closure_env ty_decl.ty in
           let universe' = infer_value_universe ty_env ty in
-          ( Env.push
-              (* Important: make sure to use the size of ty_env instead of env *)
-              (Env.next_free ty_env)
-              closure_env
-          , Env.push ty ty_env
-          , Universe.max universe universe' ))
+          ( ~closure_env:
+              (Env.push
+                 (* Important: make sure to use the size of ty_env instead of env *)
+                 (Env.next_free ty_env)
+                 closure_env)
+          , ~ty_env:(Env.push ty ty_env)
+          , ~universe:(Universe.max universe universe') ))
     in
     universe
 ;;

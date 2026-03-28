@@ -121,22 +121,23 @@ and unfold ty_env (e : value) : whnf =
   | Value_ty_pack ty -> Value_ty_pack ty
 
 and unfold_neutral ty_env (e : neutral) : whnf =
-  let e, _ty =
+  let ~whnf, .. =
     Bwd.fold_left
       e.spine
       ~init:
-        (Value_neutral { head = e.head; spine = Empty }, Env.find_level_exn ty_env e.head)
-      ~f:(fun (e, (ty : ty)) elim ->
+        ( ~whnf:(Value_neutral { head = e.head; spine = Empty })
+        , ~ty:(Env.find_level_exn ty_env e.head) )
+      ~f:(fun (~whnf:e, ~ty:(ty : ty)) elim ->
         match elim with
-        | Elim_app { arg; icit } -> app_whnf ty_env e arg icit, app_ty ty_env ty arg
+        | Elim_app { arg; icit } -> ~whnf:(app_whnf ty_env e arg icit), ~ty:(app_ty ty_env ty arg)
         | Elim_proj { field; field_index } ->
-          ( proj_whnf ty_env e field field_index
-          , proj_ty ty_env (Whnf.to_value e) ty field_index )
+          ( ~whnf:(proj_whnf ty_env e field field_index)
+          , ~ty:(proj_ty ty_env (Whnf.to_value e) ty field_index) )
         | Elim_out ->
           let ty = Whnf.ty_sing_val_exn (unfold ty_env ty) in
-          unfold ty_env ty.identity, ty.ty)
+          ~whnf:(unfold ty_env ty.identity), ~ty:ty.ty)
   in
-  e
+  whnf
 
 and app_abs (abs : value_abs) arg = eval_closure1 abs.body arg
 
@@ -245,15 +246,16 @@ let rec quote context_size (e : value) : term =
     in
     Term_ty_fun { var; param_ty; icit; body_ty }
   | Value_ty_mod ty ->
-    let _, ty_decls =
+    let (~context_size:_, ..), ty_decls =
       List.fold_map
         ty.ty_decls
-        ~init:(context_size, ty.env, Close.empty)
-        ~f:(fun (context_size, closure_env, (c : Close.t)) { var; ty } ->
+        ~init:(~context_size, ~closure_env:ty.env, ~close:Close.empty)
+        ~f:(fun (~context_size, ~closure_env, ~close:(c : Close.t)) { var; ty } ->
           let ty = eval closure_env ty |> quote context_size |> close c in
-          ( ( context_size + 1
-            , Env.push (next_free_of_size context_size) closure_env
-            , Close.add_exn (Level.of_int context_size) Index.zero (Close.lift 1 c) )
+          ( ( ~context_size:(context_size + 1)
+            , ~closure_env:(Env.push (next_free_of_size context_size) closure_env)
+            , ~close:(Close.add_exn (Level.of_int context_size) Index.zero (Close.lift 1 c))
+            )
           , ({ var; ty } : term_ty_decl) ))
     in
     Term_ty_mod { ty_decls }

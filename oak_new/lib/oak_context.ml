@@ -1,12 +1,9 @@
 open Prelude
 module Core = Oak_core
-
-open struct
-  module Spanned = Utility.Spanned
-  module Diagnostic = Oak_diagnostic
-  module Pretty = Oak_pretty
-  module Source = Oak_source
-end
+module Spanned = Utility.Spanned
+module Diagnostic = Oak_diagnostic
+module Pretty = Oak_pretty
+module Source = Oak_source
 
 exception Error of Diagnostic.t
 

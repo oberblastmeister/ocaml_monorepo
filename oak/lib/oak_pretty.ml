@@ -99,11 +99,11 @@ struct
     end
 
   and pp_ty_mod names (ty_mod : Syntax.value_ty_mod_closure) =
-    let _, decls =
+    let (~names:_, ..), decls =
       List.fold_map
         ty_mod.ty_decls
-        ~init:(names, ty_mod.env)
-        ~f:(fun (names, closure_env) decl ->
+        ~init:(~names, ~closure_env:ty_mod.env)
+        ~f:(fun (~names, ~closure_env) decl ->
           let ty = Evaluate.eval closure_env decl.ty in
           let name = decl.var.name in
           let doc =
@@ -115,8 +115,9 @@ struct
                ^^ Doc.string ":"
                ^^ Doc.indent 2 (Doc.break1 ^^ pp_value names ty))
           in
-          ( ( Name_list.push name names
-            , Syntax.Env.push (Syntax.Value.free (Name_list.next_level names)) closure_env
+          ( ( ~names:(Name_list.push name names)
+            , ~closure_env:
+                (Syntax.Env.push (Syntax.Value.free (Name_list.next_level names)) closure_env)
             )
           , doc ))
     in

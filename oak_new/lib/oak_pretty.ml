@@ -107,11 +107,11 @@ struct
     Doc.group (Doc.string "struct" ^^ Doc.space ^^ args decls)
 
   and pp_ty_struct names (ty : Core.ty_struct) =
-    let _, decls =
+    let (~names:_, ..), decls =
       List.fold_map
         (Core.Ty_struct.field_locations ty)
-        ~init:(names, Bwd.Empty)
-        ~f:(fun (names, running_field_impls) field ->
+        ~init:(~names, ~running_field_impls:Bwd.Empty)
+        ~f:(fun (~names, ~running_field_impls) field ->
           let running_struct_value =
             Core.Value.create_struct (Bwd.to_list running_field_impls)
           in
@@ -147,7 +147,7 @@ struct
               running_field_impls
               (Core.Value_field_impl.create field.name (Core.Value.free level))
           in
-          (names, running_field_impls), doc)
+          (~names, ~running_field_impls), doc)
     in
     Doc.group (Doc.string "sig" ^^ Doc.space ^^ block decls)
 

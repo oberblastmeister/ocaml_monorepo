@@ -53,15 +53,16 @@ let rec occurs_check_adjust (cx : Context.t) (meta : meta_unsolved) (ty : ty) : 
     let ty = occurs_check_adjust cx meta ty in
     Value_ty_pack ty
   | Value_ty_mod ty ->
-    let _, ty_decls =
+    let (~cx:_, ..), ty_decls =
       List.fold_map
         ty.ty_decls
-        ~init:(cx, ty.env, Close.empty)
-        ~f:(fun (cx, closure_env, close) { var; ty } ->
+        ~init:(~cx, ~closure_env:ty.env, ~close:Close.empty)
+        ~f:(fun (~cx, ~closure_env, ~close) { var; ty } ->
           let ty = occurs_check_adjust cx meta (Evaluate.eval closure_env ty) in
-          ( ( Context.bind var ty cx
-            , Env.push ty closure_env
-            , Close.add_exn (Context.next_level cx) Index.zero (Close.lift 1 close) )
+          ( ( ~cx:(Context.bind var ty cx)
+            , ~closure_env:(Env.push ty closure_env)
+            , ~close:(Close.add_exn (Context.next_level cx) Index.zero (Close.lift 1 close))
+            )
           , ({ var; ty = Context.quote cx ty |> Evaluate.close close } : term_ty_decl) ))
     in
     Value_ty_mod { env = Env.empty; ty_decls }
@@ -198,8 +199,8 @@ and unify_ty (cx : Context.t) (ty1 : ty) (ty2 : ty) : unit =
     let _ =
       List.fold
         zipped_ty_decls
-        ~init:(ty1.env, ty2.env, cx)
-        ~f:(fun (closure_env1, closure_env2, cx) (ty_decl1, ty_decl2) ->
+        ~init:(~closure_env1:ty1.env, ~closure_env2:ty2.env, ~cx)
+        ~f:(fun (~closure_env1, ~closure_env2, ~cx) (ty_decl1, ty_decl2) ->
           let name1 = ty_decl1.var.name in
           let name2 = ty_decl2.var.name in
           if not (String.equal name1 name2)
@@ -214,9 +215,9 @@ and unify_ty (cx : Context.t) (ty1 : ty) (ty2 : ty) : unit =
           let ty2 = Evaluate.eval closure_env2 ty_decl2.ty in
           unify_ty cx ty1 ty2;
           let var_value = Context.next_free cx in
-          ( Env.push var_value closure_env1
-          , Env.push var_value closure_env2
-          , Context.bind ty_decl1.var ty1 cx ))
+          ( ~closure_env1:(Env.push var_value closure_env1)
+          , ~closure_env2:(Env.push var_value closure_env2)
+          , ~cx:(Context.bind ty_decl1.var ty1 cx) ))
     in
     ()
   | Value_core_ty ty1, Value_core_ty ty2 ->
@@ -264,43 +265,45 @@ and unify_neutral (cx : Context.t) (ty1 : whnf_neutral) (ty2 : whnf_neutral) : v
            (Doc.string "Types were not equal (spine lengths differ)"))
     | Ok t -> t
   in
-  List.fold
-    zipped_spines
-    ~init:(Bwd.Empty, Context.level_var_ty cx ty1.head)
-    ~f:(fun (spine, ty) (elim1, elim2) ->
-      let ty =
-        match elim1, elim2 with
-        | ( Whnf_elim_app { arg = arg1; icit = icit1 }
-          , Whnf_elim_app { arg = arg2; icit = icit2 } ) ->
-          assert (Icit.equal icit1 icit2);
-          let func_kind = Context.unfold cx ty |> Whnf.ty_fun_val_exn in
-          unify cx arg1 arg2 func_kind.param_ty;
-          Evaluate.Fun_ty.app func_kind arg1
-        | ( Whnf_elim_proj { field = field1; field_index = field_index1; _ }
-          , Whnf_elim_proj { field = field2; field_index = field_index2; _ } ) ->
-          if not (field_index1 = field_index2)
-          then
+  let ~ty, .. =
+    List.fold
+      zipped_spines
+      ~init:(~spine:Bwd.Empty, ~ty:(Context.level_var_ty cx ty1.head))
+      ~f:(fun (~spine, ~ty) (elim1, elim2) ->
+        let ty =
+          match elim1, elim2 with
+          | ( Whnf_elim_app { arg = arg1; icit = icit1 }
+            , Whnf_elim_app { arg = arg2; icit = icit2 } ) ->
+            assert (Icit.equal icit1 icit2);
+            let func_kind = Context.unfold cx ty |> Whnf.ty_fun_val_exn in
+            unify cx arg1 arg2 func_kind.param_ty;
+            Evaluate.Fun_ty.app func_kind arg1
+          | ( Whnf_elim_proj { field = field1; field_index = field_index1; _ }
+            , Whnf_elim_proj { field = field2; field_index = field_index2; _ } ) ->
+            if not (field_index1 = field_index2)
+            then
+              raise_type_mismatch
+                (Diagnostic.Part.create
+                   (Doc.string "Fields were not equal in a projection: "
+                    ^^ Doc.string field1
+                    ^^ Doc.string " != "
+                    ^^ Doc.string field2));
+            Evaluate.Ty.proj
+              cx.ty_env
+              (Value_neutral { head = ty1.head; spine })
+              ty
+              field_index1
+          | _ ->
             raise_type_mismatch
               (Diagnostic.Part.create
-                 (Doc.string "Fields were not equal in a projection: "
-                  ^^ Doc.string field1
+                 (Doc.string "Types were not equal: "
+                  ^^ Context.pp_value cx (Value_neutral (Whnf_neutral.to_neutral ty1))
                   ^^ Doc.string " != "
-                  ^^ Doc.string field2));
-          Evaluate.Ty.proj
-            cx.ty_env
-            (Value_neutral { head = ty1.head; spine })
-            ty
-            field_index1
-        | _ ->
-          raise_type_mismatch
-            (Diagnostic.Part.create
-               (Doc.string "Types were not equal: "
-                ^^ Context.pp_value cx (Value_neutral (Whnf_neutral.to_neutral ty1))
-                ^^ Doc.string " != "
-                ^^ Context.pp_value cx (Value_neutral (Whnf_neutral.to_neutral ty2))))
-      in
-      spine <: Whnf_elim.to_elim elim1, ty)
-  |> snd
+                  ^^ Context.pp_value cx (Value_neutral (Whnf_neutral.to_neutral ty2))))
+        in
+        ~spine:(spine <: Whnf_elim.to_elim elim1), ~ty)
+  in
+  ty
 ;;
 
 let rec coerce_singleton cx (e : term) (ty : ty) : term * whnf =
@@ -393,11 +396,11 @@ let rec sub cx (e : term) (ty1 : ty) (ty2 : ty) : term option =
       |> snd
       |> String.Map.of_alist_exn
     in
-    let (did_coerce, _), fields =
+    let (~did_coerce, ..), fields =
       List.fold_map
         ty2.ty_decls
-        ~init:(false, ty2.env)
-        ~f:(fun (did_coerce, closure_env) ty2_decl ->
+        ~init:(~did_coerce:false, ~closure_env:ty2.env)
+        ~f:(fun (~did_coerce, ~closure_env) ty2_decl ->
           let field_name = ty2_decl.var.name in
           let ty1_field_index, ty1_proj_ty =
             match Map.find ty1_map field_name with
@@ -417,7 +420,9 @@ let rec sub cx (e : term) (ty1 : ty) (ty2 : ty) : term option =
           let did_coerce = did_coerce || Option.is_some coerced_proj_term in
           let coerced_proj_term = Option.value coerced_proj_term ~default:proj_term in
           let field : term_field = { name = field_name; e = coerced_proj_term } in
-          ( (did_coerce, Env.push (Evaluate.eval Env.empty coerced_proj_term) closure_env)
+          ( ( ~did_coerce
+            , ~closure_env:(Env.push (Evaluate.eval Env.empty coerced_proj_term) closure_env)
+            )
           , field ))
     in
     if not did_coerce then None else Some (Term_mod { fields })

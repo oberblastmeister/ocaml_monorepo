@@ -100,11 +100,12 @@ let rec synthesize_transparent_ty (cx : Context.t) (ty : Core.ty) : Core.term =
       ]
   | Ty_sing { identity; ty = _ } -> Term_sing_in (Core.Value.quote identity)
   | Ty_struct ty ->
-    let _, _, field_impls =
+    let ~field_impls, .. =
       List.fold
         (Core.Ty_struct.field_locations ty)
-        ~init:(cx, Bwd.Empty, Bwd.Empty)
-        ~f:(fun (cx, running_field_impls, term_field_impls) (field : Core.field_loc) ->
+        ~init:(~cx, ~running_field_impls:Bwd.Empty, ~field_impls:Bwd.Empty)
+        ~f:
+          (fun (~cx, ~running_field_impls, ~field_impls) (field : Core.field_loc) ->
           let running_struct_value =
             Core.Value.create_struct (Bwd.to_list running_field_impls)
           in
@@ -114,13 +115,14 @@ let rec synthesize_transparent_ty (cx : Context.t) (ty : Core.ty) : Core.term =
             { name = field_spec.name.name; e = synthesized_term }
           in
           (* Make sure to push the synthesized term instead of just a free variable because the resulting structure should be non dependent, each field cannot depend on the previous one *)
-          ( Context.bind field_spec.name field_spec.ty cx
-          , Bwd.snoc
-              running_field_impls
-              (Core.Value_field_impl.create
-                 field.name
-                 (Core.Term.eval Core.Value_env.empty synthesized_term))
-          , Bwd.snoc term_field_impls term_field_impl ))
+          ( ~cx:(Context.bind field_spec.name field_spec.ty cx)
+          , ~running_field_impls:
+              (Bwd.snoc
+                 running_field_impls
+                 (Core.Value_field_impl.create
+                    field.name
+                    (Core.Term.eval Core.Value_env.empty synthesized_term)))
+          , ~field_impls:(Bwd.snoc field_impls term_field_impl) ))
     in
     let field_impls = Bwd.to_list field_impls in
     Term_struct { field_impls }
@@ -485,12 +487,17 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
     Typed.Expr_proj { strukt; field; ann = expr_ann cx span term ty }
   | Expr_struct { decls; span; is_dependent = true } ->
     let decl_count = List.length decls in
-    let _, _, typed_decls, let_bindings, field_specs =
+    let ~typed_decls, ~let_bindings, ~field_specs, .. =
       List.fold
         decls
-        ~init:(cx, Close.empty, Bwd.Empty, Bwd.Empty, Bwd.Empty)
-        ~f:(fun (cx_acc, close, typed_decls, let_bindings, field_specs) decl ->
-          let e = infer cx_acc decl.e in
+        ~init:
+          ( ~cx
+          , ~close:Close.empty
+          , ~typed_decls:Bwd.Empty
+          , ~let_bindings:Bwd.Empty
+          , ~field_specs:Bwd.Empty )
+        ~f:(fun (~cx, ~close, ~typed_decls, ~let_bindings, ~field_specs) decl ->
+          let e = infer cx decl.e in
           let ty =
             if decl.is_abstract
             then Typed.Expr.ty e
@@ -511,12 +518,12 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
             ; relevancy = decl.relevancy
             }
           in
-          let level = Context.next_level cx_acc in
-          ( Context.bind decl.name ty cx_acc
-          , Close.push_exn level close
-          , Bwd.snoc typed_decls typed_decl
-          , Bwd.snoc let_bindings (decl.name, rhs)
-          , Bwd.snoc field_specs field_spec ))
+          let level = Context.next_level cx in
+          ( ~cx:(Context.bind decl.name ty cx)
+          , ~close:(Close.push_exn level close)
+          , ~typed_decls:(Bwd.snoc typed_decls typed_decl)
+          , ~let_bindings:(Bwd.snoc let_bindings (decl.name, rhs))
+          , ~field_specs:(Bwd.snoc field_specs field_spec) ))
     in
     let typed_decls = Bwd.to_list typed_decls in
     let let_bindings = Bwd.to_list let_bindings in
@@ -539,11 +546,11 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
     Typed.Expr_struct
       { decls = typed_decls; ann = expr_ann cx span term ty; is_dependent = true }
   | Expr_struct { decls; span; is_dependent = false } ->
-    let typed_decls, field_impls, field_specs =
+    let ~typed_decls, ~field_impls, ~field_specs =
       List.fold
         decls
-        ~init:(Bwd.Empty, Bwd.Empty, Bwd.Empty)
-        ~f:(fun (typed_decls, field_impls, field_specs) decl ->
+        ~init:(~typed_decls:Bwd.Empty, ~field_impls:Bwd.Empty, ~field_specs:Bwd.Empty)
+        ~f:(fun (~typed_decls, ~field_impls, ~field_specs) decl ->
           let e = infer cx decl.e in
           let ty =
             if decl.is_abstract
@@ -561,9 +568,9 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
             { name = decl.name; ty = Core.Ty.quote ty; relevancy = decl.relevancy }
           in
           let field_impl : Core.term_field_impl = { name = decl.name.name; e = rhs } in
-          ( Bwd.snoc typed_decls typed_decl
-          , Bwd.snoc field_impls field_impl
-          , Bwd.snoc field_specs field_spec ))
+          ( ~typed_decls:(Bwd.snoc typed_decls typed_decl)
+          , ~field_impls:(Bwd.snoc field_impls field_impl)
+          , ~field_specs:(Bwd.snoc field_specs field_spec) ))
     in
     let typed_decls = Bwd.to_list typed_decls in
     let field_impls = Bwd.to_list field_impls in
@@ -576,15 +583,20 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
     Typed.Expr_struct
       { decls = typed_decls; ann = expr_ann cx span term ty; is_dependent = false }
   | Expr_ty_struct { field_specs; span } ->
-    let _, _, typed_field_specs, field_specs, size =
+    let ~typed_field_specs, ~field_specs, ~size, .. =
       List.fold
         field_specs
-        ~init:(cx, Close.empty, Bwd.Empty, Bwd.Empty, Size.sig_)
-        ~f:(fun (cx_acc, close, typed_field_specs, field_specs, size) field_spec ->
+        ~init:
+          ( ~cx
+          , ~close:Close.empty
+          , ~typed_field_specs:Bwd.Empty
+          , ~field_specs:Bwd.Empty
+          , ~size:Size.sig_ )
+        ~f:(fun (~cx, ~close, ~typed_field_specs, ~field_specs, ~size) field_spec ->
           let typed_field_ty, typed_rhs, ty =
             match field_spec.ty, field_spec.rhs with
             | Some ty, rhs ->
-              let typed_ty = check_universe cx_acc ty in
+              let typed_ty = check_universe cx ty in
               let field_ty =
                 Core.Term_ty.eval Core.Value_env.empty (Typed.Ty.term typed_ty)
               in
@@ -592,13 +604,13 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
                 match rhs with
                 | None -> None, field_ty
                 | Some rhs ->
-                  let rhs = check cx_acc rhs field_ty in
+                  let rhs = check cx rhs field_ty in
                   let rhs_value = eval_expr rhs in
                   Some rhs, Ty_sing { identity = rhs_value; ty = field_ty }
               in
               Some typed_ty, typed_rhs, ty
             | None, Some rhs ->
-              let rhs = infer cx_acc rhs in
+              let rhs = infer cx rhs in
               let field_ty = Typed.Expr.ty rhs in
               let rhs_value = eval_expr rhs in
               None, Some rhs, Ty_sing { identity = rhs_value; ty = field_ty }
@@ -619,16 +631,17 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
             ; relevancy = field_spec.relevancy
             }
           in
-          let level = Context.next_level cx_acc in
-          ( Context.bind field_spec.name ty cx_acc
-          , Close.push_exn level close
-          , Bwd.snoc typed_field_specs typed_field_spec
-          , Bwd.snoc field_specs field_spec
-          , Size.max
-              size
-              (match typed_field_ty with
-               | Some typed_ty -> (Typed.Ty.props typed_ty).size
-               | None -> (Core.Ty.infer_props cx_acc.ty_env ty).size) ))
+          let level = Context.next_level cx in
+          ( ~cx:(Context.bind field_spec.name ty cx)
+          , ~close:(Close.push_exn level close)
+          , ~typed_field_specs:(Bwd.snoc typed_field_specs typed_field_spec)
+          , ~field_specs:(Bwd.snoc field_specs field_spec)
+          , ~size:
+              (Size.max
+                 size
+                 (match typed_field_ty with
+                  | Some typed_ty -> (Typed.Ty.props typed_ty).size
+                  | None -> (Core.Ty.infer_props cx.ty_env ty).size)) ))
     in
     let typed_field_specs = Bwd.to_list typed_field_specs in
     let field_specs = Bwd.to_list field_specs in

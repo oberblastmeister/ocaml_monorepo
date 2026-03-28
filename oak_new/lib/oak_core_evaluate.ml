@@ -170,35 +170,39 @@ and proj_ty
   proj_struct_ty strukt (Core.Ty.ty_struct_val_exn (whnf_ty ty_env ty)) field
 
 and whnf_neutral (ty_env : Core.ty_env) (e : Core.neutral) : Core.value =
-  let e, _ty =
+  let ~value, .. =
     Bwd.fold_left
       e.spine
-      ~init:(Value_neutral { head = e.head; spine = Empty }, infer_head ty_env e.head)
-      ~f:(fun (e, ty) (frame : Core.frame) ->
+      ~init:
+        ( ~value:(Value_neutral { head = e.head; spine = Empty })
+        , ~ty:(infer_head ty_env e.head) )
+      ~f:(fun (~value, ~ty) (frame : Core.frame) ->
         (* invariant: e is whnf, ty may not be whnf *)
         match frame with
-        | App arg -> app_whnf ty_env e arg, app_ty ty_env ty arg
-        | Proj field -> proj_whnf ty_env e field, (proj_ty ty_env e ty field).ty
+        | App arg -> ~value:(app_whnf ty_env value arg), ~ty:(app_ty ty_env ty arg)
+        | Proj field ->
+          ~value:(proj_whnf ty_env value field), ~ty:((proj_ty ty_env value ty field).ty)
         | Out ->
           let ty =
             match whnf_ty ty_env ty with
             | Ty_sing sing -> sing
             | _ -> failwith "Expected singleton type"
           in
-          whnf_value ty_env ty.identity, ty.ty)
+          ~value:(whnf_value ty_env ty.identity), ~ty:ty.ty)
   in
-  e
+  value
 
 and infer_props (ty_env : Core.ty_env) (ty : Core.ty) =
   match ty with
   | Ty_universe props -> props
   | Ty_sing _ -> { size = Core.Size.sig_ }
   | Ty_struct ty ->
-    let size, _, _ =
+    let ~size, .. =
       List.foldi
         ty.field_specs
-        ~init:(Core.Size.sig_, ty_env, Bwd.Empty)
-        ~f:(fun index (size, ty_env, running_field_impls) field_spec ->
+        ~init:(~size:Core.Size.sig_, ~ty_env, ~running_field_impls:Bwd.Empty)
+        ~f:(fun index acc field_spec ->
+          let ~size, ~ty_env, ~running_field_impls = acc in
           let field_spec_ty =
             (proj_struct_ty
                (Value_struct (Core.Struct.create (Bwd.to_list running_field_impls)))
@@ -207,14 +211,15 @@ and infer_props (ty_env : Core.ty_env) (ty : Core.ty) =
               .ty
           in
           let props = infer_props ty_env field_spec_ty in
-          ( Core.Size.max size props.size
-          , Core.Env.push field_spec_ty ty_env
-          , Bwd.snoc
-              running_field_impls
-              (Core.Value_field_impl.create
-                 field_spec.name.name
-                 (Core.Value.free_of_size (Core.Env.length ty_env))
-               : Core.value_field_impl) ))
+          ( ~size:(Core.Size.max size props.size)
+          , ~ty_env:(Core.Env.push field_spec_ty ty_env)
+          , ~running_field_impls:
+              (Bwd.snoc
+                 running_field_impls
+                 (Core.Value_field_impl.create
+                    field_spec.name.name
+                    (Core.Value.free_of_size (Core.Env.length ty_env))
+                  : Core.value_field_impl)) ))
     in
     { size }
   | Ty_fun ty ->
@@ -232,19 +237,21 @@ and infer_props (ty_env : Core.ty_env) (ty : Core.ty) =
   | Ty_decode ty -> infer_neutral_universe ty_env ty
 
 and infer_neutral (ty_env : Core.ty_env) (e : Core.neutral) : Core.ty =
-  Bwd.fold_left
-    e.spine
-    ~init:(Bwd.Empty, infer_head ty_env e.head)
-    ~f:(fun (spine, ty) (frame : Core.frame) ->
-      let ty =
-        match frame with
-        | App arg -> app_ty ty_env ty arg
-        | Proj field ->
-          (proj_ty ty_env (Value_neutral { head = e.head; spine }) ty field).ty
-        | Out -> out_ty ty_env ty
-      in
-      spine <: frame, ty)
-  |> snd
+  let ~ty, .. =
+    Bwd.fold_left
+      e.spine
+      ~init:(~spine:Bwd.Empty, ~ty:(infer_head ty_env e.head))
+      ~f:(fun (~spine, ~ty) (frame : Core.frame) ->
+        let ty =
+          match frame with
+          | App arg -> app_ty ty_env ty arg
+          | Proj field ->
+            (proj_ty ty_env (Value_neutral { head = e.head; spine }) ty field).ty
+          | Out -> out_ty ty_env ty
+        in
+        ~spine:(spine <: frame), ~ty)
+  in
+  ty
 
 and infer_head (ty_env : Core.ty_env) (head : Core.head) : Core.ty =
   match head with
