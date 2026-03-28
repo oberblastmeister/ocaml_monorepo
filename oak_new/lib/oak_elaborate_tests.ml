@@ -676,3 +676,24 @@ struct {
     }
     |}]
 ;;
+
+let%expect_test "tests" =
+  check
+    {|
+struct {
+  val Eq
+    : (A : Type) -> A -> A -> Sig
+    = fun A x y -> (P : A -> Type) -> P x -> P y
+    
+  val refl
+    : (A : Type) -> (x : A) -> Eq A x x
+    = fun A x P px -> px
+}
+    |};
+  [%expect {|
+    sig {
+      val Eq : (A : Type) -> A -> A -> Sig = fun A x y -> (P : A -> Type) -> P x -> P y
+      val refl : (A : Type) -> (x : A) -> Eq A x x = fun A x P px -> px
+    }
+    |}]
+;;

@@ -13,7 +13,7 @@ let struct_ty_of_iterated_binders_with
     let context_size = context_size + 1 in
     List.fold_mapi
       field_specs
-      ~init:Syntax.Seq.empty
+      ~init:Syntax.Env.empty
       ~f:(fun index running_env { name; ty; relevancy } ->
         let field : Syntax.field_loc = { name = name.name; index } in
         let field_spec : Syntax.term_field_spec =
@@ -25,7 +25,7 @@ let struct_ty_of_iterated_binders_with
           ; relevancy
           }
         in
-        Syntax.Seq.push (Evaluate.Value.proj free_value field) running_env, field_spec)
+        Syntax.Env.push (Evaluate.Value.proj free_value field) running_env, field_spec)
   in
   { field_specs }
 ;;

@@ -1,11 +1,7 @@
 open Prelude
-
-open struct
-  module Span = Utility.Span
-  module Bwd = Utility.Bwd
-  module Common = Oak_common
-end
-
+module Span = Utility.Span
+module Bwd = Utility.Bwd
+module Common = Oak_common
 module Name = Common.Name
 module Core_ty = Common.Core_ty
 module Size = Common.Size
@@ -15,30 +11,8 @@ module Literal = Common.Literal
 module Icit = Common.Icit
 module Relevancy = Common.Relevancy
 module Param_modifiers = Common.Param_modifiers
-
-module Seq : sig
-  type 'a t [@@deriving sexp_of]
-
-  val empty : 'a t
-  val push : 'a -> 'a t -> 'a t
-  val pop : 'a t -> ('a * 'a t) option
-  val pop_exn : 'a t -> 'a * 'a t
-  val get_index : 'a t -> Index.t -> 'a option
-  val get_level : 'a t -> Level.t -> 'a option
-  val get_index_exn : 'a t -> Index.t -> 'a
-  val get_level_exn : 'a t -> Level.t -> 'a
-  val length : 'a t -> int
-  val iter : 'a t -> f:('a -> unit) -> unit
-  val of_list : 'a list -> 'a t
-  val to_list : 'a t -> 'a list
-end = struct
-  include Utility.Seq
-
-  let get_index t (i : Index.t) = Utility.Seq.get t i.index
-  let get_level t l = get_index t (Index.of_level (Utility.Seq.length t) l)
-  let get_index_exn t (i : Index.t) = Utility.Seq.get_exn t i.index
-  let get_level_exn t l = get_index_exn t (Index.of_level (Utility.Seq.length t) l)
-end
+module Environments = Oak_core_environments
+module Env = Environments.Generic_env
 
 type ty_props = { size : Size.t } [@@deriving sexp_of]
 
@@ -266,8 +240,8 @@ and value_field_spec =
   ; relevancy : Relevancy.t
   }
 
-and env = value Seq.t
-and ty_env = ty Seq.t [@@deriving sexp_of]
+and env = value Env.t
+and ty_env = ty Env.t [@@deriving sexp_of]
 
 module Struct = struct
   type t = value_struct
@@ -278,7 +252,7 @@ end
 module Ty_struct = struct
   type t = ty_struct
 
-  let create ?(env = Seq.empty) field_specs : ty_struct = { field_specs; env }
+  let create ?(env = Env.empty) field_specs : ty_struct = { field_specs; env }
 
   let field_locations ({ env = _; field_specs } : t) : field_loc list =
     List.mapi field_specs ~f:(fun index { name; ty = _; relevancy = _ } ->
