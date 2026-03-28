@@ -9,8 +9,7 @@ let rec eval_value (env : Core.env) (e : Core.term) : Core.value =
     let func = eval_value env func in
     let arg = eval_arg env arg in
     app_value func arg
-  | Term_fun { name; param_modifiers; body } ->
-    Value_fun { name; param_modifiers; body = { env; body } }
+  | Term_fun { name; icit; body } -> Value_fun { name; icit; body = { env; body } }
   | Term_proj { strukt; field } ->
     let strukt = eval_value env strukt in
     proj_value strukt field
@@ -54,15 +53,13 @@ and eval_ty (env : Core.env) (ty : Core.term_ty) : Core.ty =
   | Term_ty_core ty -> Ty_core ty
   | Term_ty_universe props -> Ty_universe props
 
-and eval_field_impl env ({ name; e; relevancy } : Core.term_field_impl)
-  : Core.value_field_impl
-  =
+and eval_field_impl env ({ name; e } : Core.term_field_impl) : Core.value_field_impl =
   let e = eval_value env e in
-  { name; e; relevancy }
+  { name; e }
 
-and eval_arg env ({ e; param_modifiers } : Core.term_arg) : Core.value_arg =
+and eval_arg env ({ e; icit } : Core.term_arg) : Core.value_arg =
   let e = eval_value env e in
-  { e; param_modifiers }
+  { e; icit }
 
 and decode_value (ty : Core.value) : Core.ty =
   match ty with
@@ -151,22 +148,18 @@ and proj_struct_ty
       (strukt : Core.value)
       (struct_ty : Core.ty_struct)
       (field : Core.field_loc)
-  : Core.ty
+  : Core.value_field_spec
   =
   let field_spec = List.drop struct_ty.field_specs field.index |> List.hd_exn in
-  let env =
-    List.take struct_ty.field_specs field.index
-    |> List.foldi ~init:struct_ty.env ~f:(fun index env field_spec ->
-      Core.Seq.push (proj_value strukt { name = field_spec.name.name; index }) env)
-  in
-  eval_ty env field_spec.ty
+  let field_spec_ty = eval_ty (Core.Seq.push strukt struct_ty.env) field_spec.ty in
+  { name = field_spec.name; ty = field_spec_ty; relevancy = field_spec.relevancy }
 
 and proj_ty
       (ty_env : Core.ty_env)
       (strukt : Core.value)
       (ty : Core.ty)
       (field : Core.field_loc)
-  : Core.ty
+  : Core.value_field_spec
   =
   proj_struct_ty strukt (Core.Ty.ty_struct_val_exn (whnf_ty ty_env ty)) field
 
@@ -179,7 +172,7 @@ and whnf_neutral (ty_env : Core.ty_env) (e : Core.neutral) : Core.value =
         (* invariant: e is whnf, ty may not be whnf *)
         match frame with
         | App arg -> app_whnf ty_env e arg, app_ty ty_env ty arg
-        | Proj field -> proj_whnf ty_env e field, proj_ty ty_env e ty field
+        | Proj field -> proj_whnf ty_env e field, (proj_ty ty_env e ty field).ty
         | Out ->
           let ty =
             match whnf_ty ty_env ty with
@@ -196,21 +189,32 @@ and infer_props (ty_env : Core.ty_env) (ty : Core.ty) =
   | Ty_sing _ -> { size = Core.Size.sig_ }
   | Ty_struct ty ->
     let size, _, _ =
-      List.fold
+      List.foldi
         ty.field_specs
-        ~init:(Core.Size.sig_, ty_env, ty.env)
-        ~f:(fun (size, ty_env, closure_env) field_spec ->
-          let ty = eval_ty closure_env field_spec.ty in
-          let props = infer_props ty_env ty in
+        ~init:(Core.Size.sig_, ty_env, Bwd.Empty)
+        ~f:(fun index (size, ty_env, running_field_impls) field_spec ->
+          let field_spec_ty =
+            (proj_struct_ty
+               (Value_struct (Core.Struct.create (Bwd.to_list running_field_impls)))
+               ty
+               { name = field_spec.name.name; index })
+              .ty
+          in
+          let props = infer_props ty_env field_spec_ty in
           ( Core.Size.max size props.size
-          , Core.Seq.push ty ty_env
-          , Core.Seq.push (Core.Value.free_of_size (Core.Seq.length ty_env)) closure_env ))
+          , Core.Seq.push field_spec_ty ty_env
+          , Bwd.snoc
+              running_field_impls
+              (Core.Value_field_impl.create
+                 field_spec.name.name
+                 (Core.Value.free_of_size (Core.Seq.length ty_env))
+               : Core.value_field_impl) ))
     in
     { size }
   | Ty_fun ty ->
     let arg : Core.value_arg =
       { e = Core.Value.free_of_size (Core.Seq.length ty_env)
-      ; param_modifiers = ty.param_modifiers
+      ; icit = ty.param_modifiers.icit
       }
     in
     let param_ty_props = infer_props ty_env ty.param_ty in
@@ -229,7 +233,8 @@ and infer_neutral (ty_env : Core.ty_env) (e : Core.neutral) : Core.ty =
       let ty =
         match frame with
         | App arg -> app_ty ty_env ty arg
-        | Proj field -> proj_ty ty_env (Value_neutral { head = e.head; spine }) ty field
+        | Proj field ->
+          (proj_ty ty_env (Value_neutral { head = e.head; spine }) ty field).ty
         | Out -> out_ty ty_env ty
       in
       spine <: frame, ty)
@@ -294,13 +299,13 @@ let rec quote_value context_size (e : Core.value) : Core.term =
   | Value_struct { field_impls } ->
     let field_impls = List.map field_impls ~f:(quote_field_impl context_size) in
     Term_struct { field_impls }
-  | Value_fun { name; body; param_modifiers } ->
+  | Value_fun { name; body; icit } ->
     let body =
       eval_closure1 body (Core.Value.free_of_size context_size)
       |> quote_value (context_size + 1)
       |> close_single (Core.Level.of_int context_size)
     in
-    Term_fun { name; body; param_modifiers }
+    Term_fun { name; body; icit }
   | Value_sing_in e -> Term_sing_in (quote_value context_size e)
   | Value_neutral e -> quote_neutral context_size e
   | Value_encode_ty { ty; props } ->
@@ -314,17 +319,16 @@ and quote_ty context_size (ty : Core.ty) : Core.term_ty =
     let identity = quote_value context_size identity in
     let ty = quote_ty context_size ty in
     Term_ty_sing { identity; ty }
-  | Ty_struct { env; field_specs } ->
-    let _, field_specs =
-      List.fold_map
-        field_specs
-        ~init:(context_size, env, Close.empty)
-        ~f:(fun (context_size, closure_env, c) { name; ty; relevancy } ->
-          let ty = eval_ty closure_env ty |> quote_ty context_size |> close_ty c in
-          ( ( context_size + 1
-            , Core.Seq.push (Core.Value.free_of_size context_size) closure_env
-            , Close.push_exn (Core.Level.of_int context_size) c )
-          , ({ name; ty; relevancy } : Core.term_field_spec) ))
+  | Ty_struct { env = closure_env; field_specs } ->
+    let level = Core.Level.of_int context_size in
+    let closure_env = Core.Seq.push (Core.Value.free level) closure_env in
+    let context_size = context_size + 1 in
+    let field_specs =
+      List.map field_specs ~f:(fun { name; ty; relevancy } ->
+        let ty =
+          eval_ty closure_env ty |> quote_ty context_size |> close_ty_single level
+        in
+        ({ name; ty; relevancy } : Core.term_field_spec))
     in
     Term_ty_struct { field_specs }
   | Ty_fun { name; param_modifiers; param_ty; body_ty } ->
@@ -362,13 +366,13 @@ and quote_head context_size (head : Core.head) : Core.term =
 
 and quote_arg context_size (arg : Core.value_arg) : Core.term_arg =
   let e = quote_value context_size arg.e in
-  { e; param_modifiers = arg.param_modifiers }
+  { e; icit = arg.icit }
 
-and quote_field_impl (context_size : int) ({ name; e; relevancy } : Core.value_field_impl)
+and quote_field_impl (context_size : int) ({ name; e } : Core.value_field_impl)
   : Core.term_field_impl
   =
   let e = quote_value context_size e in
-  { name; e; relevancy }
+  { name; e }
 
 and close (c : Close.t) (e : Core.term) : Core.term =
   match e with
@@ -376,8 +380,8 @@ and close (c : Close.t) (e : Core.term) : Core.term =
   | Term_free i ->
     Close.find c i |> Option.value_map ~default:e ~f:(fun v -> Term_bound v)
   | Term_app { func; arg } -> Term_app { func = close c func; arg = close_arg c arg }
-  | Term_fun { name; param_modifiers; body } ->
-    Term_fun { name; param_modifiers; body = close (Close.lift 1 c) body }
+  | Term_fun { name; icit; body } ->
+    Term_fun { name; icit; body = close (Close.lift 1 c) body }
   | Term_proj { strukt; field } -> Term_proj { strukt = close c strukt; field }
   | Term_struct { field_impls } ->
     Term_struct { field_impls = List.map field_impls ~f:(close_field_impl c) }
@@ -418,11 +422,10 @@ and close_ty (c : Close.t) (ty : Core.term_ty) : Core.term_ty =
     let body_ty = close_ty (Close.lift 1 c) body_ty in
     Term_ty_fun { name; param_modifiers; param_ty; body_ty }
   | Term_ty_struct { field_specs } ->
-    let _, field_specs =
-      List.fold_map field_specs ~init:0 ~f:(fun under { name; ty; relevancy } ->
-        ( under + 1
-        , ({ name; ty = close_ty (Close.lift under c) ty; relevancy }
-           : Core.term_field_spec) ))
+    let c = Close.lift 1 c in
+    let field_specs =
+      List.map field_specs ~f:(fun { name; ty; relevancy } ->
+        ({ name; ty = close_ty c ty; relevancy } : Core.term_field_spec))
     in
     Term_ty_struct { field_specs }
   | Term_ty_sing { identity; ty } ->
@@ -452,16 +455,27 @@ and close_data_constructor (c : Close.t) ({ name; ty } : Core.term_data_construc
   =
   { name; ty = Option.map ty ~f:(close_ty c) }
 
-and close_field_impl (c : Close.t) ({ name; e; relevancy } : Core.term_field_impl) =
-  { name; e = close c e; relevancy }
+and close_field_impl (c : Close.t) ({ name; e } : Core.term_field_impl) =
+  { name; e = close c e }
 
-and close_arg (c : Close.t) ({ e; param_modifiers } : Core.term_arg) =
-  { e = close c e; param_modifiers }
-;;
+and close_arg (c : Close.t) ({ e; icit } : Core.term_arg) = { e = close c e; icit }
 
 (* Since we only use the context size to generate fresh free variables, we can just use a really large context size *)
 let quote_value = quote_value (Int.max_value / 2)
 let quote_ty = quote_ty (Int.max_value / 2)
+
+let struct_ty_of_iterated_binders (field_specs : Core.term_field_spec list) =
+  let res =
+    List.fold_map
+      ~init:Core.Seq.empty
+      ~f:(fun running_env ({ name; ty; relevancy } : Core.term_field_spec) ->
+        let field_spec : Core.value_field_spec =
+          { name; ty = eval_ty running_env ty; relevancy }
+        in
+        running_env, field_spec)
+  in
+  failwith ""
+;;
 
 module Term = struct
   let close = close

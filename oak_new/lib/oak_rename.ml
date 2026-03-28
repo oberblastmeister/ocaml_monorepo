@@ -100,7 +100,7 @@ let rec rename_expr st (expr : Surface.expr) : Abstract.expr =
         Abstract.Expr_app
           { func
           ; arg
-          ; param_modifiers = { icit; relevancy }
+          ; param_modifiers = ({ icit; relevancy } : Common.Param_modifiers.t)
           ; span = Span.combine (Abstract.Expr.span func) (Abstract.Expr.span arg)
           })
   | Surface.Expr_brack { span; _ } ->

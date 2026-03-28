@@ -16,7 +16,22 @@ module Icit = Common.Icit
 module Relevancy = Common.Relevancy
 module Param_modifiers = Common.Param_modifiers
 
-module Seq = struct
+module Seq : sig
+  type 'a t [@@deriving sexp_of]
+
+  val empty : 'a t
+  val push : 'a -> 'a t -> 'a t
+  val pop : 'a t -> ('a * 'a t) option
+  val pop_exn : 'a t -> 'a * 'a t
+  val get_index : 'a t -> Index.t -> 'a option
+  val get_level : 'a t -> Level.t -> 'a option
+  val get_index_exn : 'a t -> Index.t -> 'a
+  val get_level_exn : 'a t -> Level.t -> 'a
+  val length : 'a t -> int
+  val iter : 'a t -> f:('a -> unit) -> unit
+  val of_list : 'a list -> 'a t
+  val to_list : 'a t -> 'a list
+end = struct
   include Utility.Seq
 
   let get_index t (i : Index.t) = Utility.Seq.get t i.index
@@ -40,7 +55,7 @@ type term =
       }
   | Term_fun of
       { name : Name.t
-      ; param_modifiers : Param_modifiers.t
+      ; icit : Icit.t
       ; body : term
       }
   | Term_proj of
@@ -110,7 +125,6 @@ and field_loc =
 and term_field_impl =
   { name : string
   ; e : term
-  ; relevancy : Relevancy.t
   }
 
 and term_field_spec =
@@ -185,7 +199,7 @@ and ty_sing =
   }
 
 and ty_struct =
-  { env : env
+  { env : env (* env takes one argument which is the running struct value *)
   ; field_specs : term_field_spec list
   }
 
@@ -203,12 +217,12 @@ and spine = frame Bwd.t
 
 and term_arg =
   { e : term
-  ; param_modifiers : Param_modifiers.t
+  ; icit : Icit.t
   }
 
 and value_arg =
   { e : value
-  ; param_modifiers : Param_modifiers.t
+  ; icit : Icit.t
   }
 
 and frame =
@@ -220,7 +234,7 @@ and value_struct = { field_impls : value_field_impl list }
 
 and value_fun =
   { name : Name.t
-  ; param_modifiers : Param_modifiers.t
+  ; icit : Icit.t
   ; body : value_closure
   }
 
@@ -244,16 +258,54 @@ and value_closure =
 and value_field_impl =
   { name : string
   ; e : value
+  }
+
+and value_field_spec =
+  { name : Name.t
+  ; ty : ty
   ; relevancy : Relevancy.t
   }
 
 and env = value Seq.t
 and ty_env = ty Seq.t [@@deriving sexp_of]
 
+module Struct = struct
+  type t = value_struct
+
+  let create field_impls : t = { field_impls }
+end
+
+module Ty_struct = struct
+  type t = ty_struct
+
+  let create ?(env = Seq.empty) field_specs : ty_struct = { field_specs; env }
+
+  let field_locations ({ env = _; field_specs } : t) : field_loc list =
+    List.mapi field_specs ~f:(fun index { name; ty = _; relevancy = _ } ->
+      ({ name = name.name; index } : field_loc))
+  ;;
+end
+
+module Field_loc = struct
+  type t = field_loc
+
+  let create name index : t = { name; index }
+end
+
+module Value_field_impl = struct
+  type t = value_field_impl
+
+  let create name e : t = { name; e }
+end
+
 module Neutral = struct
   type t = neutral
 
   let of_head head : t = { head; spine = Bwd.Empty }
+end
+
+module Term = struct
+  let of_level level = Term_free level
 end
 
 module Value = struct
@@ -262,6 +314,7 @@ module Value = struct
   let of_head head = Value_neutral (Neutral.of_head head)
   let free head = of_head (Free head)
   let free_of_size size = free (Level.of_int size)
+  let create_struct field_impls = Value_struct (Struct.create field_impls)
 
   let abs_val_exn = function
     | Value_fun v -> v

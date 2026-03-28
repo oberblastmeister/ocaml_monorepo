@@ -4,6 +4,7 @@ module Icit = Common.Icit
 module Level = Common.Level
 module Index = Common.Index
 module Name = Common.Name
+module Relevancy = Common.Relevancy
 
 type ty_props = Syntax.ty_props [@@deriving sexp_of]
 type term = Syntax.term [@@deriving sexp_of]
@@ -38,6 +39,7 @@ type ty_fun = Syntax.ty_fun [@@deriving sexp_of]
 type ty_closure = Syntax.ty_closure [@@deriving sexp_of]
 type value_closure = Syntax.value_closure [@@deriving sexp_of]
 type value_field_impl = Syntax.value_field_impl [@@deriving sexp_of]
+type value_field_spec = Syntax.value_field_spec [@@deriving sexp_of]
 
 module type ENV = sig
   type t [@@deriving sexp_of]
@@ -98,11 +100,14 @@ end
 
 module Field_loc : sig
   type t = field_loc [@@deriving sexp_of]
+
+  val create : string -> int -> t
 end
 
 module Term : sig
   type t = term [@@deriving sexp_of]
 
+  val of_level : Level.t -> term
   val close : Close.t -> term -> term
   val close_single : Level.t -> term -> term
   val eval : value_env -> term -> value
@@ -116,9 +121,16 @@ module Term_ty : sig
   val eval : value_env -> term_ty -> ty
 end
 
+module Value_field_impl : sig
+  type t = value_field_impl [@@deriving sexp_of]
+
+  val create : string -> value -> t
+end
+
 module Value : sig
   type t = value [@@deriving sexp_of]
 
+  val create_struct : value_field_impl list -> value
   val whnf : ty_env -> value -> value
   val free : Level.t -> value
   val free_of_size : int -> value
@@ -140,7 +152,7 @@ module Ty : sig
   val ty_sing_val_exn : ty -> ty_sing
   val ty_universe_val_exn : ty -> Ty_props.t
   val quote : ty -> term_ty
-  val proj : ty_env -> value -> ty -> field_loc -> ty
+  val proj : ty_env -> value -> ty -> field_loc -> value_field_spec
   val app : ty_env -> ty -> value_arg -> ty
   val out : ty_env -> ty -> ty
 end
@@ -166,7 +178,8 @@ end
 module Ty_struct : sig
   type t = ty_struct [@@deriving sexp_of]
 
-  val proj : value -> t -> field_loc -> ty
+  val field_locations : t -> field_loc list
+  val proj : value -> t -> field_loc -> value_field_spec
 end
 
 module Fun : sig

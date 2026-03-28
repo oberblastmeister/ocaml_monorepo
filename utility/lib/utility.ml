@@ -13,3 +13,4 @@ module Diagnostic = Utility_diagnostic
 module Bwd = Utility_bwd
 module Fail_state = Utility_fail_state
 module Seq = Utility_seq
+module Iarray = Utility_iarray

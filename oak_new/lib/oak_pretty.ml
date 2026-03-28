@@ -96,7 +96,7 @@ struct
 
   and pp_struct names ({ field_impls } : Core.value_struct) =
     let decls =
-      List.map field_impls ~f:(fun ({ name; e; relevancy = _ } : Core.value_field_impl) ->
+      List.map field_impls ~f:(fun ({ name; e } : Core.value_field_impl) ->
         Doc.group
           (Doc.string "val"
            ^^ Doc.space
@@ -147,7 +147,7 @@ struct
   and collect_fun_params
         names
         (docs : Doc.t list)
-        ({ name; body = _; param_modifiers = _ } as value : Core.value_fun)
+        ({ name; body = _; icit = _ } as value : Core.value_fun)
     =
     let level = Core.Level.of_int (Core.Name_env.length names) in
     let arg = Core.Value.free level in
@@ -177,7 +177,7 @@ struct
     let arg = Core.Value.free (Core.Level.of_int (Core.Name_env.length names)) in
     let names = Core.Name_env.push name names in
     let body_ty =
-      Core.Ty_fun.app ty_fun ({ e = arg; param_modifiers } : Core.value_arg)
+      Core.Ty_fun.app ty_fun ({ e = arg; icit = param_modifiers.icit } : Core.value_arg)
     in
     match body_ty with
     | Ty_fun ty_fun ->
@@ -215,7 +215,7 @@ struct
     in
     doc ^^ Doc.break0 ^^ Doc.char '.' ^^ Doc.string field
 
-  and pp_arg names ({ e; param_modifiers = _ } : Core.value_arg) = pp_value_atom names e
+  and pp_arg names ({ e; icit = _ } : Core.value_arg) = pp_value_atom names e
 
   and pp_neutral names ({ head; spine } : Core.neutral) =
     match spine with

@@ -6,6 +6,7 @@ module Icit = Common.Icit
 module Level = Common.Level
 module Index = Common.Index
 module Name = Common.Name
+module Relevancy = Common.Relevancy
 
 type ty_props = Syntax.ty_props [@@deriving sexp_of]
 type term = Syntax.term [@@deriving sexp_of]
@@ -40,6 +41,7 @@ type ty_fun = Syntax.ty_fun [@@deriving sexp_of]
 type ty_closure = Syntax.ty_closure [@@deriving sexp_of]
 type value_closure = Syntax.value_closure [@@deriving sexp_of]
 type value_field_impl = Syntax.value_field_impl [@@deriving sexp_of]
+type value_field_spec = Syntax.value_field_spec [@@deriving sexp_of]
 
 module type ENV = sig
   type t [@@deriving sexp_of]
@@ -226,11 +228,14 @@ end
 
 module Field_loc = struct
   type t = field_loc [@@deriving sexp_of]
+
+  let create = Syntax.Field_loc.create
 end
 
 module Term = struct
   type t = term [@@deriving sexp_of]
 
+  let of_level = Syntax.Term.of_level
   let close = Evaluate.Term.close
   let close_single = Evaluate.Term.close_single
   let eval = Evaluate.Term.eval
@@ -244,9 +249,16 @@ module Term_ty = struct
   let eval = Evaluate.Term_ty.eval
 end
 
+module Value_field_impl = struct
+  type t = value_field_impl [@@deriving sexp_of]
+
+  let create = Syntax.Value_field_impl.create
+end
+
 module Value = struct
   type t = value [@@deriving sexp_of]
 
+  let create_struct = Syntax.Value.create_struct
   let whnf = Evaluate.Value.whnf
   let free = Syntax.Value.free
   let free_of_size = Syntax.Value.free_of_size
@@ -296,6 +308,7 @@ end
 module Ty_struct = struct
   type t = ty_struct [@@deriving sexp_of]
 
+  let field_locations = Syntax.Ty_struct.field_locations
   let proj = Evaluate.Ty_struct.proj
 end
 

@@ -99,18 +99,28 @@ let rec synthesize_transparent_ty (cx : Context.t) (ty : Core.ty) : Core.term =
           (Doc.string "Universes are not transparent: " ^^ Context.pp_ty cx ty)
       ]
   | Ty_sing { identity; ty = _ } -> Term_sing_in (Core.Value.quote identity)
-  | Ty_struct { env; field_specs } ->
+  | Ty_struct ({ env = _; field_specs = _ } as ty) ->
     let _, _, field_impls =
       List.fold
-        field_specs
-        ~init:(cx, env, Bwd.Empty)
-        ~f:(fun (cx, closure_env, field_impls) { name; ty; relevancy } ->
-          let ty = Core.Term_ty.eval closure_env ty in
-          let e = synthesize_transparent_ty cx ty in
-          let field_impl : Core.term_field_impl = { name = name.name; e; relevancy } in
-          ( Context.bind name ty cx
-          , Core.Value_env.push (Context.next_free cx) closure_env
-          , Bwd.snoc field_impls field_impl ))
+        (Core.Ty_struct.field_locations ty)
+        ~init:(cx, Bwd.Empty, Bwd.Empty)
+        ~f:(fun (cx, running_field_impls, term_field_impls) (field : Core.field_loc) ->
+          let running_struct_value =
+            Core.Value.create_struct (Bwd.to_list running_field_impls)
+          in
+          let field_spec = Core.Ty_struct.proj running_struct_value ty field in
+          let synthesized_term = synthesize_transparent_ty cx field_spec.ty in
+          let term_field_impl : Core.term_field_impl =
+            { name = field_spec.name.name; e = synthesized_term }
+          in
+          (* Make sure to push the synthesized term instead of just a free variable because the resulting structure should be non dependent, each field cannot depend on the previous one *)
+          ( Context.bind field_spec.name field_spec.ty cx
+          , Bwd.snoc
+              running_field_impls
+              (Core.Value_field_impl.create
+                 field.name
+                 (Core.Term.eval Core.Value_env.empty synthesized_term))
+          , Bwd.snoc term_field_impls term_field_impl ))
     in
     let field_impls = Bwd.to_list field_impls in
     Term_struct { field_impls }
@@ -118,13 +128,12 @@ let rec synthesize_transparent_ty (cx : Context.t) (ty : Core.ty) : Core.term =
     let body =
       synthesize_transparent_ty
         (Context.bind name param_ty cx)
-        (Core.Ty_fun.app ty ({ e = Context.next_free cx; param_modifiers } : Core.value_arg))
+        (Core.Ty_fun.app
+           ty
+           ({ e = Context.next_free cx; icit = param_modifiers.icit } : Core.value_arg))
     in
     Term_fun
-      { name
-      ; param_modifiers
-      ; body = Core.Term.close_single (Context.next_level cx) body
-      }
+      { name; icit = param_modifiers.icit; body = Core.Term.close_single (Context.next_level cx) body }
   | Ty_core _ | Ty_pack _ -> Term_ignore
   | Ty_decode e ->
     let ty_props = Core.Neutral.infer_universe cx.ty_env e in
@@ -188,7 +197,8 @@ let rec apply_patch
                       |> Core.Term.eval Core.Value_env.empty
                     in
                     (( Term_sing_out (Term_free (Context.next_level cx))
-                     , Ty_sing { identity = patch_with_coerced; ty = original_field_ty } )
+                     , Ty_sing { identity = patch_with_coerced; ty = original_field_ty }
+                     )
                      : Core.term * Core.ty)
                 end
                 | _ :: _ -> begin
@@ -233,8 +243,9 @@ let rec apply_patch
                 end
               , true )
             else
-              ((Term_free (Context.next_level cx), original_field_ty) : Core.term * Core.ty)
-              , did_find_field
+              ( ((Term_free (Context.next_level cx), original_field_ty)
+                 : Core.term * Core.ty)
+              , did_find_field )
           in
           let cx' = Context.bind name patched_field_ty cx in
           let coerced_field : Core.term_field_impl =
@@ -252,7 +263,6 @@ let rec apply_patch
                               }))
                         Core.Value_env.empty)
                 |> Core.Value.quote
-            ; relevancy
             }
           in
           let patched_field_spec : Core.term_field_spec =
@@ -284,6 +294,133 @@ let rec apply_patch
      , Ty_struct
          { env = Core.Value_env.empty; field_specs = Bwd.to_list patched_field_specs } )
      : Core.term * Core.ty)
+;;
+
+let apply_patch2
+      (cx : Context.t)
+      (path : string list)
+      (term_to_coerce_to_original_ty : Core.term)
+      (original_ty : Core.ty)
+      (patch_with : Core.term)
+      (patch_with_ty : Core.ty)
+  : Core.term * Core.ty
+  =
+  match path with
+  | [] -> failwith "expected nonempty list"
+  | path_part :: path ->
+    let original_ty = extract_struct_ty cx original_ty in
+    let _ =
+      List.fold
+        (Core.Ty_struct.field_locations original_ty)
+        ~init:(~cx, ~running_field_impls:[], ~did_find_field:false)
+        ~f:(fun (~cx, ~running_field_impls, ~did_find_field) field ->
+          let running_struct_value = Core.Value.create_struct running_field_impls in
+          let original_field_spec =
+            Core.Ty_struct.proj running_struct_value original_ty field
+          in
+          let original_field_ty = original_field_spec.ty in
+          let coerced_term, patched_field_ty, did_find_field =
+            if (not did_find_field) && String.equal field.name path_part
+            then begin
+              let coerced_term, patched_field_ty =
+                match path with
+                | [] -> begin
+                  match Core.Ty.whnf cx.ty_env original_field_ty with
+                  | Ty_sing original_ty ->
+                    (* already a singleton, just check for equality *)
+                    let patch_with_coerced =
+                      Unify.coerce cx patch_with patch_with_ty original_ty.ty
+                    in
+                    Unify.unify_value
+                      cx
+                      (Core.Term.eval Core.Value_env.empty patch_with_coerced)
+                      original_ty.identity
+                      original_ty.ty;
+                    raise_notrace Same_signature
+                  | _ ->
+                    let patch_with_coerced =
+                      Unify.coerce cx patch_with patch_with_ty original_field_ty
+                      |> Core.Term.eval Core.Value_env.empty
+                    in
+                    (( Term_sing_out (Term_free (Context.next_level cx))
+                     , Ty_sing { identity = patch_with_coerced; ty = original_field_ty }
+                     )
+                     : Core.term * Core.ty)
+                end
+                | _ :: _ -> begin
+                  match Core.Ty.whnf cx.ty_env original_field_ty with
+                  | Ty_sing original_field_ty ->
+                    let coerced_term, patched_field_ty =
+                      apply_patch
+                        cx
+                        path
+                        (Term_sing_out (Term_free (Context.next_level cx)))
+                        original_field_ty.ty
+                        patch_with
+                        patch_with_ty
+                    in
+                    let coerced_term : Core.term = Term_sing_in coerced_term in
+                    let coerced_identity =
+                      Unify.coerce
+                        cx
+                        (Core.Value.quote original_field_ty.identity)
+                        original_field_ty.ty
+                        patched_field_ty
+                    in
+                    let patched_field_ty : Core.ty =
+                      Ty_sing
+                        { identity = Core.Term.eval Core.Value_env.empty coerced_identity
+                        ; ty = patched_field_ty
+                        }
+                    in
+                    coerced_term, patched_field_ty
+                  | _ ->
+                    let coerced_term, patched_field_ty =
+                      apply_patch
+                        cx
+                        path
+                        (Term_free (Context.next_level cx))
+                        original_field_ty
+                        patch_with
+                        patch_with_ty
+                    in
+                    coerced_term, patched_field_ty
+                end
+              in
+              coerced_term, patched_field_ty, true
+            end
+            else begin
+              ( Core.Term.of_level (Context.next_level cx)
+              , original_field_ty
+              , did_find_field )
+            end
+          in
+          let cx' =
+            Context.bind (Core.Name.create field.name Span.empty) patched_field_ty cx
+          in
+          let coerced_field : Core.term_field_impl =
+            { name = field.name
+            ; e =
+                coerced_term
+                |> Core.Term.close_single (Context.next_level cx)
+                |> Core.Term.eval
+                     (Core.Value_env.push
+                        (Core.Term.eval
+                           Core.Value_env.empty
+                           (Term_proj { strukt = term_to_coerce_to_original_ty; field }))
+                        Core.Value_env.empty)
+                |> Core.Value.quote
+            }
+          in
+          let patched_field_spec : Core.term_field_spec =
+            { name = original_field_spec.name
+            ; ty = Core.Ty.quote patched_field_ty |> Core.Term_ty.close Close.empty
+            ; relevancy = original_field_spec.relevancy
+            }
+          in
+          failwith "")
+    in
+    failwith ""
 ;;
 
 let with_elab_context (cx : Context.t) (span : Span.t) (message : string) ~f =
@@ -348,11 +485,11 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
         ];
     let arg = check cx arg func_ty.param_ty in
     let term_arg : Core.term_arg =
-      { e = Typed.Expr.term arg; param_modifiers = func_ty.param_modifiers }
+      { e = Typed.Expr.term arg; icit = func_ty.param_modifiers.icit }
     in
     let term : Core.term = Term_app { func = Typed.Expr.term func; arg = term_arg } in
     let value_arg : Core.value_arg =
-      { e = eval_expr arg; param_modifiers = func_ty.param_modifiers }
+      { e = eval_expr arg; icit = func_ty.param_modifiers.icit }
     in
     let ty = Core.Ty_fun.app func_ty value_arg in
     Typed.Expr_app { func; arg; param_modifiers; ann = expr_ann cx span term ty }
@@ -373,7 +510,7 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
     let term : Core.term =
       Term_fun
         { name
-        ; param_modifiers
+        ; icit = param_modifiers.icit
         ; body = Core.Term.close_single (Context.next_level cx) (Typed.Expr.term body)
         }
     in
@@ -446,8 +583,12 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
               (Doc.string "Struct does not have field " ^^ Doc.string field)
           ]
     in
-    let term : Core.term = Term_proj { strukt = Typed.Expr.term strukt; field = field_loc } in
-    let ty = Core.Ty.proj cx.ty_env (eval_expr strukt) (Typed.Expr.ty strukt) field_loc in
+    let term : Core.term =
+      Term_proj { strukt = Typed.Expr.term strukt; field = field_loc }
+    in
+    let ty =
+      (Core.Ty.proj cx.ty_env (eval_expr strukt) (Typed.Expr.ty strukt) field_loc).ty
+    in
     let term, ty = coerce_singleton cx term ty in
     Typed.Expr_proj { strukt; field; ann = expr_ann cx span term ty }
   | Expr_struct { decls; span; is_dependent = true } ->
@@ -494,10 +635,9 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
         ~init:
           (Term_struct
              { field_impls =
-                 List.mapi decls ~f:(fun i { name; relevancy; _ } ->
-                    ({ name = name.name
+                 List.mapi decls ~f:(fun i { name; relevancy = _; _ } ->
+                   ({ name = name.name
                     ; e = Term_bound (Core.Index.of_int (decl_count - i - 1))
-                    ; relevancy
                     }
                     : Core.term_field_impl))
              })
@@ -531,9 +671,7 @@ let rec infer (cx : Context.t) (e : Abstract.expr) : Typed.expr =
             ; relevancy = decl.relevancy
             }
           in
-          let field_impl : Core.term_field_impl =
-            { name = decl.name.name; e = rhs; relevancy = decl.relevancy }
-          in
+          let field_impl : Core.term_field_impl = { name = decl.name.name; e = rhs } in
           ( Close.push_exn (Core.Level.of_int (Context.size cx + index)) close
           , Bwd.snoc typed_decls typed_decl
           , Bwd.snoc field_impls field_impl
@@ -794,13 +932,12 @@ and check (cx : Context.t) (e : Abstract.expr) (ty : Core.ty) : Typed.expr =
         body
         (Core.Ty_fun.app
            fun_ty
-           ({ e = Context.next_free cx; param_modifiers = fun_ty.param_modifiers }
-            : Core.value_arg))
+           ({ e = Context.next_free cx; icit = fun_ty.param_modifiers.icit } : Core.value_arg))
     in
     let term : Core.term =
       Term_fun
         { name
-        ; param_modifiers = fun_ty.param_modifiers
+        ; icit = fun_ty.param_modifiers.icit
         ; body = Core.Term.close_single (Context.next_level cx) (Typed.Expr.term body)
         }
     in
