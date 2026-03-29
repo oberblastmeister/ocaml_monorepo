@@ -45,9 +45,12 @@ and eval_ty (env : Core.env) (ty : Core.term_ty) : Core.ty =
   | Term_ty_decode e ->
     let e = eval_value env e in
     decode_value e
-  | Term_ty_fun { name; param_ty; param_modifiers; body_ty } ->
-    let param_ty = eval_ty env param_ty in
-    Ty_fun { name; param_modifiers; param_ty; body_ty = { env; body = body_ty } }
+  | Term_ty_fun { param; body_ty } ->
+    let param_ty = eval_ty env param.param in
+    let param : Core.value_param =
+      { name = param.name; modifiers = param.modifiers; param = param_ty }
+    in
+    Ty_fun { param; body_ty = { env; body = body_ty } }
   | Term_ty_struct { field_specs } -> Ty_struct { env; field_specs }
   | Term_ty_sing { identity; ty } ->
     let identity = eval_value env identity in
@@ -224,12 +227,12 @@ and infer_props (ty_env : Core.ty_env) (ty : Core.ty) =
   | Ty_fun ty ->
     let arg : Core.value_arg =
       { e = Core.Value.free_of_size (Core.Env.length ty_env)
-      ; icit = ty.param_modifiers.icit
+      ; icit = ty.param.modifiers.icit
       }
     in
-    let param_ty_props = infer_props ty_env ty.param_ty in
+    let param_ty_props = infer_props ty_env ty.param.param in
     let body_ty_props =
-      infer_props (Core.Env.push ty.param_ty ty_env) (app_fun_ty ty arg)
+      infer_props (Core.Env.push ty.param.param ty_env) (app_fun_ty ty arg)
     in
     { size = Core.Size.max param_ty_props.size body_ty_props.size }
   | Ty_pack _ | Ty_core _ -> { size = Core.Size.type_ }
@@ -343,14 +346,17 @@ and quote_ty context_size (ty : Core.ty) : Core.term_ty =
         ({ name; ty; relevancy } : Core.term_field_spec))
     in
     Term_ty_struct { field_specs }
-  | Ty_fun { name; param_modifiers; param_ty; body_ty } ->
-    let param_ty = quote_ty context_size param_ty in
+  | Ty_fun { param; body_ty } ->
+    let param_ty = quote_ty context_size param.param in
     let body_ty =
       eval_ty_closure1 body_ty (Core.Value.free_of_size context_size)
       |> quote_ty (context_size + 1)
       |> close_ty_single (Core.Level.of_int context_size)
     in
-    Term_ty_fun { name; param_modifiers; param_ty; body_ty }
+    let param : Core.term_param =
+      { name = param.name; modifiers = param.modifiers; param = param_ty }
+    in
+    Term_ty_fun { param; body_ty }
   | Ty_core ty -> Term_ty_core ty
   | Ty_pack ty -> Term_ty_pack (quote_ty context_size ty)
   | Ty_decode e ->
@@ -429,10 +435,13 @@ and close_ty (c : Close.t) (ty : Core.term_ty) : Core.term_ty =
   | Term_ty_decode e ->
     let e = close c e in
     Term_ty_decode e
-  | Term_ty_fun { name; param_ty; param_modifiers; body_ty } ->
-    let param_ty = close_ty c param_ty in
+  | Term_ty_fun { param; body_ty } ->
+    let param_ty = close_ty c param.param in
     let body_ty = close_ty (Close.lift 1 c) body_ty in
-    Term_ty_fun { name; param_modifiers; param_ty; body_ty }
+    let param : Core.term_param =
+      { name = param.name; modifiers = param.modifiers; param = param_ty }
+    in
+    Term_ty_fun { param; body_ty }
   | Term_ty_struct { field_specs } ->
     let c = Close.lift 1 c in
     let field_specs =

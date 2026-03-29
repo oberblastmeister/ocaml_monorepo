@@ -40,6 +40,8 @@ type frame = Syntax.frame [@@deriving sexp_of]
 type value_struct = Syntax.value_struct [@@deriving sexp_of]
 type value_fun = Syntax.value_fun [@@deriving sexp_of]
 type ty_fun = Syntax.ty_fun [@@deriving sexp_of]
+type value_param = Syntax.value_param [@@deriving sexp_of]
+type term_param = Syntax.term_param [@@deriving sexp_of]
 type ty_closure = Syntax.ty_closure [@@deriving sexp_of]
 type value_closure = Syntax.value_closure [@@deriving sexp_of]
 type value_field_impl = Syntax.value_field_impl [@@deriving sexp_of]
@@ -167,7 +169,7 @@ end
 module Term_ty_struct = struct
   type t = term_ty_struct [@@deriving sexp_of]
 
-  let of_iterated_binders = Core_utils.struct_ty_of_iterated_binders
+  let of_iterated_binders = Core_utils.Term_ty_struct.of_iterated_binders
 end
 
 module Struct = struct

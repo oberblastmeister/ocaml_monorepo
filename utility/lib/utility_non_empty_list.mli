@@ -73,6 +73,9 @@ val tl : 'a t -> 'a list
 (** [last] returns the final element of the non-empty list. *)
 val last : 'a t -> 'a
 
+(** [drop_last t] returns [t] without its final element. *)
+val drop_last : 'a t -> 'a list
+
 (** Returns the [n]-th element of the list. The head of the list has position 0. 
     [None] is returned if the list [t] is too short or [n] is negative. *)
 val nth : 'a t -> int -> 'a option

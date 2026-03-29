@@ -74,10 +74,10 @@ let rec unify_value
     ()
   | Ty_fun ty ->
     let var_value = Context.next_free cx in
-    let arg : Core.value_arg = { e = var_value; icit = ty.param_modifiers.icit } in
+    let arg : Core.value_arg = { e = var_value; icit = ty.param.modifiers.icit } in
     unify_value
       st
-      (Context.bind ty.name ty.param_ty cx)
+      (Context.bind ty.param.name ty.param.param cx)
       (Core.Value.app e1 arg)
       (Core.Value.app e2 arg)
       (Core.Ty_fun.app ty arg)
@@ -97,14 +97,13 @@ and unify_ty (st : State.t) (cx : Context.t) (ty1 : Core.ty) (ty2 : Core.ty) =
     unify_ty st cx ty1.ty ty2.ty;
     unify_value st cx ty1.identity ty2.identity ty1.ty
   | Ty_fun ty1, Ty_fun ty2 ->
-    unify_ty st cx ty1.param_ty ty2.param_ty;
-    unify_param_modifiers st ty1.param_modifiers ty2.param_modifiers;
+    unify_param st cx ty1.param ty2.param;
     let arg : Core.value_arg =
-      { e = Context.next_free cx; icit = ty1.param_modifiers.icit }
+      { e = Context.next_free cx; icit = ty1.param.modifiers.icit }
     in
     unify_ty
       st
-      (Context.bind ty1.name ty1.param_ty cx)
+      (Context.bind ty1.param.name ty1.param.param cx)
       (Core.Ty_fun.app ty1 arg)
       (Core.Ty_fun.app ty2 arg)
   | Ty_struct ty1, Ty_struct ty2 ->
@@ -207,6 +206,16 @@ and unify_icit (st : State.t) (icit1 : Icit.t) (icit2 : Icit.t) =
            ^^ Icit.pp icit2)
       ]
 
+and unify_param
+      (st : State.t)
+      (cx : Context.t)
+      (param1 : Core.value_param)
+      (param2 : Core.value_param)
+  : unit
+  =
+  unify_ty st cx param1.param param2.param;
+  unify_param_modifiers st param1.modifiers param2.modifiers
+
 and unify_param_modifiers
       (st : State.t)
       (param_modifiers1 : Common.Param_modifiers.t)
@@ -271,7 +280,7 @@ and unify_neutral (st : State.t) (cx : Context.t) (e1 : Core.neutral) (e2 : Core
           | Out, _ | _, Out -> failwith "should be whnf"
           | App arg1, App arg2 ->
             let fun_ty = Core.Ty.whnf cx.ty_env ty |> Core.Ty.ty_fun_val_exn in
-            unify_value st cx arg1.e arg2.e fun_ty.param_ty;
+            unify_value st cx arg1.e arg2.e fun_ty.param.param;
             Core.Ty_fun.app fun_ty arg1
           | Proj field1, Proj field2 ->
             if not (field1.index = field2.index)
@@ -357,18 +366,19 @@ and sub (st : State.t) (cx : Context.t) (e : Core.term) (ty1 : Core.ty) (ty2 : C
     unify_value st cx (Core.Term.eval Core.Value_env.empty e') ty2.identity ty2.ty;
     ((Some (Term_sing_in e'), coe) : Core.term option * Typed.runtime_coe)
   | Ty_fun ty1, Ty_fun ty2 ->
-    unify_param_modifiers st ty1.param_modifiers ty2.param_modifiers;
+    unify_param_modifiers st ty1.param.modifiers ty2.param.modifiers;
     let free = Context.next_level cx in
     let arg_var_value = Context.next_free cx in
-    let cx = Context.bind ty2.name ty2.param_ty cx in
+    let cx = Context.bind ty2.param.name ty2.param.param cx in
     let arg_var_term = Core.Value.quote arg_var_value in
-    let arg', arg_coe = sub st cx arg_var_term ty2.param_ty ty1.param_ty in
+    let arg', arg_coe = sub st cx arg_var_term ty2.param.param ty1.param.param in
     let arg_term = Option.value ~default:arg_var_term arg' in
     let arg_value = Core.Term.eval Core.Value_env.empty arg_term in
     let app_term : Core.term =
       Term_app
         { func = e
-        ; arg = ({ e = arg_term; icit = ty1.param_modifiers.icit } : Core.term_arg)
+        ; arg =
+            ({ e = arg_term; icit = ty1.param.modifiers.icit } : Core.term_arg)
         }
     in
     let body', ret_coe =
@@ -378,10 +388,10 @@ and sub (st : State.t) (cx : Context.t) (e : Core.term) (ty1 : Core.ty) (ty2 : C
         app_term
         (Core.Ty_fun.app
            ty1
-           ({ e = arg_value; icit = ty1.param_modifiers.icit } : Core.value_arg))
+           ({ e = arg_value; icit = ty1.param.modifiers.icit } : Core.value_arg))
         (Core.Ty_fun.app
            ty2
-           ({ e = arg_value; icit = ty2.param_modifiers.icit } : Core.value_arg))
+           ({ e = arg_value; icit = ty2.param.modifiers.icit } : Core.value_arg))
     in
     let runtime_coe = mk_fun_coe arg_coe ret_coe in
     let body_term = Option.value ~default:app_term body' in
@@ -390,8 +400,8 @@ and sub (st : State.t) (cx : Context.t) (e : Core.term) (ty1 : Core.ty) (ty2 : C
     else
       (( Some
            (Term_fun
-              { name = ty2.name
-              ; icit = ty2.param_modifiers.icit
+              { name = ty2.param.name
+              ; icit = ty2.param.modifiers.icit
               ; body = Core.Term.close_single free body_term
               })
        , runtime_coe )

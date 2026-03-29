@@ -73,6 +73,12 @@ let rec last t =
   | _ :: x :: xs -> last (x :: xs)
 ;;
 
+let rec drop_last t =
+  match t with
+  | [ _ ] -> []
+  | x :: y :: ys -> x :: drop_last (y :: ys)
+;;
+
 let concat (xs :: xss) =
   let x = hd xs
   and xs = tl xs @ List.concat (List.map ~f:to_list xss) in

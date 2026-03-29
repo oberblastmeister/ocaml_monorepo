@@ -697,3 +697,66 @@ struct {
     }
     |}]
 ;;
+
+let%expect_test "synthesize dependent signature" =
+  check {|
+struct {
+  val T = Bool
+
+  val x : sig {
+    val A = Bool
+    val B = T
+    val C = T
+    val D = A
+    val F = B
+    val x : T
+    val y : F
+  } = {
+    bind x = pack 34 
+    struct(val A = Bool, val B = T, val C = Bool, val D = T, val F = Bool, val x = true, val y = true)
+  }
+}
+    |};
+  [%expect {|
+    sig {
+      val T : Type = Bool
+      val x :
+        sig {
+          val A : Type = Bool
+          val B : Type = T
+          val C : Type = T
+          val D : Type = A
+          val F : Type = B
+          val x : T
+          val y : F
+        }
+      =
+        struct (
+          val A = Bool,
+          val B = T,
+          val C = T,
+          val D = Bool,
+          val F = T,
+          val x = ignore,
+          val y = ignore
+        )
+    }
+    |}];
+  check {|
+struct {
+  val T : sig {
+    val T : Type
+  } = {
+    bind x = pack 324
+    234
+  }
+}
+    |};
+  [%expect {|
+    error: Universes are not transparent: Type
+    error: while checking the bind expression
+     --> <input>:6:5
+      |
+    6 |     bind x = pack 324
+      |     ^^^^^^^^^^^^^^^^^
+    |}]

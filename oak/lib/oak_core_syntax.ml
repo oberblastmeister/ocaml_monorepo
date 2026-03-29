@@ -109,12 +109,7 @@ and term_field_spec =
 
 and term_ty =
   | Term_ty_decode of term
-  | Term_ty_fun of
-      { name : Name.t
-      ; param_ty : term_ty
-      ; param_modifiers : Param_modifiers.t
-      ; body_ty : term_ty
-      }
+  | Term_ty_fun of term_ty_fun
   | Term_ty_struct of term_ty_struct
   | Term_ty_sing of
       { identity : term
@@ -123,6 +118,17 @@ and term_ty =
   | Term_ty_pack of term_ty
   | Term_ty_core of Core_ty.t
   | Term_ty_universe of Ty_props.t
+
+and term_ty_fun =
+  { param : term_param
+  ; body_ty : term_ty
+  }
+
+and term_param =
+  { name : Name.t
+  ; param : term_ty
+  ; modifiers : Param_modifiers.t
+  }
 
 and term_ty_struct = { field_specs : term_field_spec list }
 
@@ -213,10 +219,14 @@ and value_fun =
   }
 
 and ty_fun =
-  { name : Name.t
-  ; param_modifiers : Param_modifiers.t
-  ; param_ty : ty
+  { param : value_param
   ; body_ty : ty_closure
+  }
+
+and value_param =
+  { name : Name.t
+  ; modifiers : Param_modifiers.t
+  ; param : ty
   }
 
 and ty_closure =
@@ -242,6 +252,12 @@ and value_field_spec =
 
 and env = value Env.t
 and ty_env = ty Env.t [@@deriving sexp_of]
+
+module Term_ty_fun = struct
+  type t = term_ty_fun
+
+  let create param body_ty : t = { param; body_ty }
+end
 
 module Struct = struct
   type t = value_struct

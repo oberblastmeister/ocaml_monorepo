@@ -607,46 +607,46 @@ data_rec {
   [%expect
     {|
     (Expr_data_rec
-     (decls
-      (((name ((name First) (span ((start 8) (stop 9)))))
-        (data
-         ((params
-           (((name ((name A) (span ((start 11) (stop 12)))))
-             (ty (Expr_universe (size Type) (span ((start 15) (stop 16))))))))
-          (body
-           (Data_record
-            (fields
-             (((name ((name second) (span ((start 21) (stop 22)))))
-               (ty
-                (Expr_app
-                 (func
-                  (Expr_var (index ((index 0))) (span ((start 25) (stop 26)))))
-                 (arg
-                  (Expr_var (index ((index 2))) (span ((start 27) (stop 28)))))
-                 (param_modifiers ((icit Expl) (relevancy Relevant)))
-                 (span ((start 25) (stop 28))))))))))
-          (span ((start 6) (stop 31)))))
-        (span ((start 6) (stop 31))))
-       ((name ((name Second) (span ((start 38) (stop 39)))))
-        (data
-         ((params
-           (((name ((name A) (span ((start 41) (stop 42)))))
-             (ty (Expr_universe (size Type) (span ((start 45) (stop 46))))))))
-          (body
-           (Data_record
-            (fields
-             (((name ((name first) (span ((start 51) (stop 52)))))
-               (ty
-                (Expr_app
-                 (func
-                  (Expr_var (index ((index 1))) (span ((start 55) (stop 56)))))
-                 (arg
-                  (Expr_var (index ((index 2))) (span ((start 57) (stop 58)))))
-                 (param_modifiers ((icit Expl) (relevancy Relevant)))
-                 (span ((start 55) (stop 58))))))))))
-          (span ((start 36) (stop 61)))))
-        (span ((start 36) (stop 61))))))
-     (span ((start 1) (stop 63))))
+     ((decls
+       (((name ((name First) (span ((start 8) (stop 9)))))
+         (data
+          ((params
+            (((name ((name A) (span ((start 11) (stop 12)))))
+              (ty (Expr_universe (size Type) (span ((start 15) (stop 16))))))))
+           (body
+            (Data_record
+             (fields
+              (((name ((name second) (span ((start 21) (stop 22)))))
+                (ty
+                 (Expr_app
+                  (func
+                   (Expr_var (index ((index 0))) (span ((start 25) (stop 26)))))
+                  (arg
+                   (Expr_var (index ((index 2))) (span ((start 27) (stop 28)))))
+                  (param_modifiers ((icit Expl) (relevancy Relevant)))
+                  (span ((start 25) (stop 28))))))))))
+           (span ((start 6) (stop 31)))))
+         (span ((start 6) (stop 31))))
+        ((name ((name Second) (span ((start 38) (stop 39)))))
+         (data
+          ((params
+            (((name ((name A) (span ((start 41) (stop 42)))))
+              (ty (Expr_universe (size Type) (span ((start 45) (stop 46))))))))
+           (body
+            (Data_record
+             (fields
+              (((name ((name first) (span ((start 51) (stop 52)))))
+                (ty
+                 (Expr_app
+                  (func
+                   (Expr_var (index ((index 1))) (span ((start 55) (stop 56)))))
+                  (arg
+                   (Expr_var (index ((index 2))) (span ((start 57) (stop 58)))))
+                  (param_modifiers ((icit Expl) (relevancy Relevant)))
+                  (span ((start 55) (stop 58))))))))))
+           (span ((start 36) (stop 61)))))
+         (span ((start 36) (stop 61))))))
+      (span ((start 1) (stop 63)))))
     |}]
 ;;
 

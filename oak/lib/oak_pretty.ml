@@ -165,23 +165,23 @@ struct
   and collect_ty_fun_params
         names
         acc_params
-        ({ name; param_ty; param_modifiers; _ } as ty_fun : Core.ty_fun)
+        ({ param = { name; param; modifiers }; _ } as ty_fun : Core.ty_fun)
     =
     let param_doc =
       if String.equal name.name "_"
-      then pp_ty_non_arrow names param_ty
+      then pp_ty_non_arrow names param
       else
         parens
           (Doc.string name.name
            ^^ Doc.space
            ^^ Doc.string ":"
            ^^ Doc.break1
-           ^^ pp_ty names param_ty)
+           ^^ pp_ty names param)
     in
     let arg = Core.Value.free (Core.Level.of_int (Core.Name_env.length names)) in
     let names = Core.Name_env.push name names in
     let body_ty =
-      Core.Ty_fun.app ty_fun ({ e = arg; icit = param_modifiers.icit } : Core.value_arg)
+      Core.Ty_fun.app ty_fun ({ e = arg; icit = modifiers.icit } : Core.value_arg)
     in
     match body_ty with
     | Ty_fun ty_fun -> collect_ty_fun_params names (param_doc :: acc_params) ty_fun

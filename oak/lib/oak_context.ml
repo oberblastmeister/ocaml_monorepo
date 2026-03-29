@@ -18,6 +18,6 @@ let bind (name : Core.Name.t) ty cx =
 let size (cx : t) = Core.Ty_env.length cx.ty_env
 let next_free cx = Core.Value.free_of_size (size cx)
 let next_level cx = Core.Level.of_int (size cx)
-let level_var_ty cx (var : Core.Level.t) = Core.Ty_env.get_level_exn cx.ty_env var
+let get_level_exn cx (var : Core.Level.t) = Core.Ty_env.get_level_exn cx.ty_env var
 let pp_value cx value = Pretty.pp_value cx.name_list value
 let pp_ty ?show_singletons cx ty = Pretty.pp_ty ?show_singletons cx.name_list ty

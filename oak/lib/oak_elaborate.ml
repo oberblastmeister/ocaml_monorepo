@@ -125,18 +125,18 @@ let rec synthesize_transparent_ty (st : State.t) (cx : Context.t) (ty : Core.ty)
     in
     let field_impls = Bwd.to_list field_impls in
     Term_struct { field_impls }
-  | Ty_fun ({ name; param_ty; param_modifiers; _ } as ty) ->
+  | Ty_fun ({ param = { name; param; modifiers }; _ } as ty) ->
     let body =
       synthesize_transparent_ty
         st
-        (Context.bind name param_ty cx)
+        (Context.bind name param cx)
         (Core.Ty_fun.app
            ty
-           ({ e = Context.next_free cx; icit = param_modifiers.icit } : Core.value_arg))
+           ({ e = Context.next_free cx; icit = modifiers.icit } : Core.value_arg))
     in
     Term_fun
       { name
-      ; icit = param_modifiers.icit
+      ; icit = modifiers.icit
       ; body = Core.Term.close_single (Context.next_level cx) body
       }
   | Ty_core _ | Ty_pack _ -> Term_ignore
@@ -337,6 +337,7 @@ let rec coerce_singleton (cx : Context.t) (e : Core.term) (ty : Core.ty)
   | ty -> e, ty
 ;;
 
+
 (* postcondition: the type in Typed.expr should be the type of the core term *)
 let rec infer (st : State.t) (cx : Context.t) (e : Abstract.expr) : Typed.expr =
   match e with
@@ -370,25 +371,25 @@ let rec infer (st : State.t) (cx : Context.t) (e : Abstract.expr) : Typed.expr =
       with_elab_context st span "while inferring the function application" ~f:(fun () ->
         extract_fun_ty st cx (Typed.Expr.ty func))
     in
-    if not (Icit.equal func_ty.param_modifiers.icit param_modifiers.icit)
+    if not (Icit.equal func_ty.param.modifiers.icit param_modifiers.icit)
     then
       State.throw
         st
         [ Diagnostic.Part.create
             ~snippet:(State.snippet st span)
             (Doc.string "Expected "
-             ^^ Icit.pp func_ty.param_modifiers.icit
+             ^^ Icit.pp func_ty.param.modifiers.icit
              ^^ Doc.string " argument, got "
              ^^ Icit.pp param_modifiers.icit
              ^^ Doc.string " argument")
         ];
-    let arg = check st cx arg func_ty.param_ty in
+    let arg = check st cx arg func_ty.param.param in
     let term_arg : Core.term_arg =
-      { e = Typed.Expr.term arg; icit = func_ty.param_modifiers.icit }
+      { e = Typed.Expr.term arg; icit = func_ty.param.modifiers.icit }
     in
     let term : Core.term = Term_app { func = Typed.Expr.term func; arg = term_arg } in
     let value_arg : Core.value_arg =
-      { e = eval_expr arg; icit = func_ty.param_modifiers.icit }
+      { e = eval_expr arg; icit = func_ty.param.modifiers.icit }
     in
     let ty = Core.Ty_fun.app func_ty value_arg in
     Typed.Expr_app { func; arg; param_modifiers; ann = expr_ann cx span term ty }
@@ -413,7 +414,9 @@ let rec infer (st : State.t) (cx : Context.t) (e : Abstract.expr) : Typed.expr =
         ; body = Core.Term.close_single (Context.next_level cx) (Typed.Expr.term body)
         }
     in
-    let ty : Core.ty = Ty_fun { name; param_modifiers; param_ty; body_ty } in
+    let ty : Core.ty =
+      Ty_fun { param = { name; modifiers = param_modifiers; param = param_ty }; body_ty }
+    in
     Typed.Expr_fun
       { name
       ; param_ty = Some param_ty_typed
@@ -445,9 +448,11 @@ let rec infer (st : State.t) (cx : Context.t) (e : Abstract.expr) : Typed.expr =
               cx
               span
               (Term_ty_fun
-                 { name
-                 ; param_ty = Typed.Ty.term param_ty_typed
-                 ; param_modifiers
+                 { param =
+                     { name
+                     ; param = Typed.Ty.term param_ty_typed
+                     ; modifiers = param_modifiers
+                     }
                  ; body_ty =
                      Typed.Ty.term body_ty_typed
                      |> Core.Term_ty.close_single (Context.next_level cx)
@@ -823,7 +828,7 @@ and check (st : State.t) (cx : Context.t) (e : Abstract.expr) (ty : Core.ty) : T
       (Diagnostic.Part.create
          ~snippet:(State.snippet st span)
          (Doc.string "while checking binder"))
-      ~f:(fun () -> Unify.unify_param_modifiers st fun_ty.param_modifiers param_modifiers);
+      ~f:(fun () -> Unify.unify_param_modifiers st fun_ty.param.modifiers param_modifiers);
     let param_ty =
       match param_ty with
       | None -> None
@@ -838,23 +843,23 @@ and check (st : State.t) (cx : Context.t) (e : Abstract.expr) (ty : Core.ty) : T
               st
               cx
               (Core.Term_ty.eval Core.Value_env.empty (Typed.Ty.term param_ty_typed))
-              fun_ty.param_ty);
+              fun_ty.param.param);
         Some param_ty_typed
     in
     let body =
       check
         st
-        (Context.bind name fun_ty.param_ty cx)
+        (Context.bind name fun_ty.param.param cx)
         body
         (Core.Ty_fun.app
            fun_ty
-           ({ e = Context.next_free cx; icit = fun_ty.param_modifiers.icit }
+           ({ e = Context.next_free cx; icit = fun_ty.param.modifiers.icit }
             : Core.value_arg))
     in
     let term : Core.term =
       Term_fun
         { name
-        ; icit = fun_ty.param_modifiers.icit
+        ; icit = fun_ty.param.modifiers.icit
         ; body = Core.Term.close_single (Context.next_level cx) (Typed.Expr.term body)
         }
     in
@@ -928,6 +933,18 @@ and check_universe (st : State.t) (cx : Context.t) (ty : Abstract.expr) : Typed.
           (Term_ty_decode (Typed.Expr.term typed_ty))
           props
     }
+
+and check_data_param (st : State.t) (cx : Context.t) ({ name; ty } : Abstract.data_param)
+  : Typed.data_param
+  =
+  let ty_typed = check_universe st cx ty in
+  failwith ""
+
+and check_data_rec_params (st : State.t) (cx : Context.t) (data : Abstract.expr_data_rec) =
+  let field_specs =
+    List.map data.decls ~f:(fun { name; data = { params; _ }; _ } -> ())
+  in
+  failwith ""
 ;;
 
 let infer source e =

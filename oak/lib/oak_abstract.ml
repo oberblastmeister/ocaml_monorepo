@@ -104,15 +104,17 @@ type expr =
       ; rhs : expr
       ; span : Span.t
       }
-  | Expr_data_rec of
-      { decls : data_decl list
-      ; span : Span.t
-      }
+  | Expr_data_rec of expr_data_rec
   | Expr_data of expr_data
 
 and data_decl =
   { name : Name.t
   ; data : expr_data
+  ; span : Span.t
+  }
+
+and expr_data_rec =
+  { decls : data_decl list
   ; span : Span.t
   }
 
