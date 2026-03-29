@@ -178,7 +178,7 @@ and data_constructor =
 
 and data_param =
   { name : Name.t
-  ; ty : expr
+  ; ty : ty
   }
 
 and runtime_coe =

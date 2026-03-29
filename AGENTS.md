@@ -20,19 +20,6 @@ All libraries use `(flags (:standard -warn-error -A))` which turns off treating 
 
 ## Library Architecture
 
-### staged
-
-A staged metaprogramming language with compile-time and runtime stages. Key modules:
-
-- `Staged_syntax` - AST definition with `Stage.t` (Runtime | Comptime), expression types (functions, applications, let bindings), and type system (Ty_fun with stage annotations)
-- `Staged_infer` - Type inference with bidirectional typing, tracks variable types in environment
-- `Staged_evaluate` - Multi-stage evaluator that handles both compile-time and runtime evaluation, uses fuel-based recursion limits
-- `Staged_var` - Variable representation with unique IDs
-- `Staged_parse` - Parser for the staged language
-- `Staged_tests` - Test suite with helper functions for constructing expressions
-
-Dependencies: `shrubbery`, `utility`, `core`
-
 ### shrubbery
 
 A layout-sensitive parsing library using indentation and grouping. Modules:
@@ -524,12 +511,3 @@ Benefits:
 - Callers get a simple function with optional parameters instead of needing to instantiate a functor
 - The functor remains available for cases that need a fixed configuration
 - Default values are specified once at the call site
-
-## Recent Work
-
-Based on git history, recent changes involve:
-
-- Variable scoping fixes using fresh variables
-- Avoiding quadratic blowup with Acc.t
-- Switching to single-arity functions
-- Iterator improvements in functional library

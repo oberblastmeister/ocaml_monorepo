@@ -1,5 +1,6 @@
 open Prelude
 module Core = Oak_core_syntax
+module Cow_slice = Utility.Cow_slice
 
 (*
   It is fine to use this value as the context_size as long as we don't call any other functions that use this context_size.
@@ -20,7 +21,7 @@ let rec eval_value (env : Core.env) (e : Core.term) : Core.value =
     let strukt = eval_value env strukt in
     proj_value strukt field
   | Term_struct { field_impls } ->
-    let field_impls = List.map field_impls ~f:(eval_field_impl env) in
+    let field_impls = Cow_slice.map field_impls ~f:(eval_field_impl env) in
     Value_struct { field_impls }
   | Term_sing_in e ->
     let e = eval_value env e in
@@ -120,7 +121,7 @@ and proj_whnf (ty_env : Core.ty_env) (strukt : Core.value) (field : Core.field_l
   | _ -> failwith "Expected a struct value"
 
 and proj_struct (strukt : Core.value_struct) (field : Core.field_loc) =
-  let field_impl = List.drop strukt.field_impls field.index |> List.hd_exn in
+  let field_impl = Cow_slice.get strukt.field_impls field.index in
   field_impl.e
 
 and app_fun (abs : Core.value_fun) (arg : Core.value) = eval_closure1 abs.body arg
@@ -159,7 +160,7 @@ and proj_struct_ty
       (field : Core.field_loc)
   : Core.value_field_spec
   =
-  let field_spec = List.drop struct_ty.field_specs field.index |> List.hd_exn in
+  let field_spec = Cow_slice.get struct_ty.field_specs field.index in
   let field_spec_ty = eval_ty (Core.Env.push strukt struct_ty.env) field_spec.ty in
   { name = field_spec.name; ty = field_spec_ty; relevancy = field_spec.relevancy }
 
@@ -201,14 +202,16 @@ and infer_props (ty_env : Core.ty_env) (ty : Core.ty) =
   | Ty_sing _ -> { size = Core.Size.sig_ }
   | Ty_struct ty ->
     let ~size, .. =
-      List.foldi
+      Cow_slice.foldi
         ty.field_specs
-        ~init:(~size:Core.Size.sig_, ~ty_env, ~running_field_impls:Bwd.Empty)
-        ~f:(fun index acc field_spec ->
-          let ~size, ~ty_env, ~running_field_impls = acc in
+        ~init:
+          ( ~size:Core.Size.sig_
+          , ~ty_env
+          , ~running_field_impls:(Cow_slice.create (Cow_slice.length ty.field_specs)) )
+        ~f:(fun index (~size, ~ty_env, ~running_field_impls) field_spec ->
           let field_spec_ty =
             (proj_struct_ty
-               (Value_struct (Core.Struct.create (Bwd.to_list running_field_impls)))
+               (Value_struct (Core.Struct.create running_field_impls))
                ty
                { name = field_spec.name.name; index })
               .ty
@@ -216,12 +219,13 @@ and infer_props (ty_env : Core.ty_env) (ty : Core.ty) =
           let props = infer_props ty_env field_spec_ty in
           ( ~size:(Core.Size.max size props.size)
           , ~ty_env:(Core.Env.push field_spec_ty ty_env)
-          , ~running_field_impls:(Bwd.snoc
-                                    running_field_impls
-                                    (Core.Value_field_impl.create
-                                       field_spec.name.name
-                                       (Core.Value.free_of_size (Core.Env.length ty_env))
-                                     : Core.value_field_impl)) ))
+          , ~running_field_impls:
+              (Cow_slice.push_full_slice_exn
+                 running_field_impls
+                 (Core.Value_field_impl.create
+                    field_spec.name.name
+                    (Core.Value.free_of_size (Core.Env.length ty_env))
+                  : Core.value_field_impl)) ))
     in
     { size }
   | Ty_fun ty ->
@@ -312,7 +316,7 @@ let rec quote_value context_size (e : Core.value) : Core.term =
   match e with
   | Value_ignore -> Term_ignore
   | Value_struct { field_impls } ->
-    let field_impls = List.map field_impls ~f:(quote_field_impl context_size) in
+    let field_impls = Cow_slice.map field_impls ~f:(quote_field_impl context_size) in
     Term_struct { field_impls }
   | Value_fun { name; body; icit } ->
     let body =
@@ -339,7 +343,7 @@ and quote_ty context_size (ty : Core.ty) : Core.term_ty =
     let closure_env = Core.Env.push (Core.Value.free level) closure_env in
     let context_size = context_size + 1 in
     let field_specs =
-      List.map field_specs ~f:(fun { name; ty; relevancy } ->
+      Cow_slice.map field_specs ~f:(fun { name; ty; relevancy } ->
         let ty =
           eval_ty closure_env ty |> quote_ty context_size |> close_ty_single level
         in
@@ -402,7 +406,7 @@ and close (c : Close.t) (e : Core.term) : Core.term =
     Term_fun { name; icit; body = close (Close.lift 1 c) body }
   | Term_proj { strukt; field } -> Term_proj { strukt = close c strukt; field }
   | Term_struct { field_impls } ->
-    Term_struct { field_impls = List.map field_impls ~f:(close_field_impl c) }
+    Term_struct { field_impls = Cow_slice.map field_impls ~f:(close_field_impl c) }
   | Term_encode_ty { ty; props } ->
     let ty = close_ty c ty in
     Term_encode_ty { ty; props }
@@ -445,7 +449,7 @@ and close_ty (c : Close.t) (ty : Core.term_ty) : Core.term_ty =
   | Term_ty_struct { field_specs } ->
     let c = Close.lift 1 c in
     let field_specs =
-      List.map field_specs ~f:(fun { name; ty; relevancy } ->
+      Cow_slice.map field_specs ~f:(fun { name; ty; relevancy } ->
         ({ name; ty = close_ty c ty; relevancy } : Core.term_field_spec))
     in
     Term_ty_struct { field_specs }

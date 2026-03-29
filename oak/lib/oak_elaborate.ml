@@ -1,6 +1,7 @@
 open Prelude
 module Core = Oak_core
 module Bwd = Utility.Bwd
+module Cow_slice = Utility.Cow_slice
 module Span = Utility.Span
 module Common = Oak_common
 module Icit = Common.Icit
@@ -99,13 +100,17 @@ let rec synthesize_transparent_ty (st : State.t) (cx : Context.t) (ty : Core.ty)
       ]
   | Ty_sing { identity; ty = _ } -> Term_sing_in (Core.Value.quote identity)
   | Ty_struct ty ->
+    let field_locations = Core.Ty_struct.field_locations ty in
     let ~field_impls, .. =
-      List.fold
-        (Core.Ty_struct.field_locations ty)
-        ~init:(~cx, ~running_field_impls:Bwd.Empty, ~field_impls:Bwd.Empty)
+      Cow_slice.fold
+        field_locations
+        ~init:
+          ( ~cx
+          , ~running_field_impls:(Cow_slice.create (Cow_slice.length field_locations))
+          , ~field_impls:(Cow_slice.create (Cow_slice.length field_locations)) )
         ~f:(fun (~cx, ~running_field_impls, ~field_impls) (field : Core.field_loc) ->
           let running_struct_value =
-            Core.Value.create_struct (Bwd.to_list running_field_impls)
+            Core.Value.create_struct running_field_impls
           in
           let field_spec = Core.Ty_struct.proj running_struct_value ty field in
           let synthesized_term = synthesize_transparent_ty st cx field_spec.ty in
@@ -114,16 +119,14 @@ let rec synthesize_transparent_ty (st : State.t) (cx : Context.t) (ty : Core.ty)
           in
           (* Make sure to push the synthesized term instead of just a free variable because the resulting structure should be non dependent, each field cannot depend on the previous one *)
           ( ~cx:(Context.bind field_spec.name field_spec.ty cx)
-          , ~running_field_impls:(Bwd.snoc
-                                    running_field_impls
-                                    (Core.Value_field_impl.create
-                                       field.name
-                                       (Core.Term.eval
-                                          Core.Value_env.empty
-                                          synthesized_term)))
-          , ~field_impls:(Bwd.snoc field_impls term_field_impl) ))
+          , ~running_field_impls:
+              (Cow_slice.push_full_slice_exn
+                 running_field_impls
+                 (Core.Value_field_impl.create
+                    field.name
+                    (Core.Term.eval Core.Value_env.empty synthesized_term)))
+          , ~field_impls:(Cow_slice.push_full_slice_exn field_impls term_field_impl) ))
     in
-    let field_impls = Bwd.to_list field_impls in
     Term_struct { field_impls }
   | Ty_fun ({ param = { name; param; modifiers }; _ } as ty) ->
     let body =
@@ -169,15 +172,16 @@ let rec apply_patch
   | [] -> failwith "expected nonempty list"
   | path_part :: path ->
     let original_ty = extract_struct_ty st cx original_ty in
+    let field_locations = Core.Ty_struct.field_locations original_ty in
     let ~coerced_field_impls, ~patched_field_specs, ~did_find_field, .. =
-      List.fold
-        (Core.Ty_struct.field_locations original_ty)
+      Cow_slice.fold
+        field_locations
         ~init:
           ( ~cx
-          , ~running_field_impls:Bwd.Empty
+          , ~running_field_impls:(Cow_slice.create (Cow_slice.length field_locations))
           , ~close:Close.empty
-          , ~coerced_field_impls:Bwd.Empty
-          , ~patched_field_specs:Bwd.Empty
+          , ~coerced_field_impls:(Cow_slice.create (Cow_slice.length field_locations))
+          , ~patched_field_specs:(Cow_slice.create (Cow_slice.length field_locations))
           , ~did_find_field:false )
         ~f:
           (fun
@@ -190,7 +194,7 @@ let rec apply_patch
             field
           ->
           let running_struct_value =
-            Core.Value.create_struct (Bwd.to_list running_field_impls)
+            Core.Value.create_struct running_field_impls
           in
           let original_field_spec =
             Core.Ty_struct.proj running_struct_value original_ty field
@@ -302,10 +306,12 @@ let rec apply_patch
               (Core.Term.eval Core.Value_env.empty coerced_term)
           in
           ( ~cx:(Context.bind (Core.Name.create field.name Span.empty) patched_field_ty cx)
-          , ~running_field_impls:(Bwd.snoc running_field_impls field_impl)
+          , ~running_field_impls:(Cow_slice.push_full_slice_exn running_field_impls field_impl)
           , ~close:(Close.push_exn (Context.next_level cx) close)
-          , ~coerced_field_impls:(Bwd.snoc coerced_field_impls coerced_field_impl)
-          , ~patched_field_specs:(Bwd.snoc patched_field_specs patched_field_spec)
+          , ~coerced_field_impls:
+              (Cow_slice.push_full_slice_exn coerced_field_impls coerced_field_impl)
+          , ~patched_field_specs:
+              (Cow_slice.push_full_slice_exn patched_field_specs patched_field_spec)
           , ~did_find_field ))
     in
     if not did_find_field
@@ -317,9 +323,8 @@ let rec apply_patch
              ^^ Doc.string path_part
              ^^ Doc.string " not found in struct")
         ];
-    ( (Term_struct { field_impls = Bwd.to_list coerced_field_impls } : Core.term)
-    , (Ty_struct (Core.Ty_struct.of_iterated_binders (Bwd.to_list patched_field_specs))
-       : Core.ty) )
+    ( (Term_struct { field_impls = coerced_field_impls } : Core.term)
+    , (Ty_struct (Core.Ty_struct.of_iterated_binders patched_field_specs) : Core.ty) )
 ;;
 
 let with_elab_context (st : State.t) (span : Span.t) (message : string) ~f =
@@ -336,7 +341,6 @@ let rec coerce_singleton (cx : Context.t) (e : Core.term) (ty : Core.ty)
   | Ty_sing { identity = _; ty = kind } -> coerce_singleton cx (Term_sing_out e) kind
   | ty -> e, ty
 ;;
-
 
 (* postcondition: the type in Typed.expr should be the type of the core term *)
 let rec infer (st : State.t) (cx : Context.t) (e : Abstract.expr) : Typed.expr =
@@ -473,7 +477,7 @@ let rec infer (st : State.t) (cx : Context.t) (e : Abstract.expr) : Typed.expr =
     in
     let field_loc =
       match
-        List.find_mapi struct_ty.field_specs ~f:(fun index field_spec ->
+        Cow_slice.find_mapi struct_ty.field_specs ~f:(fun index field_spec ->
           if String.equal field_spec.name.name field
           then Some ({ name = field; index } : Core.field_loc)
           else None)
@@ -505,7 +509,7 @@ let rec infer (st : State.t) (cx : Context.t) (e : Abstract.expr) : Typed.expr =
           , ~close:Close.empty
           , ~typed_decls:Bwd.Empty
           , ~let_bindings:Bwd.Empty
-          , ~field_specs:Bwd.Empty )
+          , ~field_specs:(Cow_slice.create decl_count) )
         ~f:(fun (~cx, ~close, ~typed_decls, ~let_bindings, ~field_specs) decl ->
           let e = infer st cx decl.e in
           let ty =
@@ -533,11 +537,10 @@ let rec infer (st : State.t) (cx : Context.t) (e : Abstract.expr) : Typed.expr =
           , ~close:(Close.push_exn level close)
           , ~typed_decls:(Bwd.snoc typed_decls typed_decl)
           , ~let_bindings:(Bwd.snoc let_bindings (decl.name, rhs))
-          , ~field_specs:(Bwd.snoc field_specs field_spec) ))
+          , ~field_specs:(Cow_slice.push_full_slice_exn field_specs field_spec) ))
     in
     let typed_decls = Bwd.to_list typed_decls in
     let let_bindings = Bwd.to_list let_bindings in
-    let field_specs = Bwd.to_list field_specs in
     let term : Core.term =
       List.fold_right
         let_bindings
@@ -549,6 +552,7 @@ let rec infer (st : State.t) (cx : Context.t) (e : Abstract.expr) : Typed.expr =
                     ; e = Term_bound (Core.Index.of_int (decl_count - i - 1))
                     }
                     : Core.term_field_impl))
+                 |> Cow_slice.of_list
              })
         ~f:(fun (name, rhs) body -> (Term_let { name; rhs; body } : Core.term))
     in
@@ -556,10 +560,14 @@ let rec infer (st : State.t) (cx : Context.t) (e : Abstract.expr) : Typed.expr =
     Typed.Expr_struct
       { decls = typed_decls; ann = expr_ann cx span term ty; is_dependent = true }
   | Expr_struct { decls; span; is_dependent = false } ->
+    let num_decls = List.length decls in
     let ~typed_decls, ~field_impls, ~field_specs =
       List.fold
         decls
-        ~init:(~typed_decls:Bwd.Empty, ~field_impls:Bwd.Empty, ~field_specs:Bwd.Empty)
+        ~init:
+          ( ~typed_decls:Bwd.Empty
+          , ~field_impls:(Cow_slice.create num_decls)
+          , ~field_specs:(Cow_slice.create num_decls) )
         ~f:(fun (~typed_decls, ~field_impls, ~field_specs) decl ->
           let e = infer st cx decl.e in
           let ty =
@@ -579,12 +587,10 @@ let rec infer (st : State.t) (cx : Context.t) (e : Abstract.expr) : Typed.expr =
           in
           let field_impl : Core.term_field_impl = { name = decl.name.name; e = rhs } in
           ( ~typed_decls:(Bwd.snoc typed_decls typed_decl)
-          , ~field_impls:(Bwd.snoc field_impls field_impl)
-          , ~field_specs:(Bwd.snoc field_specs field_spec) ))
+          , ~field_impls:(Cow_slice.push_full_slice_exn field_impls field_impl)
+          , ~field_specs:(Cow_slice.push_full_slice_exn field_specs field_spec) ))
     in
     let typed_decls = Bwd.to_list typed_decls in
-    let field_impls = Bwd.to_list field_impls in
-    let field_specs = Bwd.to_list field_specs in
     let term : Core.term = Term_struct { field_impls } in
     (*
       This is non dependent, the field_specs don't have any bound variables, so they can be weakened to ones that do take bound variables
@@ -593,6 +599,7 @@ let rec infer (st : State.t) (cx : Context.t) (e : Abstract.expr) : Typed.expr =
     Typed.Expr_struct
       { decls = typed_decls; ann = expr_ann cx span term ty; is_dependent = false }
   | Expr_ty_struct { field_specs; span } ->
+    let num_field_specs = List.length field_specs in
     let ~typed_field_specs, ~field_specs, ~size, .. =
       List.fold
         field_specs
@@ -600,7 +607,7 @@ let rec infer (st : State.t) (cx : Context.t) (e : Abstract.expr) : Typed.expr =
           ( ~cx
           , ~close:Close.empty
           , ~typed_field_specs:Bwd.Empty
-          , ~field_specs:Bwd.Empty
+          , ~field_specs:(Cow_slice.create num_field_specs)
           , ~size:Size.sig_ )
         ~f:(fun (~cx, ~close, ~typed_field_specs, ~field_specs, ~size) field_spec ->
           let typed_field_ty, typed_rhs, ty =
@@ -645,7 +652,7 @@ let rec infer (st : State.t) (cx : Context.t) (e : Abstract.expr) : Typed.expr =
           ( ~cx:(Context.bind field_spec.name ty cx)
           , ~close:(Close.push_exn level close)
           , ~typed_field_specs:(Bwd.snoc typed_field_specs typed_field_spec)
-          , ~field_specs:(Bwd.snoc field_specs field_spec)
+          , ~field_specs:(Cow_slice.push_full_slice_exn field_specs field_spec)
           , ~size:(Size.max
                      size
                      (match typed_field_ty with
@@ -653,7 +660,6 @@ let rec infer (st : State.t) (cx : Context.t) (e : Abstract.expr) : Typed.expr =
                       | None -> (Core.Ty.infer_props cx.ty_env ty).size)) ))
     in
     let typed_field_specs = Bwd.to_list typed_field_specs in
-    let field_specs = Bwd.to_list field_specs in
     let typed_ty =
       Typed.Ty_struct
         { field_specs = typed_field_specs
@@ -937,13 +943,27 @@ and check_universe (st : State.t) (cx : Context.t) (ty : Abstract.expr) : Typed.
 and check_data_param (st : State.t) (cx : Context.t) ({ name; ty } : Abstract.data_param)
   : Typed.data_param
   =
-  let ty_typed = check_universe st cx ty in
-  failwith ""
+  let ty = check_universe st cx ty in
+  { name; ty }
 
-and check_data_rec_params (st : State.t) (cx : Context.t) (data : Abstract.expr_data_rec) =
-  let field_specs =
-    List.map data.decls ~f:(fun { name; data = { params; _ }; _ } -> ())
+and check_data_params (st : State.t) (cx : Context.t) (data : Abstract.data_param list)
+  : params:Abstract.data_param list * telescope:Core.ty list
+  =
+  let params =
+    List.fold
+      data
+      ~init:(~cx, ~close:Close.empty, ~params:Bwd.Empty, ~telescope:Bwd.Empty)
+      ~f:(fun (~cx, ~close, ~params, ~telescope) param ->
+        let param = check_data_param st cx param in
+        let ty = Typed.Ty.term param.ty |> Core.Term_ty.close close in
+        ( ~cx
+        , ~close:(Close.push_exn (Context.next_level cx) close)
+        , ~params:(Bwd.snoc params param)
+        , ~telescope:(Bwd.snoc telescope ty) ))
   in
+  (* let field_specs =
+    List.map data.decls ~f:(fun { name; data = { params; _ }; _ } -> ())
+  in *)
   failwith ""
 ;;
 

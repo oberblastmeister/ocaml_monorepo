@@ -450,6 +450,12 @@ let fold2_exn t1 t2 ~init ~f =
   !acc
 ;;
 
+let for_all2 t1 t2 ~f =
+  if not (Int.equal (length t1) (length t2))
+  then None
+  else Some (for_alli t1 ~f:(fun i x -> f x (get t2 i)))
+;;
+
 let for_all2_exn t1 t2 ~f =
   check_same_length_exn "for_all2_exn" t1 t2;
   let rec loop i = i >= length t1 || (f (get t1 i) (get t2 i) && loop (i + 1)) in

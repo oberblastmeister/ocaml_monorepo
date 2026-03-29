@@ -1,19 +1,24 @@
 open Prelude
 module Syntax = Oak_core_syntax
 module Evaluate = Oak_core_evaluate
+module Cow_slice = Utility.Cow_slice
 
 module Term_ty_struct = struct
-  let of_iterated_binders_with context_size (field_specs : Syntax.term_field_spec list)
+  let of_iterated_binders_with
+        context_size
+        (field_specs : Syntax.term_field_spec Cow_slice.t)
     : Syntax.term_ty_struct
     =
-    let _, field_specs =
+    let ~field_specs, .. =
       let free_level = Syntax.Level.of_int context_size in
       let free_value = Syntax.Value.free free_level in
       let context_size = context_size + 1 in
-      List.fold_mapi
+      Cow_slice.foldi
         field_specs
-        ~init:Syntax.Env.empty
-        ~f:(fun index running_env { name; ty; relevancy } ->
+        ~init:
+          ( ~running_env:Syntax.Env.empty
+          , ~field_specs:(Cow_slice.create (Cow_slice.length field_specs)) )
+        ~f:(fun index (~running_env, ~field_specs) { name; ty; relevancy } ->
           let field : Syntax.field_loc = { name = name.name; index } in
           let field_spec : Syntax.term_field_spec =
             { name
@@ -24,7 +29,10 @@ module Term_ty_struct = struct
             ; relevancy
             }
           in
-          Syntax.Env.push (Evaluate.Value.proj free_value field) running_env, field_spec)
+          ( ~running_env:(Syntax.Env.push
+                            (Evaluate.Value.proj free_value field)
+                            running_env)
+          , ~field_specs:(Cow_slice.push_full_slice_exn field_specs field_spec) ))
     in
     { field_specs }
   ;;

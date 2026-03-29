@@ -92,6 +92,7 @@ val rev : 'a t -> 'a t
 val iter2_exn : 'a t -> 'b t -> f:('a -> 'b -> unit) -> unit
 val map2_exn : 'a t -> 'b t -> f:('a -> 'b -> 'c) -> 'c t
 val fold2_exn : 'a t -> 'b t -> init:'acc -> f:('acc -> 'a -> 'b -> 'acc) -> 'acc
+val for_all2 : 'a t -> 'b t -> f:('a -> 'b -> bool) -> bool option
 val for_all2_exn : 'a t -> 'b t -> f:('a -> 'b -> bool) -> bool
 val exists2_exn : 'a t -> 'b t -> f:('a -> 'b -> bool) -> bool
 val zip : 'a t -> 'b t -> ('a * 'b) t option

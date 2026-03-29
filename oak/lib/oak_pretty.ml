@@ -1,6 +1,7 @@
 open Prelude
 module Core = Oak_core
 module Common = Oak_common
+module Cow_slice = Utility.Cow_slice
 
 module Make (Config : sig
     val show_singletons : bool
@@ -92,7 +93,7 @@ struct
 
   and pp_struct names ({ field_impls } : Core.value_struct) =
     let decls =
-      List.map field_impls ~f:(fun ({ name; e } : Core.value_field_impl) ->
+      Cow_slice.map field_impls ~f:(fun ({ name; e } : Core.value_field_impl) ->
         Doc.group
           (Doc.string "val"
            ^^ Doc.space
@@ -100,17 +101,22 @@ struct
            ^^ Doc.space
            ^^ Doc.string "="
            ^^ Doc.indent 2 (Doc.break1 ^^ pp_value names e)))
+      |> Cow_slice.to_list
     in
     Doc.group (Doc.string "struct" ^^ Doc.space ^^ args decls)
 
   and pp_ty_struct names (ty : Core.ty_struct) =
+    let field_locations = Core.Ty_struct.field_locations ty in
     let (~names:_, ..), decls =
-      List.fold_map
-        (Core.Ty_struct.field_locations ty)
-        ~init:(~names, ~running_field_impls:Bwd.Empty)
+      Cow_slice.fold_map
+        field_locations
+        ~init:
+          ( ~names
+          , ~running_field_impls:
+              (Cow_slice.create (Cow_slice.length field_locations)) )
         ~f:(fun (~names, ~running_field_impls) field ->
           let running_struct_value =
-            Core.Value.create_struct (Bwd.to_list running_field_impls)
+            Core.Value.create_struct running_field_impls
           in
           let field_spec = Core.Ty_struct.proj running_struct_value ty field in
           let ty = field_spec.ty in
@@ -140,13 +146,13 @@ struct
           let level = Core.Level.of_int (Core.Name_env.length names) in
           let names = Core.Name_env.push field_spec.name names in
           let running_field_impls =
-            Bwd.snoc
+            Cow_slice.push_full_slice_exn
               running_field_impls
               (Core.Value_field_impl.create field.name (Core.Value.free level))
           in
           (~names, ~running_field_impls), doc)
     in
-    Doc.group (Doc.string "sig" ^^ Doc.space ^^ block decls)
+    Doc.group (Doc.string "sig" ^^ Doc.space ^^ block (Cow_slice.to_list decls))
 
   and collect_fun_params
         names

@@ -1,6 +1,7 @@
 open Prelude
 module Core = Oak_core
 module Bwd = Utility.Bwd
+module Cow_slice = Utility.Cow_slice
 module Common = Oak_common
 module Core_ty = Common.Core_ty
 module Icit = Common.Icit
@@ -58,18 +59,18 @@ let rec unify_value
   | Ty_universe _props -> unify_ty st cx (Core.Value.decode e1) (Core.Value.decode e2)
   | Ty_struct ty ->
     let _ =
-      List.foldi
+      Cow_slice.foldi
         ty.field_specs
-        ~init:Bwd.Empty
+        ~init:(Cow_slice.create (Cow_slice.length ty.field_specs))
         ~f:(fun index running_field_impls (field_spec : Core.term_field_spec) ->
           let field : Core.field_loc = { name = field_spec.name.name; index } in
           let e1 = Core.Value.proj e1 field in
           let e2 = Core.Value.proj e2 field in
-          let running_struct_value =
-            Core.Value.create_struct (Bwd.to_list running_field_impls)
-          in
+          let running_struct_value = Core.Value.create_struct running_field_impls in
           unify_value st cx e1 e2 (Core.Ty_struct.proj running_struct_value ty field).ty;
-          Bwd.snoc running_field_impls (Core.Value_field_impl.create field.name e1))
+          Cow_slice.push_full_slice_exn
+            running_field_impls
+            (Core.Value_field_impl.create field.name e1))
     in
     ()
   | Ty_fun ty ->
@@ -108,34 +109,31 @@ and unify_ty (st : State.t) (cx : Context.t) (ty1 : Core.ty) (ty2 : Core.ty) =
       (Core.Ty_fun.app ty2 arg)
   | Ty_struct ty1, Ty_struct ty2 ->
     let zipped_field_specs =
-      match List.zip ty1.field_specs ty2.field_specs with
-      | Ok t -> t
-      | Unequal_lengths ->
+      match Cow_slice.zip ty1.field_specs ty2.field_specs with
+      | Some t -> t
+      | None ->
         State.throw
           st
           [ Diagnostic.Part.create
               (Doc.string "Record had different number of declarations. This record had"
                ^^ Doc.space
-               ^^ Doc.string (Int.to_string (List.length ty1.field_specs))
+               ^^ Doc.string (Int.to_string (Cow_slice.length ty1.field_specs))
                ^^ Doc.indent 2 (Doc.break1 ^^ Context.pp_ty cx (Ty_struct ty1))
                ^^ Context.pp_ty cx (Ty_struct ty2)
                ^^ Doc.break1
                ^^ Doc.string "while this record had"
                ^^ Doc.space
-               ^^ Doc.string (Int.to_string (List.length ty1.field_specs))
+               ^^ Doc.string (Int.to_string (Cow_slice.length ty2.field_specs))
                ^^ Doc.indent 2 (Doc.break1 ^^ Context.pp_ty cx (Ty_struct ty2)))
           ]
     in
     let _ =
-      List.foldi
+      Cow_slice.foldi
         zipped_field_specs
-        ~init:(~running_field_impls1:Bwd.Empty, ~running_field_impls2:Bwd.Empty, ~cx)
-        ~f:
-          (fun
-            index
-            (~running_field_impls1, ~running_field_impls2, ~cx)
-            (field_spec1, field_spec2)
-          ->
+        ~init:
+          ( ~running_field_impls:(Cow_slice.create (Cow_slice.length zipped_field_specs))
+          , ~cx )
+        ~f:(fun index (~running_field_impls, ~cx) (field_spec1, field_spec2) ->
           let name1 = field_spec1.name.name in
           let name2 = field_spec2.name.name in
           if not (String.equal name1 name2)
@@ -150,22 +148,14 @@ and unify_ty (st : State.t) (cx : Context.t) (ty1 : Core.ty) (ty2 : Core.ty) =
               ];
           unify_relevancy st field_spec1.relevancy field_spec2.relevancy;
           let field = Core.Field_loc.create name1 index in
-          let running_struct_value1 =
-            Core.Value.create_struct (Bwd.to_list running_field_impls1)
-          in
-          let running_struct_value2 =
-            Core.Value.create_struct (Bwd.to_list running_field_impls2)
-          in
-          let ty1 = (Core.Ty_struct.proj running_struct_value1 ty1 field).ty in
-          let ty2 = (Core.Ty_struct.proj running_struct_value2 ty2 field).ty in
+          let running_struct_value = Core.Value.create_struct running_field_impls in
+          let ty1 = (Core.Ty_struct.proj running_struct_value ty1 field).ty in
+          let ty2 = (Core.Ty_struct.proj running_struct_value ty2 field).ty in
           unify_ty st cx ty1 ty2;
           let var_value = Context.next_free cx in
-          ( ~running_field_impls1:(Bwd.snoc
-                                     running_field_impls1
-                                     (Core.Value_field_impl.create name1 var_value))
-          , ~running_field_impls2:(Bwd.snoc
-                                     running_field_impls2
-                                     (Core.Value_field_impl.create name2 var_value))
+          ( ~running_field_impls:(Cow_slice.push_full_slice_exn
+                                    running_field_impls
+                                    (Core.Value_field_impl.create name1 var_value))
           , ~cx:(Context.bind field_spec1.name ty1 cx) ))
     in
     ()
@@ -377,8 +367,7 @@ and sub (st : State.t) (cx : Context.t) (e : Core.term) (ty1 : Core.ty) (ty2 : C
     let app_term : Core.term =
       Term_app
         { func = e
-        ; arg =
-            ({ e = arg_term; icit = ty1.param.modifiers.icit } : Core.term_arg)
+        ; arg = ({ e = arg_term; icit = ty1.param.modifiers.icit } : Core.term_arg)
         }
     in
     let body', ret_coe =
@@ -409,18 +398,22 @@ and sub (st : State.t) (cx : Context.t) (e : Core.term) (ty1 : Core.ty) (ty2 : C
   | Ty_struct ty1, Ty_struct ty2 ->
     let value1 = Core.Term.eval Core.Value_env.empty e in
     let ty1_name_to_index =
+      let tbl = String.Table.create () in
       Core.Ty_struct.field_locations ty1
-      |> List.map ~f:(fun field -> field.name, field.index)
-      |> String.Table.of_alist_exn
+      |> Cow_slice.iter ~f:(fun field ->
+        Hashtbl.add_exn tbl ~key:field.name ~data:field.index);
+      tbl
     in
     let ty2_field_locations = Core.Ty_struct.field_locations ty2 in
     let ~did_coerce, ~running_field_impls2, ~running_field_coes =
-      List.fold
+      Cow_slice.fold
         ty2_field_locations
         ~init:
           ( ~did_coerce:false
-          , ~running_field_impls2:Bwd.Empty
-          , ~running_field_coes:Bwd.Empty )
+          , ~running_field_impls2:(Cow_slice.create
+                                     (Cow_slice.length ty2_field_locations))
+          , ~running_field_coes:(Cow_slice.create (Cow_slice.length ty2_field_locations))
+          )
         ~f:(fun (~did_coerce, ~running_field_impls2, ~running_field_coes) field2 ->
           let field1 =
             match Hashtbl.find ty1_name_to_index field2.name with
@@ -434,9 +427,7 @@ and sub (st : State.t) (cx : Context.t) (e : Core.term) (ty1 : Core.ty) (ty2 : C
                      ^^ Doc.string " required by the target signature")
                 ]
           in
-          let running_struct_value2 =
-            Core.Value.create_struct (Bwd.to_list running_field_impls2)
-          in
+          let running_struct_value2 = Core.Value.create_struct running_field_impls2 in
           let field_impl1 = Core.Value.proj value1 field1 in
           let field_spec1 = Core.Ty_struct.proj value1 ty1 field1 in
           let field_spec2 = Core.Ty_struct.proj running_struct_value2 ty2 field2 in
@@ -455,26 +446,27 @@ and sub (st : State.t) (cx : Context.t) (e : Core.term) (ty1 : Core.ty) (ty2 : C
           in
           let field_coe : Typed.runtime_field_coe = { field = field2; coe = field_coe } in
           ( ~did_coerce
-          , ~running_field_impls2:(Bwd.snoc running_field_impls2 value_field_impl2)
-          , ~running_field_coes:(Bwd.snoc running_field_coes field_coe) ))
+          , ~running_field_impls2:(Cow_slice.push_full_slice_exn
+                                     running_field_impls2
+                                     value_field_impl2)
+          , ~running_field_coes:(Cow_slice.push_full_slice_exn
+                                   running_field_coes
+                                   field_coe) ))
     in
-    let field_impls2 = Bwd.to_list running_field_impls2 in
-    let field_coes = Bwd.to_list running_field_coes in
+    let field_coes = Cow_slice.to_list running_field_coes in
     let is_same_shape =
-      match
-        List.for_all2
-          (Core.Ty_struct.field_locations ty1)
-          (Core.Ty_struct.field_locations ty2)
-          ~f:(fun field1 field2 -> String.equal field1.name field2.name)
-      with
-      | Ok x -> x
-      | Unequal_lengths -> false
+      Cow_slice.for_all2
+        (Core.Ty_struct.field_locations ty1)
+        ty2_field_locations
+        ~f:(fun field1 field2 -> String.equal field1.name field2.name)
+      |> Option.value ~default:false
     in
     let runtime_coe = mk_struct_coe is_same_shape field_coes in
     if not did_coerce
     then None, Typed.Id_coe
     else
-      Some (Core.Value.quote (Value_struct { field_impls = field_impls2 })), runtime_coe
+      ( Some (Core.Value.quote (Value_struct { field_impls = running_field_impls2 }))
+      , runtime_coe )
   | _ ->
     unify_ty st cx ty1 ty2;
     None, Typed.Id_coe

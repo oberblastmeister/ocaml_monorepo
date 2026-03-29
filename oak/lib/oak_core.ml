@@ -3,6 +3,7 @@ module Syntax = Oak_core_syntax
 module Evaluate = Oak_core_evaluate
 module Core_utils = Oak_core_utils
 module Common = Oak_common
+module Cow_slice = Utility.Cow_slice
 module Icit = Common.Icit
 module Level = Common.Level
 module Index = Common.Index

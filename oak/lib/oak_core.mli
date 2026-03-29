@@ -1,5 +1,6 @@
 module Syntax := Oak_core_syntax
 module Common := Oak_common
+module Cow_slice := Utility.Cow_slice
 module Icit = Common.Icit
 module Level = Common.Level
 module Index = Common.Index
@@ -132,7 +133,7 @@ end
 module Value : sig
   type t = value [@@deriving sexp_of]
 
-  val create_struct : value_field_impl list -> value
+  val create_struct : value_field_impl Cow_slice.t -> value
   val whnf : ty_env -> value -> value
   val free : Level.t -> value
   val free_of_size : int -> value
@@ -180,15 +181,15 @@ end
 module Term_ty_struct : sig
   type t = term_ty_struct [@@deriving sexp_of]
 
-  val of_iterated_binders : term_field_spec list -> term_ty_struct
+  val of_iterated_binders : term_field_spec Cow_slice.t -> term_ty_struct
 end
 
 module Ty_struct : sig
   type t = ty_struct [@@deriving sexp_of]
 
-  val field_locations : t -> field_loc list
+  val field_locations : t -> field_loc Cow_slice.t
   val proj : value -> t -> field_loc -> value_field_spec
-  val of_iterated_binders : term_field_spec list -> ty_struct
+  val of_iterated_binders : term_field_spec Cow_slice.t -> ty_struct
 end
 
 module Fun : sig

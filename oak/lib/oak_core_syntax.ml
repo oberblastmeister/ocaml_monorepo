@@ -1,4 +1,5 @@
 open Prelude
+module Cow_slice = Utility.Cow_slice
 module Span = Utility.Span
 module Bwd = Utility.Bwd
 module Common = Oak_common
@@ -36,7 +37,7 @@ type term =
       { strukt : term
       ; field : field_loc
       }
-  | Term_struct of { field_impls : term_field_impl list }
+  | Term_struct of { field_impls : term_field_impl Cow_slice.t }
   | Term_encode_ty of
       { ty : term_ty
       ; props : Ty_props.t
@@ -130,7 +131,7 @@ and term_param =
   ; modifiers : Param_modifiers.t
   }
 
-and term_ty_struct = { field_specs : term_field_spec list }
+and term_ty_struct = { field_specs : term_field_spec Cow_slice.t }
 
 and value =
   | Value_ignore
@@ -180,7 +181,7 @@ and ty_sing =
 
 and ty_struct =
   { env : env (* env takes one argument which is the running struct value *)
-  ; field_specs : term_field_spec list
+  ; field_specs : term_field_spec Cow_slice.t
   }
 
 and head =
@@ -210,7 +211,7 @@ and frame =
   | Proj of field_loc
   | Out
 
-and value_struct = { field_impls : value_field_impl list }
+and value_struct = { field_impls : value_field_impl Cow_slice.t }
 
 and value_fun =
   { name : Name.t
@@ -270,8 +271,8 @@ module Ty_struct = struct
 
   let create ?(env = Env.empty) field_specs : ty_struct = { field_specs; env }
 
-  let field_locations ({ env = _; field_specs } : t) : field_loc list =
-    List.mapi field_specs ~f:(fun index { name; ty = _; relevancy = _ } ->
+  let field_locations ({ env = _; field_specs } : t) : field_loc Cow_slice.t =
+    Cow_slice.mapi field_specs ~f:(fun index { name; ty = _; relevancy = _ } ->
       ({ name = name.name; index } : field_loc))
   ;;
 end

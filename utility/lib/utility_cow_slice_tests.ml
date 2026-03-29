@@ -272,15 +272,17 @@ let%test_module "Utility_cow_slice" =
       print_s [%sexp (Cow_slice.fold2_exn t1 t2 ~init:0 ~f:(fun acc x y -> acc + x + y) : int)];
       print_s
         [%sexp
-          (( Cow_slice.for_all2_exn t1 t2 ~f:(fun x y -> y = x * 10)
+          (( Cow_slice.for_all2 t1 t2 ~f:(fun x y -> y = x * 10)
+           , Cow_slice.for_all2_exn t1 t2 ~f:(fun x y -> y = x * 10)
            , Cow_slice.exists2_exn t1 t2 ~f:(fun x y -> x + y = 22) )
-            : bool * bool)];
+            : bool option * bool * bool)];
       print_s [%sexp (Cow_slice.zip t1 t2 : (int * int) Cow_slice.t option)];
       print_pair_t (Cow_slice.zip_exn t1 t2);
       let left, right = Cow_slice.unzip (Cow_slice.zip_exn t1 t2) in
       print_s [%sexp ((left, right) : int Cow_slice.t * int Cow_slice.t)];
       let short = Cow_slice.of_list [ 1; 2 ] in
       print_s [%sexp (Cow_slice.zip t1 short : (int * int) Cow_slice.t option)];
+      print_s [%sexp (Cow_slice.for_all2 t1 short ~f:(fun _ _ -> true) : bool option)];
       print_error (fun () -> Cow_slice.iter2_exn t1 short ~f:(fun _ _ -> ()));
       print_error (fun () -> ignore (Cow_slice.map2_exn t1 short ~f:( + ) : int Cow_slice.t));
       print_error (fun () ->
@@ -294,10 +296,11 @@ let%test_module "Utility_cow_slice" =
         ((1 10) (2 20) (3 30))
         (11 22 33)
         66
-        (true true)
+        ((true) true true)
         (((1 10) (2 20) (3 30)))
         ((1 10) (2 20) (3 30))
         ((1 2 3) (10 20 30))
+        ()
         ()
         (Failure "Cow_slice.iter2_exn: length mismatch. 3 <> 2")
         (Failure "Cow_slice.map2_exn: length mismatch. 3 <> 2")
@@ -305,6 +308,6 @@ let%test_module "Utility_cow_slice" =
         (Failure "Cow_slice.for_all2_exn: length mismatch. 3 <> 2")
         (Failure "Cow_slice.exists2_exn: length mismatch. 3 <> 2")
         (Failure "Cow_slice.zip_exn: length mismatch. 3 <> 2")
-      |}]
+        |}]
     ;;
   end)
