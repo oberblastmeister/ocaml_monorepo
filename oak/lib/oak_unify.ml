@@ -62,12 +62,12 @@ let rec unify_value
       Cow_slice.foldi
         ty.field_specs
         ~init:(Cow_slice.create (Cow_slice.length ty.field_specs))
-        ~f:(fun index running_field_impls (field_spec : Core.term_field_spec) ->
+        ~f:(fun index running_field_impls field_spec ->
           let field : Core.field_loc = { name = field_spec.name.name; index } in
           let e1 = Core.Value.proj e1 field in
           let e2 = Core.Value.proj e2 field in
           let running_struct_value = Core.Value.create_struct running_field_impls in
-          unify_value st cx e1 e2 (Core.Ty_struct.proj running_struct_value ty field).ty;
+          unify_value st cx e1 e2 (Core.Ty_struct.proj running_struct_value ty field);
           Cow_slice.push_full_slice_exn
             running_field_impls
             (Core.Value_field_impl.create field.name e1))
@@ -149,8 +149,8 @@ and unify_ty (st : State.t) (cx : Context.t) (ty1 : Core.ty) (ty2 : Core.ty) =
           unify_relevancy st field_spec1.relevancy field_spec2.relevancy;
           let field = Core.Field_loc.create name1 index in
           let running_struct_value = Core.Value.create_struct running_field_impls in
-          let ty1 = (Core.Ty_struct.proj running_struct_value ty1 field).ty in
-          let ty2 = (Core.Ty_struct.proj running_struct_value ty2 field).ty in
+          let ty1 = Core.Ty_struct.proj running_struct_value ty1 field in
+          let ty2 = Core.Ty_struct.proj running_struct_value ty2 field in
           unify_ty st cx ty1 ty2;
           let var_value = Context.next_free cx in
           ( ~running_field_impls:(Cow_slice.push_full_slice_exn
@@ -283,8 +283,7 @@ and unify_neutral (st : State.t) (cx : Context.t) (e1 : Core.neutral) (e2 : Core
                      ^^ Doc.string " != "
                      ^^ Doc.string field2.name)
                 ];
-            (Core.Ty.proj cx.ty_env (Value_neutral { head = e1.head; spine }) ty field1)
-              .ty
+            Core.Ty.proj cx.ty_env (Value_neutral { head = e1.head; spine }) ty field1
           | _ ->
             State.throw
               st
@@ -314,7 +313,6 @@ and unify_head (st : State.t) (cx : Context.t) (e1 : Core.head) (e2 : Core.head)
         ]
   | _ -> failwith ""
 
-(* TODO: fix this, the runtime_coe is wrong *)
 (* postcondition: if term is None then runtime_coe must be Id_coe *)
 and sub (st : State.t) (cx : Context.t) (e : Core.term) (ty1 : Core.ty) (ty2 : Core.ty)
   : Core.term option * Typed.runtime_coe
@@ -399,22 +397,21 @@ and sub (st : State.t) (cx : Context.t) (e : Core.term) (ty1 : Core.ty) (ty2 : C
     let value1 = Core.Term.eval Core.Value_env.empty e in
     let ty1_name_to_index =
       let tbl = String.Table.create () in
-      Core.Ty_struct.field_spec_views ty1
-      |> Cow_slice.iteri ~f:(fun index field_spec ->
+      Cow_slice.iteri ty1.field_specs ~f:(fun index field_spec ->
         Hashtbl.add_exn tbl ~key:field_spec.name.name ~data:index);
       tbl
     in
-    let ty2_field_spec_views = Core.Ty_struct.field_spec_views ty2 in
     let ~did_coerce, ~running_field_impls2, ~running_field_coes =
       Cow_slice.foldi
-        ty2_field_spec_views
+        ty2.field_specs
         ~init:
           ( ~did_coerce:false
-          , ~running_field_impls2:(Cow_slice.create (Cow_slice.length ty2_field_spec_views))
-          , ~running_field_coes:(Cow_slice.create (Cow_slice.length ty2_field_spec_views))
-          )
-        ~f:(fun index (~did_coerce, ~running_field_impls2, ~running_field_coes) field2 ->
-          let field2 = Core.Field_loc.create field2.name.name index in
+          , ~running_field_impls2:(Cow_slice.create (Cow_slice.length ty2.field_specs))
+          , ~running_field_coes:(Cow_slice.create (Cow_slice.length ty2.field_specs)) )
+        ~f:
+          (fun
+            index (~did_coerce, ~running_field_impls2, ~running_field_coes) field_spec2 ->
+          let field2 = Core.Field_loc.create field_spec2.name.name index in
           let field1 =
             match Hashtbl.find ty1_name_to_index field2.name with
             | Some index -> Core.Field_loc.create field2.name index
@@ -429,11 +426,15 @@ and sub (st : State.t) (cx : Context.t) (e : Core.term) (ty1 : Core.ty) (ty2 : C
           in
           let running_struct_value2 = Core.Value.create_struct running_field_impls2 in
           let field_impl1 = Core.Value.proj value1 field1 in
-          let field_spec1 = Core.Ty_struct.proj value1 ty1 field1 in
-          let field_spec2 = Core.Ty_struct.proj running_struct_value2 ty2 field2 in
+          let field_spec1 = Core.Ty_struct.proj_field_spec ty1 field1 in
           unify_relevancy st field_spec1.relevancy field_spec2.relevancy;
           let coerced_field_impl2, field_coe =
-            sub st cx (Core.Value.quote field_impl1) field_spec1.ty field_spec2.ty
+            sub
+              st
+              cx
+              (Core.Value.quote field_impl1)
+              (Core.Term_ty_closure.eval1 field_spec1.ty value1)
+              (Core.Term_ty_closure.eval1 field_spec2.ty running_struct_value2)
           in
           let did_coerce = did_coerce || Option.is_some coerced_field_impl2 in
           let coerced_field_impl2 =
@@ -455,10 +456,8 @@ and sub (st : State.t) (cx : Context.t) (e : Core.term) (ty1 : Core.ty) (ty2 : C
     in
     let field_coes = Cow_slice.to_list running_field_coes in
     let is_same_shape =
-      Cow_slice.for_all2
-        (Core.Ty_struct.field_spec_views ty1)
-        ty2_field_spec_views
-        ~f:(fun field1 field2 -> String.equal field1.name.name field2.name.name)
+      Cow_slice.for_all2 ty1.field_specs ty2.field_specs ~f:(fun field1 field2 ->
+        String.equal field1.name.name field2.name.name)
       |> Option.value ~default:false
     in
     let runtime_coe = mk_struct_coe is_same_shape field_coes in

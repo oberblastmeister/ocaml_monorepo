@@ -194,6 +194,7 @@ module Term_ty_struct = struct
   type t = term_ty_struct [@@deriving sexp_of]
 
   let of_iterated_binders = Core_utils.Term_ty_struct.of_iterated_binders
+  let eval = Evaluate.Term_ty_struct.eval
 end
 
 module Term_data_body = struct
@@ -212,14 +213,7 @@ module Ty_struct = struct
   type t = ty_struct [@@deriving sexp_of]
 
   let create = Syntax.Ty_struct.create
-
-  let of_iterated_binders field_specs : t =
-    { env = Syntax.Env.empty
-    ; field_specs = (Term_ty_struct.of_iterated_binders field_specs).field_specs
-    }
-  ;;
-
-  let field_spec_views = Syntax.Ty_struct.field_spec_views
+  let proj_field_spec = Evaluate.Ty_struct.proj_field_spec
   let proj = Evaluate.Ty_struct.proj
   let proj_non_dependent = Evaluate.Ty_struct.proj_non_dependent
 end

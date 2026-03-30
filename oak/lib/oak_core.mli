@@ -19,7 +19,6 @@ type term_data_constructor = Syntax.term_data_constructor [@@deriving sexp_of]
 type field_loc = Syntax.field_loc [@@deriving sexp_of]
 type term_field_impl = Syntax.term_field_impl [@@deriving sexp_of]
 type term_field_spec = Syntax.term_field_spec [@@deriving sexp_of]
-type term_field_spec_view = Syntax.term_field_spec_view [@@deriving sexp_of]
 type term_ty = Syntax.term_ty [@@deriving sexp_of]
 type term_ty_struct = Syntax.term_ty_struct [@@deriving sexp_of]
 type value = Syntax.value [@@deriving sexp_of]
@@ -168,7 +167,7 @@ end
 module Ty : sig
   type t = ty [@@deriving sexp_of]
 
-  val create_ty_struct : term_field_spec Cow_slice.t -> ty
+  val create_ty_struct : value_field_spec Cow_slice.t -> ty
   val infer_props : ty_env -> ty -> Ty_props.t
   val whnf : ty_env -> ty -> ty
   val ty_fun_val_exn : ty -> ty_fun
@@ -176,8 +175,8 @@ module Ty : sig
   val ty_sing_val_exn : ty -> ty_sing
   val ty_universe_val_exn : ty -> Ty_props.t
   val quote : ty -> term_ty
-  val proj : ty_env -> value -> ty -> field_loc -> value_field_spec
-  val proj_non_dependent : ty_env -> ty -> field_loc -> value_field_spec
+  val proj : ty_env -> value -> ty -> field_loc -> ty
+  val proj_non_dependent : ty_env -> ty -> field_loc -> ty
   val app : ty_env -> ty -> value_arg -> ty
   val out : ty_env -> ty -> ty
 end
@@ -204,6 +203,7 @@ module Term_ty_struct : sig
   type t = term_ty_struct [@@deriving sexp_of]
 
   val of_iterated_binders : term_field_spec Cow_slice.t -> term_ty_struct
+  val eval : value_env -> term_ty_struct -> ty_struct
 end
 
 module Term_data_body : sig
@@ -215,11 +215,10 @@ end
 module Ty_struct : sig
   type t = ty_struct [@@deriving sexp_of]
 
-  val create : term_field_spec Cow_slice.t -> t
-  val field_spec_views : ty_struct -> term_field_spec_view Cow_slice.t
-  val proj : value -> ty_struct -> field_loc -> value_field_spec
-  val proj_non_dependent : ty_struct -> field_loc -> value_field_spec
-  val of_iterated_binders : term_field_spec Cow_slice.t -> ty_struct
+  val create : value_field_spec Cow_slice.t -> t
+  val proj : value -> ty_struct -> field_loc -> ty
+  val proj_non_dependent : ty_struct -> field_loc -> ty
+  val proj_field_spec : ty_struct -> field_loc -> value_field_spec
 end
 
 module Fun : sig

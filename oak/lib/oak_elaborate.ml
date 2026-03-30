@@ -66,7 +66,7 @@ let extract_pack_ty (st : State.t) (cx : Context.t) (packed_ty : Core.ty) : Core
       ]
 ;;
 
-let eval_expr (e : Typed.expr) : Core.value =
+let eval_typed_expr (e : Typed.expr) : Core.value =
   Core.Term.eval Core.Value_env.empty (Typed.Expr.term e)
 ;;
 
@@ -100,25 +100,23 @@ let rec synthesize_transparent_ty (st : State.t) (cx : Context.t) (ty : Core.ty)
       ]
   | Ty_sing { identity; ty = _ } -> Term_sing_in (Core.Value.quote identity)
   | Ty_struct ty ->
-    let field_spec_views = Core.Ty_struct.field_spec_views ty in
     let ~field_impls, .. =
       Cow_slice.foldi
-        field_spec_views
+        ty.field_specs
         ~init:
-          ( ~cx
-          , ~running_field_impls:(Cow_slice.create (Cow_slice.length field_spec_views))
-          , ~field_impls:(Cow_slice.create (Cow_slice.length field_spec_views)) )
-        ~f:(fun index (~cx, ~running_field_impls, ~field_impls) field_spec_view ->
-          let field = Core.Field_loc.create field_spec_view.name.name index in
+          ( ~running_field_impls:(Cow_slice.create (Cow_slice.length ty.field_specs))
+          , ~field_impls:(Cow_slice.create (Cow_slice.length ty.field_specs)) )
+        ~f:(fun index (~running_field_impls, ~field_impls) field_spec ->
+          let field = Core.Field_loc.create field_spec.name.name index in
           let running_struct_value = Core.Value.create_struct running_field_impls in
-          let field_spec = Core.Ty_struct.proj running_struct_value ty field in
-          let synthesized_term = synthesize_transparent_ty st cx field_spec.ty in
+          let field_ty = Core.Term_ty_closure.eval1 field_spec.ty running_struct_value in
+          (* let field_spec = Core.Ty_struct.proj running_struct_value ty field in *)
+          let synthesized_term = synthesize_transparent_ty st cx field_ty in
           let term_field_impl : Core.term_field_impl =
             { name = field_spec.name.name; e = synthesized_term }
           in
           (* Make sure to push the synthesized term instead of just a free variable because the resulting structure should be non dependent, each field cannot depend on the previous one *)
-          ( ~cx:(Context.bind field_spec.name field_spec.ty cx)
-          , ~running_field_impls:(Cow_slice.push_full_slice_exn
+          ( ~running_field_impls:(Cow_slice.push_full_slice_exn
                                     running_field_impls
                                     (Core.Value_field_impl.create
                                        field.name
@@ -172,16 +170,18 @@ let rec apply_patch
   | [] -> failwith "expected nonempty list"
   | path_part :: path ->
     let original_ty = extract_struct_ty st cx original_ty in
-    let field_spec_views = Core.Ty_struct.field_spec_views original_ty in
     let ~coerced_field_impls, ~patched_field_specs, ~did_find_field, .. =
       Cow_slice.foldi
-        field_spec_views
+        original_ty.field_specs
         ~init:
           ( ~cx
-          , ~running_field_impls:(Cow_slice.create (Cow_slice.length field_spec_views))
+          , ~running_field_impls:(Cow_slice.create
+                                    (Cow_slice.length original_ty.field_specs))
           , ~close:Close.empty
-          , ~coerced_field_impls:(Cow_slice.create (Cow_slice.length field_spec_views))
-          , ~patched_field_specs:(Cow_slice.create (Cow_slice.length field_spec_views))
+          , ~coerced_field_impls:(Cow_slice.create
+                                    (Cow_slice.length original_ty.field_specs))
+          , ~patched_field_specs:(Cow_slice.create
+                                    (Cow_slice.length original_ty.field_specs))
           , ~did_find_field:false )
         ~f:
           (fun
@@ -192,13 +192,12 @@ let rec apply_patch
             , ~coerced_field_impls
             , ~patched_field_specs
             , ~did_find_field )
-            field_spec_view ->
-          let field = Core.Field_loc.create field_spec_view.name.name index in
+            original_field_spec ->
+          let field = Core.Field_loc.create original_field_spec.name.name index in
           let running_struct_value = Core.Value.create_struct running_field_impls in
-          let original_field_spec =
-            Core.Ty_struct.proj running_struct_value original_ty field
+          let original_field_ty =
+            Core.Term_ty_closure.eval1 original_field_spec.ty running_struct_value
           in
-          let original_field_ty = original_field_spec.ty in
           let coerced_term, patched_field_ty, did_find_field =
             if (not did_find_field) && String.equal field.name path_part
             then begin
@@ -304,7 +303,7 @@ let rec apply_patch
               field.name
               (Core.Term.eval Core.Value_env.empty coerced_term)
           in
-          ( ~cx:(Context.bind field_spec_view.name patched_field_ty cx)
+          ( ~cx:(Context.bind original_field_spec.name patched_field_ty cx)
           , ~running_field_impls:(Cow_slice.push_full_slice_exn
                                     running_field_impls
                                     field_impl)
@@ -327,7 +326,11 @@ let rec apply_patch
              ^^ Doc.string " not found in struct")
         ];
     ( (Term_struct { field_impls = coerced_field_impls } : Core.term)
-    , (Ty_struct (Core.Ty_struct.of_iterated_binders patched_field_specs) : Core.ty) )
+    , (Ty_struct
+         (Core.Term_ty_struct.eval
+            Core.Value_env.empty
+            (Core.Term_ty_struct.of_iterated_binders patched_field_specs))
+       : Core.ty) )
 ;;
 
 let with_elab_context (st : State.t) (span : Span.t) (message : string) ~f =
@@ -405,7 +408,7 @@ let rec infer (st : State.t) (cx : Context.t) (e : Abstract.expr) : Typed.expr =
     in
     let term : Core.term = Term_app { func = Typed.Expr.term func; arg = term_arg } in
     let value_arg : Core.value_arg =
-      { e = eval_expr arg; icit = func_ty.param.modifiers.icit }
+      { e = eval_typed_expr arg; icit = func_ty.param.modifiers.icit }
     in
     let ty = Core.Ty_fun.app func_ty value_arg in
     Typed.Expr_app { func; arg; param_modifiers; ann = expr_ann cx span term ty }
@@ -507,7 +510,7 @@ let rec infer (st : State.t) (cx : Context.t) (e : Abstract.expr) : Typed.expr =
       Term_proj { strukt = Typed.Expr.term strukt; field = field_loc }
     in
     let ty =
-      (Core.Ty.proj cx.ty_env (eval_expr strukt) (Typed.Expr.ty strukt) field_loc).ty
+      Core.Ty.proj cx.ty_env (eval_typed_expr strukt) (Typed.Expr.ty strukt) field_loc
     in
     let term, ty = coerce_singleton cx term ty in
     Typed.Expr_proj { strukt; field; ann = expr_ann cx span term ty }
@@ -528,7 +531,7 @@ let rec infer (st : State.t) (cx : Context.t) (e : Abstract.expr) : Typed.expr =
             if decl.is_abstract
             then Typed.Expr.ty e
             else begin
-              let rhs_value = eval_expr e in
+              let rhs_value = eval_typed_expr e in
               Ty_sing { identity = rhs_value; ty = Typed.Expr.ty e }
             end
           in
@@ -568,7 +571,12 @@ let rec infer (st : State.t) (cx : Context.t) (e : Abstract.expr) : Typed.expr =
              })
         ~f:(fun (name, rhs) body -> (Term_let { name; rhs; body } : Core.term))
     in
-    let ty : Core.ty = Ty_struct (Core.Ty_struct.of_iterated_binders field_specs) in
+    let ty : Core.ty =
+      Ty_struct
+        (Core.Term_ty_struct.eval
+           Core.Value_env.empty
+           (Core.Term_ty_struct.of_iterated_binders field_specs))
+    in
     Typed.Expr_struct
       { decls = typed_decls; ann = expr_ann cx span term ty; is_dependent = true }
   | Expr_struct { decls; span; is_dependent = false } ->
@@ -586,7 +594,7 @@ let rec infer (st : State.t) (cx : Context.t) (e : Abstract.expr) : Typed.expr =
             if decl.is_abstract
             then Typed.Expr.ty e
             else begin
-              let rhs_value = eval_expr e in
+              let rhs_value = eval_typed_expr e in
               Ty_sing { identity = rhs_value; ty = Typed.Expr.ty e }
             end
           in
@@ -607,7 +615,9 @@ let rec infer (st : State.t) (cx : Context.t) (e : Abstract.expr) : Typed.expr =
     (*
       This is non dependent, the field_specs don't have any bound variables, so they can be weakened to ones that do take bound variables
     *)
-    let ty : Core.ty = Ty_struct { env = Core.Value_env.empty; field_specs } in
+    let ty : Core.ty =
+      Ty_struct (Core.Term_ty_struct.eval Core.Value_env.empty { field_specs })
+    in
     Typed.Expr_struct
       { decls = typed_decls; ann = expr_ann cx span term ty; is_dependent = false }
   | Expr_ty_struct { field_specs; span } ->
@@ -634,14 +644,14 @@ let rec infer (st : State.t) (cx : Context.t) (e : Abstract.expr) : Typed.expr =
                 | None -> None, field_ty
                 | Some rhs ->
                   let rhs = check st cx rhs field_ty in
-                  let rhs_value = eval_expr rhs in
+                  let rhs_value = eval_typed_expr rhs in
                   Some rhs, Ty_sing { identity = rhs_value; ty = field_ty }
               in
               Some typed_ty, typed_rhs, ty
             | None, Some rhs ->
               let rhs = infer st cx rhs in
               let field_ty = Typed.Expr.ty rhs in
-              let rhs_value = eval_expr rhs in
+              let rhs_value = eval_typed_expr rhs in
               None, Some rhs, Ty_sing { identity = rhs_value; ty = field_ty }
             | None, None ->
               failwith "rename should reject signature fields without a type or rhs"
@@ -686,7 +696,7 @@ let rec infer (st : State.t) (cx : Context.t) (e : Abstract.expr) : Typed.expr =
     Typed.Expr.of_ty typed_ty
   | Expr_let { name; rhs; relevancy; is_abstract; body; span } ->
     let rhs = infer st cx rhs in
-    let rhs_value = eval_expr rhs in
+    let rhs_value = eval_typed_expr rhs in
     let rhs_ty : Core.ty =
       if is_abstract
       then Typed.Expr.ty rhs

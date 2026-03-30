@@ -197,10 +197,7 @@ and ty_sing =
   ; ty : ty
   }
 
-and ty_struct =
-  { env : env
-  ; field_specs : term_field_spec Cow_slice.t
-  }
+and ty_struct = { field_specs : value_field_spec Cow_slice.t }
 
 and head =
   | Free of Level.t
@@ -260,7 +257,7 @@ and value_field_impl =
 
 and value_field_spec =
   { name : Name.t
-  ; ty : ty
+  ; ty : term_ty closure
   ; relevancy : Relevancy.t
   }
 
@@ -288,12 +285,7 @@ end
 module Ty_struct = struct
   type t = ty_struct [@@deriving sexp_of]
 
-  let create field_specs : ty_struct = { field_specs; env = Env.empty }
-
-  let field_spec_views ({ env = _; field_specs } : t) : term_field_spec_view Cow_slice.t =
-    Cow_slice.map field_specs ~f:(fun { name; ty = _; relevancy } ->
-      ({ name; relevancy } : term_field_spec_view))
-  ;;
+  let create field_specs : ty_struct = { field_specs }
 end
 
 module Field_loc = struct

@@ -8,6 +8,12 @@ module Cow_slice = Utility.Cow_slice
 *)
 let temporary_context_size = Int.max_value / 2
 
+let eval_closure1 eval (closure : _ Syntax.closure) arg =
+  eval (Syntax.Env.push arg closure.closure_env) closure.x
+;;
+
+let eval_closure0 eval (closure : _ Syntax.closure) = eval closure.closure_env closure.x
+
 let rec eval_value (env : Syntax.env) (e : Syntax.term) : Syntax.value =
   match e with
   | Term_bound index -> Syntax.Env.get_index_exn env index
@@ -62,7 +68,7 @@ and eval_ty (env : Syntax.env) (ty : Syntax.term_ty) : Syntax.ty =
       { name = param.name; modifiers = param.modifiers; ty = param_ty }
     in
     Ty_fun { param; body_ty = { closure_env = env; x = body_ty } }
-  | Term_ty_struct { field_specs } -> Ty_struct { env; field_specs }
+  | Term_ty_struct ty -> Ty_struct (eval_term_ty_struct env ty)
   | Term_ty_sing { identity; ty } ->
     let identity = eval_value env identity in
     let ty = eval_ty env ty in
@@ -72,6 +78,15 @@ and eval_ty (env : Syntax.env) (ty : Syntax.term_ty) : Syntax.ty =
     Ty_pack ty
   | Term_ty_core ty -> Ty_core ty
   | Term_ty_universe props -> Ty_universe props
+
+and eval_term_ty_struct env ({ field_specs } : Syntax.term_ty_struct) : Syntax.ty_struct =
+  let field_specs = Cow_slice.map field_specs ~f:(eval_field_spec env) in
+  { field_specs }
+
+and eval_field_spec env ({ name; ty; relevancy } : Syntax.term_field_spec)
+  : Syntax.value_field_spec
+  =
+  { name; ty = { closure_env = env; x = ty }; relevancy }
 
 and eval_field_impl env ({ name; e } : Syntax.term_field_impl) : Syntax.value_field_impl =
   let e = eval_value env e in
@@ -137,8 +152,8 @@ and proj_struct (strukt : Syntax.value_struct) (field : Syntax.field_loc) =
 and app_fun (abs : Syntax.value_fun) (arg : Syntax.value) =
   eval_value_closure1 abs.body arg
 
-and eval_closure1 eval (closure : _ Syntax.closure) arg =
-  eval (Syntax.Env.push arg closure.closure_env) closure.x
+and eval_ty_closure0 closure = eval_closure0 eval_ty closure
+and eval_value_closure0 closure = eval_closure0 eval_value closure
 
 and eval_value_closure1 (closure : Syntax.term Syntax.closure) arg =
   eval_value (Syntax.Env.push arg closure.closure_env) closure.x
@@ -202,40 +217,36 @@ and eval_term_data_body (env : Syntax.env) (data_body : Syntax.term_data_body)
     let constructors = List.map constructors ~f:(eval_term_data_constructor env) in
     Value_data_variant { constructors }
 
-and eval_term_field_spec
-      (env : Syntax.env)
-      ({ name; ty; relevancy } : Syntax.term_field_spec)
-  : Syntax.value_field_spec
-  =
-  let ty = eval_ty env ty in
-  { name; ty; relevancy }
+and proj_struct_ty_field_spec (struct_ty : Syntax.ty_struct) (field : Syntax.field_loc) =
+  Cow_slice.get struct_ty.field_specs field.index
 
-(* and proj_field_spec (struct_ty : Syntax.ty_struct) (field : Syntax.field_loc) =
-  Cow_slice.get struct_ty.field_specs field.index *)
+and proj_struct_ty_relevancy (struct_ty : Syntax.ty_struct) (field : Syntax.field_loc)
+  : Syntax.Relevancy.t
+  =
+  let field_spec = Cow_slice.get struct_ty.field_specs field.index in
+  field_spec.relevancy
 
 and proj_struct_ty
       (strukt : Syntax.value)
       (struct_ty : Syntax.ty_struct)
       (field : Syntax.field_loc)
-  : Syntax.value_field_spec
+  : Syntax.ty
   =
   let field_spec = Cow_slice.get struct_ty.field_specs field.index in
-  eval_term_field_spec (Syntax.Env.push strukt struct_ty.env) field_spec
+  eval_ty_closure1 field_spec.ty strukt
 
 and proj_struct_ty_non_dependent (struct_ty : Syntax.ty_struct) (field : Syntax.field_loc)
-  : Syntax.value_field_spec
+  : Syntax.ty
   =
   let field_spec = Cow_slice.get struct_ty.field_specs field.index in
-  (* We don't push here, because the bound variable should not be referenced *)
-  let field_spec_ty = eval_ty struct_ty.env field_spec.ty in
-  { name = field_spec.name; ty = field_spec_ty; relevancy = field_spec.relevancy }
+  eval_ty_closure0 field_spec.ty
 
 and proj_ty
       (ty_env : Syntax.ty_env)
       (strukt : Syntax.value)
       (ty : Syntax.ty)
       (field : Syntax.field_loc)
-  : Syntax.value_field_spec
+  : Syntax.ty
   =
   proj_struct_ty strukt (Syntax.Ty.ty_struct_val_exn (whnf_ty ty_env ty)) field
 
@@ -243,7 +254,7 @@ and proj_ty_non_dependent
       (ty_env : Syntax.ty_env)
       (ty : Syntax.ty)
       (field : Syntax.field_loc)
-  : Syntax.value_field_spec
+  : Syntax.ty
   =
   proj_struct_ty_non_dependent (Syntax.Ty.ty_struct_val_exn (whnf_ty ty_env ty)) field
 
@@ -259,7 +270,7 @@ and whnf_neutral (ty_env : Syntax.ty_env) (e : Syntax.neutral) : Syntax.value =
         match frame with
         | App arg -> ~value:(app_whnf ty_env value arg), ~ty:(app_ty ty_env ty arg)
         | Proj field ->
-          ~value:(proj_whnf ty_env value field), ~ty:(proj_ty ty_env value ty field).ty
+          ~value:(proj_whnf ty_env value field), ~ty:(proj_ty ty_env value ty field)
         | Out ->
           let ty =
             match whnf_ty ty_env ty with
@@ -284,11 +295,10 @@ and infer_props (ty_env : Syntax.ty_env) (ty : Syntax.ty) =
           , ~running_field_impls:(Cow_slice.create (Cow_slice.length ty.field_specs)) )
         ~f:(fun index (~size, ~ty_env, ~running_field_impls) field_spec ->
           let field_spec_ty =
-            (proj_struct_ty
-               (Value_struct (Syntax.Struct.create running_field_impls))
-               ty
-               { name = field_spec.name.name; index })
-              .ty
+            proj_struct_ty
+              (Syntax.Value.create_struct running_field_impls)
+              ty
+              { name = field_spec.name.name; index }
           in
           let props = infer_props ty_env field_spec_ty in
           ( ~size:(Syntax.Size.max size props.size)
@@ -325,8 +335,7 @@ and infer_neutral (ty_env : Syntax.ty_env) (e : Syntax.neutral) : Syntax.ty =
         let ty =
           match frame with
           | App arg -> app_ty ty_env ty arg
-          | Proj field ->
-            (proj_ty ty_env (Value_neutral { head = e.head; spine }) ty field).ty
+          | Proj field -> proj_ty ty_env (Value_neutral { head = e.head; spine }) ty field
           | Out -> out_ty ty_env ty
         in
         ~spine:(spine <: frame), ~ty)
@@ -414,14 +423,15 @@ and quote_ty context_size (ty : Syntax.ty) : Syntax.term_ty =
     let identity = quote_value context_size identity in
     let ty = quote_ty context_size ty in
     Term_ty_sing { identity; ty }
-  | Ty_struct { env = closure_env; field_specs } ->
-    let level = Syntax.Level.of_int context_size in
-    let closure_env = Syntax.Env.push (Syntax.Value.free level) closure_env in
-    let context_size = context_size + 1 in
+  | Ty_struct { field_specs } ->
     let field_specs =
       Cow_slice.map field_specs ~f:(fun { name; ty; relevancy } ->
+        let level = Syntax.Level.of_int context_size in
+        let context_size = context_size + 1 in
         let ty =
-          eval_ty closure_env ty |> quote_ty context_size |> close_ty_single level
+          eval_ty_closure1 ty (Syntax.Value.free level)
+          |> quote_ty context_size
+          |> close_ty_single level
         in
         ({ name; ty; relevancy } : Syntax.term_field_spec))
     in
@@ -574,8 +584,8 @@ module Term_ty = struct
   let eval = eval_ty
 end
 
-module Term_field_spec = struct
-  let eval = eval_term_field_spec
+module Term_ty_struct = struct
+  let eval = eval_term_ty_struct
 end
 
 module Term_data_decl = struct
@@ -596,6 +606,7 @@ module Struct = struct
 end
 
 module Ty_struct = struct
+  let proj_field_spec = proj_struct_ty_field_spec
   let proj = proj_struct_ty
   let proj_non_dependent = proj_struct_ty_non_dependent
 end
@@ -622,8 +633,8 @@ module Value = struct
 end
 
 module Closure = struct
-  let eval0 (closure : _ Syntax.closure) = closure.x
   let eval1 = eval_closure1
+  let eval0 = eval_closure0
 end
 
 module Term_closure = struct
@@ -632,6 +643,7 @@ end
 
 module Term_ty_closure = struct
   let eval1 = eval_ty_closure1
+  let eval0 = eval_ty_closure0
 end
 
 module Ty = struct
