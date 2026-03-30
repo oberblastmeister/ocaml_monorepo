@@ -86,8 +86,8 @@ let rec unify_value
     let props = Core.Neutral.infer_universe cx.ty_env ty in
     if not (Size.is_type props.size)
     then begin
-      let e1 = Core.Value.whnf cx.ty_env e1 |> Core.Value.neutral_val_exn in
-      let e2 = Core.Value.whnf cx.ty_env e2 |> Core.Value.neutral_val_exn in
+      let e1 = Core.Value.neutral_val_exn e1 in
+      let e2 = Core.Value.neutral_val_exn e2 in
       unify_neutral st cx e1 e2
     end
 
