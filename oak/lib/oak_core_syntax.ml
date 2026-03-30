@@ -80,7 +80,7 @@ and term_data_param =
 
 and term_data_body =
   | Term_data_record of { fields : term_data_field list }
-  | Term_data_variant of { constructor : term_data_constructor list }
+  | Term_data_variant of { constructors : term_data_constructor list }
 
 and term_data_field =
   { name : Name.t
@@ -108,6 +108,11 @@ and term_field_spec =
   ; relevancy : Relevancy.t
   }
 
+and term_field_spec_view =
+  { name : Name.t
+  ; relevancy : Relevancy.t
+  }
+
 and term_ty =
   | Term_ty_decode of term
   | Term_ty_fun of term_ty_fun
@@ -127,7 +132,7 @@ and term_ty_fun =
 
 and term_param =
   { name : Name.t
-  ; param : term_ty
+  ; ty : term_ty
   ; modifiers : Param_modifiers.t
   }
 
@@ -155,23 +160,36 @@ and ty =
 
 (* env takes one argument, which is self, env is scoped in decls *)
 and value_data_rec =
-  { env : env
-  ; decls : term_data_decl list
+  { decls : term_data_decl list closure
   ; ty : ty
     (* ty should be a non-dependent structure type with Type valued function types *)
   }
 
 and value_data_decl =
   { name : Name.t
-  ; data : value_data
+  ; num_params : int
+  ; body : term_data_body closure
   }
 
 (* env takes zero arguments env is scoped in decls *)
 and value_data =
-  { env : env
-  ; num_params : int
-  ; body : term_data_body
+  { num_params : int
+  ; body : term_data_body closure
   ; ty : ty (* ty should be Type valued function type *)
+  }
+
+and value_data_body =
+  | Value_data_record of { fields : value_data_field list }
+  | Value_data_variant of { constructors : value_data_constructor list }
+
+and value_data_field =
+  { name : Name.t
+  ; ty : ty
+  }
+
+and value_data_constructor =
+  { name : Name.t
+  ; ty : ty option
   }
 
 and ty_sing =
@@ -180,7 +198,7 @@ and ty_sing =
   }
 
 and ty_struct =
-  { env : env (* env takes one argument which is the running struct value *)
+  { env : env
   ; field_specs : term_field_spec Cow_slice.t
   }
 
@@ -216,28 +234,23 @@ and value_struct = { field_impls : value_field_impl Cow_slice.t }
 and value_fun =
   { name : Name.t
   ; icit : Icit.t
-  ; body : value_closure
+  ; body : term closure
   }
 
 and ty_fun =
   { param : value_param
-  ; body_ty : ty_closure
+  ; body_ty : term_ty closure
   }
 
 and value_param =
   { name : Name.t
   ; modifiers : Param_modifiers.t
-  ; param : ty
+  ; ty : ty
   }
 
-and ty_closure =
-  { env : env
-  ; body : term_ty
-  }
-
-and value_closure =
-  { env : env
-  ; body : term
+and 'a closure =
+  { closure_env : env
+  ; x : 'a
   }
 
 and value_field_impl =
@@ -254,53 +267,61 @@ and value_field_spec =
 and env = value Env.t
 and ty_env = ty Env.t [@@deriving sexp_of]
 
+module Closure = struct
+  type 'a t = 'a closure
+
+  let create x : _ t = { closure_env = Env.empty; x }
+end
+
 module Term_ty_fun = struct
-  type t = term_ty_fun
+  type t = term_ty_fun [@@deriving sexp_of]
 
   let create param body_ty : t = { param; body_ty }
 end
 
 module Struct = struct
-  type t = value_struct
+  type t = value_struct [@@deriving sexp_of]
 
   let create field_impls : t = { field_impls }
 end
 
 module Ty_struct = struct
-  type t = ty_struct
+  type t = ty_struct [@@deriving sexp_of]
 
-  let create ?(env = Env.empty) field_specs : ty_struct = { field_specs; env }
+  let create field_specs : ty_struct = { field_specs; env = Env.empty }
 
-  let field_locations ({ env = _; field_specs } : t) : field_loc Cow_slice.t =
-    Cow_slice.mapi field_specs ~f:(fun index { name; ty = _; relevancy = _ } ->
-      ({ name = name.name; index } : field_loc))
+  let field_spec_views ({ env = _; field_specs } : t) : term_field_spec_view Cow_slice.t =
+    Cow_slice.map field_specs ~f:(fun { name; ty = _; relevancy } ->
+      ({ name; relevancy } : term_field_spec_view))
   ;;
 end
 
 module Field_loc = struct
-  type t = field_loc
+  type t = field_loc [@@deriving sexp_of]
 
   let create name index : t = { name; index }
 end
 
 module Value_field_impl = struct
-  type t = value_field_impl
+  type t = value_field_impl [@@deriving sexp_of]
 
   let create name e : t = { name; e }
 end
 
 module Neutral = struct
-  type t = neutral
+  type t = neutral [@@deriving sexp_of]
 
   let of_head head : t = { head; spine = Bwd.Empty }
 end
 
 module Term = struct
+  type t = term [@@deriving sexp_of]
+
   let of_level level = Term_free level
 end
 
 module Value = struct
-  type t = value
+  type t = value [@@deriving sexp_of]
 
   let of_head head = Value_neutral (Neutral.of_head head)
   let free head = of_head (Free head)
@@ -329,6 +350,10 @@ module Value = struct
 end
 
 module Ty = struct
+  type t = ty [@@deriving sexp_of]
+
+  let create_ty_struct field_specs = Ty_struct (Ty_struct.create field_specs)
+
   let ty_fun_val_exn = function
     | Ty_fun v -> v
     | _ -> failwith "not a ty fun value"

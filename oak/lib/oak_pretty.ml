@@ -106,18 +106,16 @@ struct
     Doc.group (Doc.string "struct" ^^ Doc.space ^^ args decls)
 
   and pp_ty_struct names (ty : Core.ty_struct) =
-    let field_locations = Core.Ty_struct.field_locations ty in
+    let field_spec_views = Core.Ty_struct.field_spec_views ty in
     let (~names:_, ..), decls =
-      Cow_slice.fold_map
-        field_locations
+      Cow_slice.fold_mapi
+        field_spec_views
         ~init:
           ( ~names
-          , ~running_field_impls:
-              (Cow_slice.create (Cow_slice.length field_locations)) )
-        ~f:(fun (~names, ~running_field_impls) field ->
-          let running_struct_value =
-            Core.Value.create_struct running_field_impls
-          in
+          , ~running_field_impls:(Cow_slice.create (Cow_slice.length field_spec_views)) )
+        ~f:(fun index (~names, ~running_field_impls) field_spec_view ->
+          let field = Core.Field_loc.create field_spec_view.name.name index in
+          let running_struct_value = Core.Value.create_struct running_field_impls in
           let field_spec = Core.Ty_struct.proj running_struct_value ty field in
           let ty = field_spec.ty in
           let name = field_spec.name.name in
@@ -148,7 +146,7 @@ struct
           let running_field_impls =
             Cow_slice.push_full_slice_exn
               running_field_impls
-              (Core.Value_field_impl.create field.name (Core.Value.free level))
+              (Core.Value_field_impl.create field_spec_view.name.name (Core.Value.free level))
           in
           (~names, ~running_field_impls), doc)
     in
@@ -171,18 +169,18 @@ struct
   and collect_ty_fun_params
         names
         acc_params
-        ({ param = { name; param; modifiers }; _ } as ty_fun : Core.ty_fun)
+        ({ param = { name; ty = param_ty; modifiers }; _ } as ty_fun : Core.ty_fun)
     =
     let param_doc =
       if String.equal name.name "_"
-      then pp_ty_non_arrow names param
+      then pp_ty_non_arrow names param_ty
       else
         parens
           (Doc.string name.name
            ^^ Doc.space
            ^^ Doc.string ":"
            ^^ Doc.break1
-           ^^ pp_ty names param)
+           ^^ pp_ty names param_ty)
     in
     let arg = Core.Value.free (Core.Level.of_int (Core.Name_env.length names)) in
     let names = Core.Name_env.push name names in

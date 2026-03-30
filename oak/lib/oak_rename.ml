@@ -203,7 +203,7 @@ let rec rename_expr st (expr : Surface.expr) : Abstract.expr =
       Expr_rec { decls; span }
     end
   | Surface.Expr_data { params; body; span } ->
-    (match rename_data_expr st [] { params; body; span } with
+    (match rename_data_expr st { params; body; span } with
      | Some data -> Expr_data data
      | None -> Expr_error { span })
   | Surface.Expr_data_rec { decls; span } ->
@@ -211,11 +211,18 @@ let rec rename_expr st (expr : Surface.expr) : Abstract.expr =
     if check_names_distinct st names ~error_message:"Duplicate data declaration"
     then Expr_error { span }
     else begin
+      (* First pass to check that the parameters don't reference the data declaration names *)
+      List.iter decls ~f:(fun decl ->
+        let _ = rename_data_params st decl.data.params in
+        List.iter decl.data.params ~f:(fun _ -> State.pop_var st));
+      (* Now push the data declarations. The parameters are pushed after inside of rename_data_expr *)
+      List.iter decls ~f:(fun decl -> State.push_var st decl.name);
       let decls =
         List.map decls ~f:(fun (decl : Surface.data_decl) ->
-          Option.map (rename_data_expr st decls decl.data) ~f:(fun data ->
+          Option.map (rename_data_expr st decl.data) ~f:(fun data ->
             ({ name = decl.name; data; span = decl.span } : Abstract.data_decl)))
       in
+      List.iter decls ~f:(fun _ -> State.pop_var st);
       match Option.all decls with
       | Some decls -> Expr_data_rec { decls; span }
       | None -> Expr_error { span }
@@ -251,14 +258,14 @@ and rename_ty_fun st params body_ty span =
     in
     Abstract.Expr_ty_fun { name; param_ty; param_modifiers; body_ty; span }
 
-and rename_data_expr st decls ({ params; body; span } : Surface.expr_data)
+and rename_data_expr st ({ params; body; span } : Surface.expr_data)
   : Abstract.expr_data option
   =
+  (*
+    We rename the parameters twice because we first need to check that the parameters don't reference the data declaration names.
+  *)
   let params = rename_data_params st params in
-  (* The declaration names are only in scope inside the *body* *)
-  List.iter decls ~f:(fun decl -> State.push_var st decl.name);
   let body = rename_data_body st body ~span in
-  List.iter decls ~f:(fun _ -> State.pop_var st);
   List.iter params ~f:(fun _ -> State.pop_var st);
   Option.map body ~f:(fun body -> ({ params; body; span } : Abstract.expr_data))
 

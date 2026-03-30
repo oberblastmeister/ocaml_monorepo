@@ -1,5 +1,5 @@
 open Prelude
-module Core = Oak_core_syntax
+module Syntax = Oak_core_syntax
 module Cow_slice = Utility.Cow_slice
 
 (*
@@ -8,15 +8,16 @@ module Cow_slice = Utility.Cow_slice
 *)
 let temporary_context_size = Int.max_value / 2
 
-let rec eval_value (env : Core.env) (e : Core.term) : Core.value =
+let rec eval_value (env : Syntax.env) (e : Syntax.term) : Syntax.value =
   match e with
-  | Term_bound index -> Core.Env.get_index_exn env index
-  | Term_free level -> Core.Value.free level
+  | Term_bound index -> Syntax.Env.get_index_exn env index
+  | Term_free level -> Syntax.Value.free level
   | Term_app { func; arg } ->
     let func = eval_value env func in
     let arg = eval_arg env arg in
     app_value func arg
-  | Term_fun { name; icit; body } -> Value_fun { name; icit; body = { env; body } }
+  | Term_fun { name; icit; body } ->
+    Value_fun { name; icit; body = { closure_env = env; x = body } }
   | Term_proj { strukt; field } ->
     let strukt = eval_value env strukt in
     proj_value strukt field
@@ -31,27 +32,36 @@ let rec eval_value (env : Core.env) (e : Core.term) : Core.value =
     out_value e
   | Term_let { name = _; rhs; body } ->
     let rhs = eval_value env rhs in
-    eval_value (Core.Env.push rhs env) body
+    eval_value (Syntax.Env.push rhs env) body
   | Term_ignore -> Value_ignore
   | Term_encode_ty { ty; props } ->
     let ty = eval_ty env ty in
     Value_encode_ty { ty; props }
-  | Term_data { num_params; body; ty } ->
-    Core.Value.of_head (Data { env; num_params; body; ty = eval_ty env ty })
-  | Term_data_rec { decls; ty } ->
-    Core.Value.of_head (Data_rec { env; decls; ty = eval_ty env ty })
+  | Term_data data -> Syntax.Value.of_head (Data (eval_term_data env data))
+  | Term_data_rec data_rec ->
+    Syntax.Value.of_head (Data_rec (eval_term_data_rec env data_rec))
 
-and eval_ty (env : Core.env) (ty : Core.term_ty) : Core.ty =
+and eval_term_data (env : Syntax.env) ({ num_params; body; ty } : Syntax.term_data)
+  : Syntax.value_data
+  =
+  { num_params; body = { closure_env = env; x = body }; ty = eval_ty env ty }
+
+and eval_term_data_rec (env : Syntax.env) ({ decls; ty } : Syntax.term_data_rec)
+  : Syntax.value_data_rec
+  =
+  { decls = { closure_env = env; x = decls }; ty = eval_ty env ty }
+
+and eval_ty (env : Syntax.env) (ty : Syntax.term_ty) : Syntax.ty =
   match ty with
   | Term_ty_decode e ->
     let e = eval_value env e in
     decode_value e
   | Term_ty_fun { param; body_ty } ->
-    let param_ty = eval_ty env param.param in
-    let param : Core.value_param =
-      { name = param.name; modifiers = param.modifiers; param = param_ty }
+    let param_ty = eval_ty env param.ty in
+    let param : Syntax.value_param =
+      { name = param.name; modifiers = param.modifiers; ty = param_ty }
     in
-    Ty_fun { param; body_ty = { env; body = body_ty } }
+    Ty_fun { param; body_ty = { closure_env = env; x = body_ty } }
   | Term_ty_struct { field_specs } -> Ty_struct { env; field_specs }
   | Term_ty_sing { identity; ty } ->
     let identity = eval_value env identity in
@@ -63,21 +73,21 @@ and eval_ty (env : Core.env) (ty : Core.term_ty) : Core.ty =
   | Term_ty_core ty -> Ty_core ty
   | Term_ty_universe props -> Ty_universe props
 
-and eval_field_impl env ({ name; e } : Core.term_field_impl) : Core.value_field_impl =
+and eval_field_impl env ({ name; e } : Syntax.term_field_impl) : Syntax.value_field_impl =
   let e = eval_value env e in
   { name; e }
 
-and eval_arg env ({ e; icit } : Core.term_arg) : Core.value_arg =
+and eval_arg env ({ e; icit } : Syntax.term_arg) : Syntax.value_arg =
   let e = eval_value env e in
   { e; icit }
 
-and decode_value (ty : Core.value) : Core.ty =
+and decode_value (ty : Syntax.value) : Syntax.ty =
   match ty with
   | Value_encode_ty { ty; props = _ } -> ty
   | Value_neutral e -> Ty_decode e
   | _ -> failwith "Expected a type code"
 
-and app_value (func : Core.value) (arg : Core.value_arg) : Core.value =
+and app_value (func : Syntax.value) (arg : Syntax.value_arg) : Syntax.value =
   match func with
   | Value_ignore ->
     (* Function types can have kind Type *)
@@ -86,22 +96,22 @@ and app_value (func : Core.value) (arg : Core.value_arg) : Core.value =
   | Value_neutral { head; spine } -> Value_neutral { head; spine = spine <: App arg }
   | _ -> failwith "Expected function value"
 
-and proj_value (strukt : Core.value) (field : Core.field_loc) : Core.value =
+and proj_value (strukt : Syntax.value) (field : Syntax.field_loc) : Syntax.value =
   (* No ignore case here because structures always have kind Sig *)
   match strukt with
   | Value_struct strukt -> proj_struct strukt field
   | Value_neutral { head; spine } -> Value_neutral { head; spine = spine <: Proj field }
   | _ -> failwith "Expected a struct value"
 
-and out_value (sing : Core.value) : Core.value =
+and out_value (sing : Syntax.value) : Syntax.value =
   match sing with
   | Value_sing_in e -> e
   | Value_neutral { head; spine } -> Value_neutral { head; spine = spine <: Out }
   | _ -> failwith "Expected a singleton value"
 
 (* precondition: strukt is whnf, postcondition: result is whnf *)
-and app_whnf (ty_env : Core.ty_env) (func : Core.value) (arg : Core.value_arg)
-  : Core.value
+and app_whnf (ty_env : Syntax.ty_env) (func : Syntax.value) (arg : Syntax.value_arg)
+  : Syntax.value
   =
   match func with
   | Value_ignore ->
@@ -112,30 +122,36 @@ and app_whnf (ty_env : Core.ty_env) (func : Core.value) (arg : Core.value_arg)
   | _ -> failwith "Expected function value"
 
 (* precondition: strukt is whnf, postcondition: result is whnf *)
-and proj_whnf (ty_env : Core.ty_env) (strukt : Core.value) (field : Core.field_loc)
-  : Core.value
+and proj_whnf (ty_env : Syntax.ty_env) (strukt : Syntax.value) (field : Syntax.field_loc)
+  : Syntax.value
   =
   match strukt with
   | Value_struct strukt -> whnf_value ty_env (proj_struct strukt field)
   | Value_neutral { head; spine } -> Value_neutral { head; spine = spine <: Proj field }
   | _ -> failwith "Expected a struct value"
 
-and proj_struct (strukt : Core.value_struct) (field : Core.field_loc) =
+and proj_struct (strukt : Syntax.value_struct) (field : Syntax.field_loc) =
   let field_impl = Cow_slice.get strukt.field_impls field.index in
   field_impl.e
 
-and app_fun (abs : Core.value_fun) (arg : Core.value) = eval_closure1 abs.body arg
-and eval_closure1 closure arg = eval_value (Core.Env.push arg closure.env) closure.body
+and app_fun (abs : Syntax.value_fun) (arg : Syntax.value) =
+  eval_value_closure1 abs.body arg
 
-and eval_ty_closure1 (closure : Core.ty_closure) arg =
-  eval_ty (Core.Env.push arg closure.env) closure.body
+and eval_closure1 eval (closure : _ Syntax.closure) arg =
+  eval (Syntax.Env.push arg closure.closure_env) closure.x
 
-and whnf_value ty_env (e : Core.value) : Core.value =
+and eval_value_closure1 (closure : Syntax.term Syntax.closure) arg =
+  eval_value (Syntax.Env.push arg closure.closure_env) closure.x
+
+and eval_ty_closure1 (closure : Syntax.term_ty Syntax.closure) arg =
+  eval_ty (Syntax.Env.push arg closure.closure_env) closure.x
+
+and whnf_value ty_env (e : Syntax.value) : Syntax.value =
   match e with
   | Value_neutral neutral -> whnf_neutral ty_env neutral
   | Value_ignore | Value_struct _ | Value_fun _ | Value_sing_in _ | Value_encode_ty _ -> e
 
-and whnf_ty (ty_env : Core.ty_env) (ty : Core.ty) : Core.ty =
+and whnf_ty (ty_env : Syntax.ty_env) (ty : Syntax.ty) : Syntax.ty =
   match ty with
   | Ty_decode e -> begin
     match whnf_neutral ty_env e with
@@ -145,42 +161,100 @@ and whnf_ty (ty_env : Core.ty_env) (ty : Core.ty) : Core.ty =
   end
   | Ty_universe _ | Ty_sing _ | Ty_struct _ | Ty_fun _ | Ty_core _ | Ty_pack _ -> ty
 
-and app_fun_ty (func_ty : Core.ty_fun) (arg : Core.value_arg) : Core.ty =
+and app_fun_ty (func_ty : Syntax.ty_fun) (arg : Syntax.value_arg) : Syntax.ty =
   eval_ty_closure1 func_ty.body_ty arg.e
 
-and app_ty (ty_env : Core.ty_env) (ty : Core.ty) (arg : Core.value_arg) : Core.ty =
-  app_fun_ty (Core.Ty.ty_fun_val_exn (whnf_ty ty_env ty)) arg
+and app_ty (ty_env : Syntax.ty_env) (ty : Syntax.ty) (arg : Syntax.value_arg) : Syntax.ty =
+  app_fun_ty (Syntax.Ty.ty_fun_val_exn (whnf_ty ty_env ty)) arg
 
-and out_ty (ty_env : Core.ty_env) (ty : Core.ty) : Core.ty =
-  (Core.Ty.ty_sing_val_exn (whnf_ty ty_env ty)).ty
+and out_ty (ty_env : Syntax.ty_env) (ty : Syntax.ty) : Syntax.ty =
+  (Syntax.Ty.ty_sing_val_exn (whnf_ty ty_env ty)).ty
+
+and eval_term_data_field (env : Syntax.env) ({ name; ty } : Syntax.term_data_field)
+  : Syntax.value_data_field
+  =
+  let ty = eval_ty env ty in
+  { name; ty }
+
+and eval_term_data_constructor
+      (env : Syntax.env)
+      ({ name; ty } : Syntax.term_data_constructor)
+  : Syntax.value_data_constructor
+  =
+  let ty = Option.map ~f:(eval_ty env) ty in
+  { name; ty }
+
+and eval_term_data_decl
+      (env : Syntax.env)
+      ({ name; num_params; body } : Syntax.term_data_decl)
+  : Syntax.value_data_decl
+  =
+  { name; num_params; body = { closure_env = env; x = body } }
+
+and eval_term_data_body (env : Syntax.env) (data_body : Syntax.term_data_body)
+  : Syntax.value_data_body
+  =
+  match data_body with
+  | Term_data_record { fields } ->
+    let fields = List.map fields ~f:(eval_term_data_field env) in
+    Value_data_record { fields }
+  | Term_data_variant { constructors } ->
+    let constructors = List.map constructors ~f:(eval_term_data_constructor env) in
+    Value_data_variant { constructors }
+
+and eval_term_field_spec
+      (env : Syntax.env)
+      ({ name; ty; relevancy } : Syntax.term_field_spec)
+  : Syntax.value_field_spec
+  =
+  let ty = eval_ty env ty in
+  { name; ty; relevancy }
+
+(* and proj_field_spec (struct_ty : Syntax.ty_struct) (field : Syntax.field_loc) =
+  Cow_slice.get struct_ty.field_specs field.index *)
 
 and proj_struct_ty
-      (strukt : Core.value)
-      (struct_ty : Core.ty_struct)
-      (field : Core.field_loc)
-  : Core.value_field_spec
+      (strukt : Syntax.value)
+      (struct_ty : Syntax.ty_struct)
+      (field : Syntax.field_loc)
+  : Syntax.value_field_spec
   =
   let field_spec = Cow_slice.get struct_ty.field_specs field.index in
-  let field_spec_ty = eval_ty (Core.Env.push strukt struct_ty.env) field_spec.ty in
+  eval_term_field_spec (Syntax.Env.push strukt struct_ty.env) field_spec
+
+and proj_struct_ty_non_dependent (struct_ty : Syntax.ty_struct) (field : Syntax.field_loc)
+  : Syntax.value_field_spec
+  =
+  let field_spec = Cow_slice.get struct_ty.field_specs field.index in
+  (* We don't push here, because the bound variable should not be referenced *)
+  let field_spec_ty = eval_ty struct_ty.env field_spec.ty in
   { name = field_spec.name; ty = field_spec_ty; relevancy = field_spec.relevancy }
 
 and proj_ty
-      (ty_env : Core.ty_env)
-      (strukt : Core.value)
-      (ty : Core.ty)
-      (field : Core.field_loc)
-  : Core.value_field_spec
+      (ty_env : Syntax.ty_env)
+      (strukt : Syntax.value)
+      (ty : Syntax.ty)
+      (field : Syntax.field_loc)
+  : Syntax.value_field_spec
   =
-  proj_struct_ty strukt (Core.Ty.ty_struct_val_exn (whnf_ty ty_env ty)) field
+  proj_struct_ty strukt (Syntax.Ty.ty_struct_val_exn (whnf_ty ty_env ty)) field
 
-and whnf_neutral (ty_env : Core.ty_env) (e : Core.neutral) : Core.value =
+and proj_ty_non_dependent
+      (ty_env : Syntax.ty_env)
+      (ty : Syntax.ty)
+      (field : Syntax.field_loc)
+  : Syntax.value_field_spec
+  =
+  proj_struct_ty_non_dependent (Syntax.Ty.ty_struct_val_exn (whnf_ty ty_env ty)) field
+
+and whnf_neutral (ty_env : Syntax.ty_env) (e : Syntax.neutral) : Syntax.value =
   let ~value, .. =
     Bwd.fold_left
       e.spine
       ~init:
         ( ~value:(Value_neutral { head = e.head; spine = Empty })
         , ~ty:(infer_head ty_env e.head) )
-      ~f:(fun (~value, ~ty) (frame : Core.frame) ->
+      ~f:(fun (~value, ~ty) (frame : Syntax.frame) ->
         (* invariant: e is whnf, ty may not be whnf *)
         match frame with
         | App arg -> ~value:(app_whnf ty_env value arg), ~ty:(app_ty ty_env ty arg)
@@ -196,58 +270,58 @@ and whnf_neutral (ty_env : Core.ty_env) (e : Core.neutral) : Core.value =
   in
   value
 
-and infer_props (ty_env : Core.ty_env) (ty : Core.ty) =
+and infer_props (ty_env : Syntax.ty_env) (ty : Syntax.ty) =
   match ty with
   | Ty_universe props -> props
-  | Ty_sing _ -> { size = Core.Size.sig_ }
+  | Ty_sing _ -> { size = Syntax.Size.sig_ }
   | Ty_struct ty ->
     let ~size, .. =
       Cow_slice.foldi
         ty.field_specs
         ~init:
-          ( ~size:Core.Size.sig_
+          ( ~size:Syntax.Size.sig_
           , ~ty_env
           , ~running_field_impls:(Cow_slice.create (Cow_slice.length ty.field_specs)) )
         ~f:(fun index (~size, ~ty_env, ~running_field_impls) field_spec ->
           let field_spec_ty =
             (proj_struct_ty
-               (Value_struct (Core.Struct.create running_field_impls))
+               (Value_struct (Syntax.Struct.create running_field_impls))
                ty
                { name = field_spec.name.name; index })
               .ty
           in
           let props = infer_props ty_env field_spec_ty in
-          ( ~size:(Core.Size.max size props.size)
-          , ~ty_env:(Core.Env.push field_spec_ty ty_env)
-          , ~running_field_impls:
-              (Cow_slice.push_full_slice_exn
-                 running_field_impls
-                 (Core.Value_field_impl.create
-                    field_spec.name.name
-                    (Core.Value.free_of_size (Core.Env.length ty_env))
-                  : Core.value_field_impl)) ))
+          ( ~size:(Syntax.Size.max size props.size)
+          , ~ty_env:(Syntax.Env.push field_spec_ty ty_env)
+          , ~running_field_impls:(Cow_slice.push_full_slice_exn
+                                    running_field_impls
+                                    (Syntax.Value_field_impl.create
+                                       field_spec.name.name
+                                       (Syntax.Value.free_of_size
+                                          (Syntax.Env.length ty_env))
+                                     : Syntax.value_field_impl)) ))
     in
     { size }
   | Ty_fun ty ->
-    let arg : Core.value_arg =
-      { e = Core.Value.free_of_size (Core.Env.length ty_env)
+    let arg : Syntax.value_arg =
+      { e = Syntax.Value.free_of_size (Syntax.Env.length ty_env)
       ; icit = ty.param.modifiers.icit
       }
     in
-    let param_ty_props = infer_props ty_env ty.param.param in
+    let param_ty_props = infer_props ty_env ty.param.ty in
     let body_ty_props =
-      infer_props (Core.Env.push ty.param.param ty_env) (app_fun_ty ty arg)
+      infer_props (Syntax.Env.push ty.param.ty ty_env) (app_fun_ty ty arg)
     in
-    { size = Core.Size.max param_ty_props.size body_ty_props.size }
-  | Ty_pack _ | Ty_core _ -> { size = Core.Size.type_ }
+    { size = Syntax.Size.max param_ty_props.size body_ty_props.size }
+  | Ty_pack _ | Ty_core _ -> { size = Syntax.Size.type_ }
   | Ty_decode ty -> infer_neutral_universe ty_env ty
 
-and infer_neutral (ty_env : Core.ty_env) (e : Core.neutral) : Core.ty =
+and infer_neutral (ty_env : Syntax.ty_env) (e : Syntax.neutral) : Syntax.ty =
   let ~ty, .. =
     Bwd.fold_left
       e.spine
       ~init:(~spine:Bwd.Empty, ~ty:(infer_head ty_env e.head))
-      ~f:(fun (~spine, ~ty) (frame : Core.frame) ->
+      ~f:(fun (~spine, ~ty) (frame : Syntax.frame) ->
         let ty =
           match frame with
           | App arg -> app_ty ty_env ty arg
@@ -259,15 +333,17 @@ and infer_neutral (ty_env : Core.ty_env) (e : Core.neutral) : Core.ty =
   in
   ty
 
-and infer_head (ty_env : Core.ty_env) (head : Core.head) : Core.ty =
+and infer_head (ty_env : Syntax.ty_env) (head : Syntax.head) : Syntax.ty =
   match head with
-  | Free free -> Core.Env.get_level_exn ty_env free
+  | Free free -> Syntax.Env.get_level_exn ty_env free
   | Data { ty; _ } -> ty
   | Data_rec { ty; _ } -> ty
 
-and infer_neutral_universe (ty_env : Core.ty_env) (e : Core.neutral) : Core.Ty_props.t =
+and infer_neutral_universe (ty_env : Syntax.ty_env) (e : Syntax.neutral)
+  : Syntax.Ty_props.t
+  =
   let ty = infer_neutral ty_env e in
-  whnf_ty ty_env ty |> Core.Ty.ty_universe_val_exn
+  whnf_ty ty_env ty |> Syntax.Ty.ty_universe_val_exn
 ;;
 
 (* Substitutes free variables into bound variables *)
@@ -281,11 +357,11 @@ module Close = struct
   let empty = { map = Int.Map.empty; lift = 0 }
   let lift n (close : t) = { close with lift = close.lift + n }
 
-  let singleton (level : Core.Level.t) (index : Core.Index.t) : t =
+  let singleton (level : Syntax.Level.t) (index : Syntax.Index.t) : t =
     { map = Int.Map.singleton level.level index.index; lift = 0 }
   ;;
 
-  let add_exn (level : Core.Level.t) (index : Core.Index.t) (close : t) =
+  let add_exn (level : Syntax.Level.t) (index : Syntax.Index.t) (close : t) =
     { close with
       map = Map.add_exn close.map ~key:level.level ~data:(index.index - close.lift)
     }
@@ -303,16 +379,16 @@ module Close = struct
     { first with map }
   ;;
 
-  let find (close : t) (level : Core.Level.t) =
+  let find (close : t) (level : Syntax.Level.t) =
     Option.map
-      ~f:(fun i -> Core.Index.of_int (i + close.lift))
+      ~f:(fun i -> Syntax.Index.of_int (i + close.lift))
       (Map.find close.map level.level)
   ;;
 
-  let push_exn l t = add_exn l Core.Index.zero (lift 1 t)
+  let push_exn l t = add_exn l Syntax.Index.zero (lift 1 t)
 end
 
-let rec quote_value context_size (e : Core.value) : Core.term =
+let rec quote_value context_size (e : Syntax.value) : Syntax.term =
   match e with
   | Value_ignore -> Term_ignore
   | Value_struct { field_impls } ->
@@ -320,9 +396,9 @@ let rec quote_value context_size (e : Core.value) : Core.term =
     Term_struct { field_impls }
   | Value_fun { name; body; icit } ->
     let body =
-      eval_closure1 body (Core.Value.free_of_size context_size)
+      eval_value_closure1 body (Syntax.Value.free_of_size context_size)
       |> quote_value (context_size + 1)
-      |> close_single (Core.Level.of_int context_size)
+      |> close_single (Syntax.Level.of_int context_size)
     in
     Term_fun { name; body; icit }
   | Value_sing_in e -> Term_sing_in (quote_value context_size e)
@@ -331,7 +407,7 @@ let rec quote_value context_size (e : Core.value) : Core.term =
     let ty = quote_ty context_size ty in
     Term_encode_ty { ty; props }
 
-and quote_ty context_size (ty : Core.ty) : Core.term_ty =
+and quote_ty context_size (ty : Syntax.ty) : Syntax.term_ty =
   match ty with
   | Ty_universe props -> Term_ty_universe props
   | Ty_sing { identity; ty } ->
@@ -339,26 +415,26 @@ and quote_ty context_size (ty : Core.ty) : Core.term_ty =
     let ty = quote_ty context_size ty in
     Term_ty_sing { identity; ty }
   | Ty_struct { env = closure_env; field_specs } ->
-    let level = Core.Level.of_int context_size in
-    let closure_env = Core.Env.push (Core.Value.free level) closure_env in
+    let level = Syntax.Level.of_int context_size in
+    let closure_env = Syntax.Env.push (Syntax.Value.free level) closure_env in
     let context_size = context_size + 1 in
     let field_specs =
       Cow_slice.map field_specs ~f:(fun { name; ty; relevancy } ->
         let ty =
           eval_ty closure_env ty |> quote_ty context_size |> close_ty_single level
         in
-        ({ name; ty; relevancy } : Core.term_field_spec))
+        ({ name; ty; relevancy } : Syntax.term_field_spec))
     in
     Term_ty_struct { field_specs }
   | Ty_fun { param; body_ty } ->
-    let param_ty = quote_ty context_size param.param in
+    let param_ty = quote_ty context_size param.ty in
     let body_ty =
-      eval_ty_closure1 body_ty (Core.Value.free_of_size context_size)
+      eval_ty_closure1 body_ty (Syntax.Value.free_of_size context_size)
       |> quote_ty (context_size + 1)
-      |> close_ty_single (Core.Level.of_int context_size)
+      |> close_ty_single (Syntax.Level.of_int context_size)
     in
-    let param : Core.term_param =
-      { name = param.name; modifiers = param.modifiers; param = param_ty }
+    let param : Syntax.term_param =
+      { name = param.name; modifiers = param.modifiers; ty = param_ty }
     in
     Term_ty_fun { param; body_ty }
   | Ty_core ty -> Term_ty_core ty
@@ -367,11 +443,11 @@ and quote_ty context_size (ty : Core.ty) : Core.term_ty =
     let e = quote_neutral context_size e in
     Term_ty_decode e
 
-and quote_neutral context_size (e : Core.neutral) : Core.term =
+and quote_neutral context_size (e : Syntax.neutral) : Syntax.term =
   Bwd.fold_left
     e.spine
     ~init:(quote_head context_size e.head)
-    ~f:(fun e (elim : Core.frame) : Core.term ->
+    ~f:(fun e (elim : Syntax.frame) : Syntax.term ->
       match elim with
       | Proj field -> Term_proj { strukt = e; field }
       | App arg ->
@@ -379,41 +455,41 @@ and quote_neutral context_size (e : Core.neutral) : Core.term =
         Term_app { func = e; arg }
       | Out -> Term_sing_out e)
 
-and quote_head context_size (head : Core.head) : Core.term =
+and quote_head context_size (head : Syntax.head) : Syntax.term =
   match head with
   | Free free ->
     assert (free.level < context_size);
     Term_free free
   | Data _ | Data_rec _ -> failwith ""
 
-and quote_arg context_size (arg : Core.value_arg) : Core.term_arg =
+and quote_arg context_size (arg : Syntax.value_arg) : Syntax.term_arg =
   let e = quote_value context_size arg.e in
   { e; icit = arg.icit }
 
-and quote_field_impl (context_size : int) ({ name; e } : Core.value_field_impl)
-  : Core.term_field_impl
+and quote_field_impl (context_size : int) ({ name; e } : Syntax.value_field_impl)
+  : Syntax.term_field_impl
   =
   let e = quote_value context_size e in
   { name; e }
 
-and close (c : Close.t) (e : Core.term) : Core.term =
+and close_term (c : Close.t) (e : Syntax.term) : Syntax.term =
   match e with
   | Term_bound v -> Term_bound v
   | Term_free i ->
     Close.find c i |> Option.value_map ~default:e ~f:(fun v -> Term_bound v)
-  | Term_app { func; arg } -> Term_app { func = close c func; arg = close_arg c arg }
+  | Term_app { func; arg } -> Term_app { func = close_term c func; arg = close_arg c arg }
   | Term_fun { name; icit; body } ->
-    Term_fun { name; icit; body = close (Close.lift 1 c) body }
-  | Term_proj { strukt; field } -> Term_proj { strukt = close c strukt; field }
+    Term_fun { name; icit; body = close_term (Close.lift 1 c) body }
+  | Term_proj { strukt; field } -> Term_proj { strukt = close_term c strukt; field }
   | Term_struct { field_impls } ->
     Term_struct { field_impls = Cow_slice.map field_impls ~f:(close_field_impl c) }
   | Term_encode_ty { ty; props } ->
     let ty = close_ty c ty in
     Term_encode_ty { ty; props }
-  | Term_sing_in e -> Term_sing_in (close c e)
-  | Term_sing_out e -> Term_sing_out (close c e)
+  | Term_sing_in e -> Term_sing_in (close_term c e)
+  | Term_sing_out e -> Term_sing_out (close_term c e)
   | Term_let { name; rhs; body } ->
-    Term_let { name; rhs = close c rhs; body = close (Close.lift 1 c) body }
+    Term_let { name; rhs = close_term c rhs; body = close_term (Close.lift 1 c) body }
   | Term_ignore -> Term_ignore
   | Term_data { num_params; body; ty } ->
     let c = Close.lift num_params c in
@@ -421,40 +497,40 @@ and close (c : Close.t) (e : Core.term) : Core.term =
   | Term_data_rec { decls; ty } ->
     let c = Close.lift 1 c in
     let decls =
-      List.map decls ~f:(fun ({ name; num_params; body } : Core.term_data_decl) ->
+      List.map decls ~f:(fun ({ name; num_params; body } : Syntax.term_data_decl) ->
         let c = Close.lift num_params c in
-        ({ name; num_params; body = close_data_body c body } : Core.term_data_decl))
+        ({ name; num_params; body = close_data_body c body } : Syntax.term_data_decl))
     in
     let ty = close_ty c ty in
     Term_data_rec { decls; ty }
 
-and close_single (level : Core.Level.t) e =
-  close (Close.singleton level (Core.Index.of_int 0)) e
+and close_single (level : Syntax.Level.t) e =
+  close_term (Close.singleton level (Syntax.Index.of_int 0)) e
 
-and close_ty_single (level : Core.Level.t) ty =
-  close_ty (Close.singleton level (Core.Index.of_int 0)) ty
+and close_ty_single (level : Syntax.Level.t) ty =
+  close_ty (Close.singleton level (Syntax.Index.of_int 0)) ty
 
-and close_ty (c : Close.t) (ty : Core.term_ty) : Core.term_ty =
+and close_ty (c : Close.t) (ty : Syntax.term_ty) : Syntax.term_ty =
   match ty with
   | Term_ty_decode e ->
-    let e = close c e in
+    let e = close_term c e in
     Term_ty_decode e
   | Term_ty_fun { param; body_ty } ->
-    let param_ty = close_ty c param.param in
+    let param_ty = close_ty c param.ty in
     let body_ty = close_ty (Close.lift 1 c) body_ty in
-    let param : Core.term_param =
-      { name = param.name; modifiers = param.modifiers; param = param_ty }
+    let param : Syntax.term_param =
+      { name = param.name; modifiers = param.modifiers; ty = param_ty }
     in
     Term_ty_fun { param; body_ty }
   | Term_ty_struct { field_specs } ->
     let c = Close.lift 1 c in
     let field_specs =
       Cow_slice.map field_specs ~f:(fun { name; ty; relevancy } ->
-        ({ name; ty = close_ty c ty; relevancy } : Core.term_field_spec))
+        ({ name; ty = close_ty c ty; relevancy } : Syntax.term_field_spec))
     in
     Term_ty_struct { field_specs }
   | Term_ty_sing { identity; ty } ->
-    let identity = close c identity in
+    let identity = close_term c identity in
     let ty = close_ty c ty in
     Term_ty_sing { identity; ty }
   | Term_ty_pack ty ->
@@ -463,30 +539,31 @@ and close_ty (c : Close.t) (ty : Core.term_ty) : Core.term_ty =
   | Term_ty_core ty -> Term_ty_core ty
   | Term_ty_universe props -> Term_ty_universe props
 
-and close_data_body (c : Close.t) (body : Core.term_data_body) : Core.term_data_body =
+and close_data_body (c : Close.t) (body : Syntax.term_data_body) : Syntax.term_data_body =
   match body with
   | Term_data_record { fields } ->
     Term_data_record { fields = List.map fields ~f:(close_data_field c) }
-  | Term_data_variant { constructor } ->
-    Term_data_variant { constructor = List.map constructor ~f:(close_data_constructor c) }
+  | Term_data_variant { constructors } ->
+    Term_data_variant
+      { constructors = List.map constructors ~f:(close_data_constructor c) }
 
-and close_data_field (c : Close.t) ({ name; ty } : Core.term_data_field)
-  : Core.term_data_field
+and close_data_field (c : Close.t) ({ name; ty } : Syntax.term_data_field)
+  : Syntax.term_data_field
   =
   { name; ty = close_ty c ty }
 
-and close_data_constructor (c : Close.t) ({ name; ty } : Core.term_data_constructor)
-  : Core.term_data_constructor
+and close_data_constructor (c : Close.t) ({ name; ty } : Syntax.term_data_constructor)
+  : Syntax.term_data_constructor
   =
   { name; ty = Option.map ty ~f:(close_ty c) }
 
-and close_field_impl (c : Close.t) ({ name; e } : Core.term_field_impl) =
-  { name; e = close c e }
+and close_field_impl (c : Close.t) ({ name; e } : Syntax.term_field_impl) =
+  { name; e = close_term c e }
 
-and close_arg (c : Close.t) ({ e; icit } : Core.term_arg) = { e = close c e; icit }
+and close_arg (c : Close.t) ({ e; icit } : Syntax.term_arg) = { e = close_term c e; icit }
 
 module Term = struct
-  let close = close
+  let close = close_term
   let close_single = close_single
   let eval = eval_value
 end
@@ -497,15 +574,31 @@ module Term_ty = struct
   let eval = eval_ty
 end
 
+module Term_field_spec = struct
+  let eval = eval_term_field_spec
+end
+
+module Term_data_decl = struct
+  let eval = eval_term_data_decl
+end
+
+module Term_data_rec = struct
+  let eval = eval_term_data_rec
+end
+
+module Term_data_body = struct
+  let eval = eval_term_data_body
+  let close = close_data_body
+end
+
 module Struct = struct
   let proj = proj_struct
 end
 
-module Struct_ty = struct
+module Ty_struct = struct
   let proj = proj_struct_ty
+  let proj_non_dependent = proj_struct_ty_non_dependent
 end
-
-module Ty_struct = Struct_ty
 
 module Fun = struct
   let app = app_fun
@@ -528,6 +621,19 @@ module Value = struct
   let decode = decode_value
 end
 
+module Closure = struct
+  let eval0 (closure : _ Syntax.closure) = closure.x
+  let eval1 = eval_closure1
+end
+
+module Term_closure = struct
+  let eval1 = eval_value_closure1
+end
+
+module Term_ty_closure = struct
+  let eval1 = eval_ty_closure1
+end
+
 module Ty = struct
   let infer_props = infer_props
   let whnf = whnf_ty
@@ -535,6 +641,7 @@ module Ty = struct
   let quote_with = quote_ty
   let quote = quote_ty temporary_context_size
   let proj = proj_ty
+  let proj_non_dependent = proj_ty_non_dependent
   let app = app_ty
   let out = out_ty
 end

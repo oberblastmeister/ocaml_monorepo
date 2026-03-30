@@ -23,6 +23,7 @@ type term_data_constructor = Syntax.term_data_constructor [@@deriving sexp_of]
 type field_loc = Syntax.field_loc [@@deriving sexp_of]
 type term_field_impl = Syntax.term_field_impl [@@deriving sexp_of]
 type term_field_spec = Syntax.term_field_spec [@@deriving sexp_of]
+type term_field_spec_view = Syntax.term_field_spec_view [@@deriving sexp_of]
 type term_ty = Syntax.term_ty [@@deriving sexp_of]
 type term_ty_struct = Syntax.term_ty_struct [@@deriving sexp_of]
 type value = Syntax.value [@@deriving sexp_of]
@@ -43,8 +44,7 @@ type value_fun = Syntax.value_fun [@@deriving sexp_of]
 type ty_fun = Syntax.ty_fun [@@deriving sexp_of]
 type value_param = Syntax.value_param [@@deriving sexp_of]
 type term_param = Syntax.term_param [@@deriving sexp_of]
-type ty_closure = Syntax.ty_closure [@@deriving sexp_of]
-type value_closure = Syntax.value_closure [@@deriving sexp_of]
+type 'a closure = 'a Syntax.closure [@@deriving sexp_of]
 type value_field_impl = Syntax.value_field_impl [@@deriving sexp_of]
 type value_field_spec = Syntax.value_field_spec [@@deriving sexp_of]
 
@@ -115,12 +115,33 @@ module Term_ty = struct
   let close = Evaluate.Term_ty.close
   let close_single = Evaluate.Term_ty.close_single
   let eval = Evaluate.Term_ty.eval
+  let ty_fun_of_telescope = Core_utils.Term_ty.ty_fun_of_telescope
 end
 
 module Value_field_impl = struct
   type t = value_field_impl [@@deriving sexp_of]
 
   let create = Syntax.Value_field_impl.create
+end
+
+module Closure = struct
+  type 'a t = 'a closure [@@deriving sexp_of]
+
+  let create = Syntax.Closure.create
+  let eval1 = Evaluate.Closure.eval1
+  let eval0 = Evaluate.Closure.eval0
+end
+
+module Term_closure = struct
+  type t = Syntax.term Syntax.closure [@@deriving sexp_of]
+
+  let eval1 = Evaluate.Term_closure.eval1
+end
+
+module Term_ty_closure = struct
+  type t = Syntax.term_ty Syntax.closure [@@deriving sexp_of]
+
+  let eval1 = Evaluate.Term_ty_closure.eval1
 end
 
 module Value = struct
@@ -141,6 +162,7 @@ end
 module Ty = struct
   type t = ty [@@deriving sexp_of]
 
+  let create_ty_struct = Syntax.Ty.create_ty_struct
   let infer_props = Evaluate.Ty.infer_props
   let whnf = Evaluate.Ty.whnf
   let ty_fun_val_exn = Syntax.Ty.ty_fun_val_exn
@@ -151,6 +173,7 @@ module Ty = struct
   let proj = Evaluate.Ty.proj
   let app = Evaluate.Ty.app
   let out = Evaluate.Ty.out
+  let proj_non_dependent = Evaluate.Ty.proj_non_dependent
 end
 
 module Neutral = struct
@@ -173,6 +196,12 @@ module Term_ty_struct = struct
   let of_iterated_binders = Core_utils.Term_ty_struct.of_iterated_binders
 end
 
+module Term_data_body = struct
+  type t = term_data_body [@@deriving sexp_of]
+
+  let close = Evaluate.Term_data_body.close
+end
+
 module Struct = struct
   type t = value_struct [@@deriving sexp_of]
 
@@ -182,14 +211,17 @@ end
 module Ty_struct = struct
   type t = ty_struct [@@deriving sexp_of]
 
+  let create = Syntax.Ty_struct.create
+
   let of_iterated_binders field_specs : t =
     { env = Syntax.Env.empty
     ; field_specs = (Term_ty_struct.of_iterated_binders field_specs).field_specs
     }
   ;;
 
-  let field_locations = Syntax.Ty_struct.field_locations
+  let field_spec_views = Syntax.Ty_struct.field_spec_views
   let proj = Evaluate.Ty_struct.proj
+  let proj_non_dependent = Evaluate.Ty_struct.proj_non_dependent
 end
 
 module Fun = struct

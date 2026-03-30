@@ -620,9 +620,9 @@ data_rec {
                 (ty
                  (Expr_app
                   (func
-                   (Expr_var (index ((index 0))) (span ((start 25) (stop 26)))))
+                   (Expr_var (index ((index 1))) (span ((start 25) (stop 26)))))
                   (arg
-                   (Expr_var (index ((index 2))) (span ((start 27) (stop 28)))))
+                   (Expr_var (index ((index 0))) (span ((start 27) (stop 28)))))
                   (param_modifiers ((icit Expl) (relevancy Relevant)))
                   (span ((start 25) (stop 28))))))))))
            (span ((start 6) (stop 31)))))
@@ -639,9 +639,9 @@ data_rec {
                 (ty
                  (Expr_app
                   (func
-                   (Expr_var (index ((index 1))) (span ((start 55) (stop 56)))))
+                   (Expr_var (index ((index 2))) (span ((start 55) (stop 56)))))
                   (arg
-                   (Expr_var (index ((index 2))) (span ((start 57) (stop 58)))))
+                   (Expr_var (index ((index 0))) (span ((start 57) (stop 58)))))
                   (param_modifiers ((icit Expl) (relevancy Relevant)))
                   (span ((start 55) (stop 58))))))))))
            (span ((start 36) (stop 61)))))

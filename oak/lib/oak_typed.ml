@@ -9,16 +9,11 @@ module Index = Common.Index
 module Literal = Common.Literal
 module Relevancy = Common.Relevancy
 module Param_modifiers = Common.Param_modifiers
-
-type context =
-  { ty_env : Core.ty_env
-  ; name_list : Core.name_env
-  }
-[@@deriving sexp_of]
+module Context = Oak_context
 
 type expr_ann =
   { span : Span.t
-  ; context : context
+  ; cx : Context.t
   ; ty : Core.ty
   ; term : Core.term
   }
@@ -26,7 +21,7 @@ type expr_ann =
 
 type ty_ann =
   { span : Span.t
-  ; context : context
+  ; cx : Context.t
   ; ty_props : Core.Ty_props.t
   ; term : Core.term_ty
   }
@@ -107,12 +102,17 @@ type expr =
       ; coe : runtime_coe
       ; ann : expr_ann
       }
-  | Expr_data_rec of
-      { decls : data_decl list
-      ; span : Span.t
+  | Expr_data_rec of expr_data_rec
+  | Expr_data of
+      { data : expr_data
       ; ann : expr_ann
       }
-  | Expr_data of expr_data
+
+and expr_data_rec =
+  { decls : data_decl list
+  ; span : Span.t
+  ; ann : expr_ann
+  }
 
 and ty =
   | Ty_decode of
@@ -159,7 +159,6 @@ and expr_data =
   { params : data_param list
   ; body : data_body
   ; span : Span.t
-  ; ann : expr_ann
   }
 
 and data_body =
@@ -226,7 +225,7 @@ module Expr_ann = struct
 
   let of_ty_ann (ann : ty_ann) =
     { span = ann.span
-    ; context = ann.context
+    ; cx = ann.cx
     ; ty = Ty_universe ann.ty_props
     ; term = Term_encode_ty { ty = ann.term; props = ann.ty_props }
     }

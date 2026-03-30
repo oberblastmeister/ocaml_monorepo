@@ -5,6 +5,7 @@ type t =
   { ty_env : Core.ty_env
   ; name_list : Core.name_env
   }
+[@@deriving sexp_of]
 
 let empty = { ty_env = Core.Ty_env.empty; name_list = Core.Name_env.empty }
 

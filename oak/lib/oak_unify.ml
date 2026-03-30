@@ -78,7 +78,7 @@ let rec unify_value
     let arg : Core.value_arg = { e = var_value; icit = ty.param.modifiers.icit } in
     unify_value
       st
-      (Context.bind ty.param.name ty.param.param cx)
+      (Context.bind ty.param.name ty.param.ty cx)
       (Core.Value.app e1 arg)
       (Core.Value.app e2 arg)
       (Core.Ty_fun.app ty arg)
@@ -104,7 +104,7 @@ and unify_ty (st : State.t) (cx : Context.t) (ty1 : Core.ty) (ty2 : Core.ty) =
     in
     unify_ty
       st
-      (Context.bind ty1.param.name ty1.param.param cx)
+      (Context.bind ty1.param.name ty1.param.ty cx)
       (Core.Ty_fun.app ty1 arg)
       (Core.Ty_fun.app ty2 arg)
   | Ty_struct ty1, Ty_struct ty2 ->
@@ -203,7 +203,7 @@ and unify_param
       (param2 : Core.value_param)
   : unit
   =
-  unify_ty st cx param1.param param2.param;
+  unify_ty st cx param1.ty param2.ty;
   unify_param_modifiers st param1.modifiers param2.modifiers
 
 and unify_param_modifiers
@@ -270,7 +270,7 @@ and unify_neutral (st : State.t) (cx : Context.t) (e1 : Core.neutral) (e2 : Core
           | Out, _ | _, Out -> failwith "should be whnf"
           | App arg1, App arg2 ->
             let fun_ty = Core.Ty.whnf cx.ty_env ty |> Core.Ty.ty_fun_val_exn in
-            unify_value st cx arg1.e arg2.e fun_ty.param.param;
+            unify_value st cx arg1.e arg2.e fun_ty.param.ty;
             Core.Ty_fun.app fun_ty arg1
           | Proj field1, Proj field2 ->
             if not (field1.index = field2.index)
@@ -359,9 +359,9 @@ and sub (st : State.t) (cx : Context.t) (e : Core.term) (ty1 : Core.ty) (ty2 : C
     unify_param_modifiers st ty1.param.modifiers ty2.param.modifiers;
     let free = Context.next_level cx in
     let arg_var_value = Context.next_free cx in
-    let cx = Context.bind ty2.param.name ty2.param.param cx in
+    let cx = Context.bind ty2.param.name ty2.param.ty cx in
     let arg_var_term = Core.Value.quote arg_var_value in
-    let arg', arg_coe = sub st cx arg_var_term ty2.param.param ty1.param.param in
+    let arg', arg_coe = sub st cx arg_var_term ty2.param.ty ty1.param.ty in
     let arg_term = Option.value ~default:arg_var_term arg' in
     let arg_value = Core.Term.eval Core.Value_env.empty arg_term in
     let app_term : Core.term =
@@ -399,25 +399,25 @@ and sub (st : State.t) (cx : Context.t) (e : Core.term) (ty1 : Core.ty) (ty2 : C
     let value1 = Core.Term.eval Core.Value_env.empty e in
     let ty1_name_to_index =
       let tbl = String.Table.create () in
-      Core.Ty_struct.field_locations ty1
-      |> Cow_slice.iter ~f:(fun field ->
-        Hashtbl.add_exn tbl ~key:field.name ~data:field.index);
+      Core.Ty_struct.field_spec_views ty1
+      |> Cow_slice.iteri ~f:(fun index field_spec ->
+        Hashtbl.add_exn tbl ~key:field_spec.name.name ~data:index);
       tbl
     in
-    let ty2_field_locations = Core.Ty_struct.field_locations ty2 in
+    let ty2_field_spec_views = Core.Ty_struct.field_spec_views ty2 in
     let ~did_coerce, ~running_field_impls2, ~running_field_coes =
-      Cow_slice.fold
-        ty2_field_locations
+      Cow_slice.foldi
+        ty2_field_spec_views
         ~init:
           ( ~did_coerce:false
-          , ~running_field_impls2:(Cow_slice.create
-                                     (Cow_slice.length ty2_field_locations))
-          , ~running_field_coes:(Cow_slice.create (Cow_slice.length ty2_field_locations))
+          , ~running_field_impls2:(Cow_slice.create (Cow_slice.length ty2_field_spec_views))
+          , ~running_field_coes:(Cow_slice.create (Cow_slice.length ty2_field_spec_views))
           )
-        ~f:(fun (~did_coerce, ~running_field_impls2, ~running_field_coes) field2 ->
+        ~f:(fun index (~did_coerce, ~running_field_impls2, ~running_field_coes) field2 ->
+          let field2 = Core.Field_loc.create field2.name.name index in
           let field1 =
             match Hashtbl.find ty1_name_to_index field2.name with
-            | Some index -> ({ name = field2.name; index } : Core.field_loc)
+            | Some index -> Core.Field_loc.create field2.name index
             | None ->
               State.throw
                 st
@@ -456,9 +456,9 @@ and sub (st : State.t) (cx : Context.t) (e : Core.term) (ty1 : Core.ty) (ty2 : C
     let field_coes = Cow_slice.to_list running_field_coes in
     let is_same_shape =
       Cow_slice.for_all2
-        (Core.Ty_struct.field_locations ty1)
-        ty2_field_locations
-        ~f:(fun field1 field2 -> String.equal field1.name field2.name)
+        (Core.Ty_struct.field_spec_views ty1)
+        ty2_field_spec_views
+        ~f:(fun field1 field2 -> String.equal field1.name.name field2.name.name)
       |> Option.value ~default:false
     in
     let runtime_coe = mk_struct_coe is_same_shape field_coes in

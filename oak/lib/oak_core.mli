@@ -19,6 +19,7 @@ type term_data_constructor = Syntax.term_data_constructor [@@deriving sexp_of]
 type field_loc = Syntax.field_loc [@@deriving sexp_of]
 type term_field_impl = Syntax.term_field_impl [@@deriving sexp_of]
 type term_field_spec = Syntax.term_field_spec [@@deriving sexp_of]
+type term_field_spec_view = Syntax.term_field_spec_view [@@deriving sexp_of]
 type term_ty = Syntax.term_ty [@@deriving sexp_of]
 type term_ty_struct = Syntax.term_ty_struct [@@deriving sexp_of]
 type value = Syntax.value [@@deriving sexp_of]
@@ -39,8 +40,7 @@ type value_fun = Syntax.value_fun [@@deriving sexp_of]
 type value_param = Syntax.value_param [@@deriving sexp_of]
 type term_param = Syntax.term_param [@@deriving sexp_of]
 type ty_fun = Syntax.ty_fun [@@deriving sexp_of]
-type ty_closure = Syntax.ty_closure [@@deriving sexp_of]
-type value_closure = Syntax.value_closure [@@deriving sexp_of]
+type 'a closure = 'a Syntax.closure [@@deriving sexp_of]
 type value_field_impl = Syntax.value_field_impl [@@deriving sexp_of]
 type value_field_spec = Syntax.value_field_spec [@@deriving sexp_of]
 
@@ -122,12 +122,32 @@ module Term_ty : sig
   val close : Close.t -> term_ty -> term_ty
   val close_single : Level.t -> term_ty -> term_ty
   val eval : value_env -> term_ty -> ty
+  val ty_fun_of_telescope : Syntax.term_param list -> Syntax.term_ty -> Syntax.term_ty
 end
 
 module Value_field_impl : sig
   type t = value_field_impl [@@deriving sexp_of]
 
   val create : string -> value -> t
+end
+
+module Closure : sig
+  type 'a t = 'a closure [@@deriving sexp_of]
+
+  val create : 'a -> 'a closure
+  val eval1 : (Value_env.t -> 'a -> 'b) -> 'a t -> value -> 'b
+end
+
+module Term_closure : sig
+  type t = term closure [@@deriving sexp_of]
+
+  val eval1 : term closure -> value -> value
+end
+
+module Term_ty_closure : sig
+  type t = term_ty closure [@@deriving sexp_of]
+
+  val eval1 : term_ty closure -> value -> ty
 end
 
 module Value : sig
@@ -148,6 +168,7 @@ end
 module Ty : sig
   type t = ty [@@deriving sexp_of]
 
+  val create_ty_struct : term_field_spec Cow_slice.t -> ty
   val infer_props : ty_env -> ty -> Ty_props.t
   val whnf : ty_env -> ty -> ty
   val ty_fun_val_exn : ty -> ty_fun
@@ -156,6 +177,7 @@ module Ty : sig
   val ty_universe_val_exn : ty -> Ty_props.t
   val quote : ty -> term_ty
   val proj : ty_env -> value -> ty -> field_loc -> value_field_spec
+  val proj_non_dependent : ty_env -> ty -> field_loc -> value_field_spec
   val app : ty_env -> ty -> value_arg -> ty
   val out : ty_env -> ty -> ty
 end
@@ -184,11 +206,19 @@ module Term_ty_struct : sig
   val of_iterated_binders : term_field_spec Cow_slice.t -> term_ty_struct
 end
 
+module Term_data_body : sig
+  type t = term_data_body [@@deriving sexp_of]
+
+  val close : Close.t -> term_data_body -> term_data_body
+end
+
 module Ty_struct : sig
   type t = ty_struct [@@deriving sexp_of]
 
-  val field_locations : t -> field_loc Cow_slice.t
-  val proj : value -> t -> field_loc -> value_field_spec
+  val create : term_field_spec Cow_slice.t -> t
+  val field_spec_views : ty_struct -> term_field_spec_view Cow_slice.t
+  val proj : value -> ty_struct -> field_loc -> value_field_spec
+  val proj_non_dependent : ty_struct -> field_loc -> value_field_spec
   val of_iterated_binders : term_field_spec Cow_slice.t -> ty_struct
 end
 
